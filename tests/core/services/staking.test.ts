@@ -1,0 +1,82 @@
+/**
+ * Tests for staking.ts (Stake 2.0).
+ *
+ * All staking functions are state-changing and require a private key.
+ * They are skipped unless TRON_PRIVATE_KEY is set AND TEST_STAKING=1.
+ */
+import { describe, it, expect } from "vitest";
+import {
+  freezeBalanceV2,
+  unfreezeBalanceV2,
+  withdrawExpireUnfreeze,
+} from "../../../src/core/services/staking.js";
+
+const ALLOW_STAKING = Boolean(
+  process.env.TRON_PRIVATE_KEY && process.env.TEST_STAKING === "1",
+);
+
+describe("staking module exports", () => {
+  it("freezeBalanceV2 is a function", () => {
+    expect(typeof freezeBalanceV2).toBe("function");
+  });
+
+  it("unfreezeBalanceV2 is a function", () => {
+    expect(typeof unfreezeBalanceV2).toBe("function");
+  });
+
+  it("withdrawExpireUnfreeze is a function", () => {
+    expect(typeof withdrawExpireUnfreeze).toBe("function");
+  });
+});
+
+describe("freezeBalanceV2 (write — skipped by default)", () => {
+  it.skipIf(!ALLOW_STAKING)(
+    "should freeze TRX for BANDWIDTH and return a tx hash",
+    async () => {
+      const privateKey = process.env.TRON_PRIVATE_KEY!;
+      // Freeze minimum 1 TRX (1,000,000 Sun)
+      const txHash = await freezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
+      expect(typeof txHash).toBe("string");
+      expect(txHash.length).toBeGreaterThan(0);
+      console.log(`Freeze TX: ${txHash}`);
+    },
+    60_000,
+  );
+
+  it.skipIf(!ALLOW_STAKING)(
+    "should freeze TRX for ENERGY and return a tx hash",
+    async () => {
+      const privateKey = process.env.TRON_PRIVATE_KEY!;
+      const txHash = await freezeBalanceV2(privateKey, "1000000", "ENERGY", "nile");
+      expect(typeof txHash).toBe("string");
+      console.log(`Freeze ENERGY TX: ${txHash}`);
+    },
+    60_000,
+  );
+});
+
+describe("unfreezeBalanceV2 (write — skipped by default)", () => {
+  it.skipIf(!ALLOW_STAKING)(
+    "should unfreeze TRX and return a tx hash",
+    async () => {
+      const privateKey = process.env.TRON_PRIVATE_KEY!;
+      const txHash = await unfreezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
+      expect(typeof txHash).toBe("string");
+      console.log(`Unfreeze TX: ${txHash}`);
+    },
+    60_000,
+  );
+});
+
+describe("withdrawExpireUnfreeze (write — skipped by default)", () => {
+  it.skipIf(!ALLOW_STAKING)(
+    "should withdraw expired unfreeze and return a tx hash",
+    async () => {
+      const privateKey = process.env.TRON_PRIVATE_KEY!;
+      const txHash = await withdrawExpireUnfreeze(privateKey, "nile");
+      expect(typeof txHash).toBe("string");
+      console.log(`Withdraw TX: ${txHash}`);
+    },
+    60_000,
+  );
+});

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mcp-server-justlend": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-justlend"
+      ],
+      "env": {
+        "TRON_PRIVATE_KEY": "",
+        "TRONGRID_API_KEY": ""
+      }
+    }
+  }
+}
