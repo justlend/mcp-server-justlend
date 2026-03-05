@@ -780,16 +780,18 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_proposal_list",
     {
-      description: "Get the list of JustLend DAO governance proposals. Returns all proposals with their status (Active, Passed, Defeated, etc.), vote counts, and details.",
+      description: "Get the list of JustLend DAO governance proposals. Returns proposals with their status (Active, Passed, Defeated, etc.), vote counts, and details. Sorted by newest first.",
       inputSchema: {
         network: z.string().optional().describe("Network. Default: mainnet"),
+        limit: z.number().optional().describe("Max number of proposals to return. Default: 10. Use 0 for all."),
       },
       annotations: { title: "Get Proposal List", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = "mainnet", limit = 10 }) => {
       try {
         const data = await services.getProposalList(network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+        const proposals = limit > 0 ? data.proposals.slice(0, limit) : data.proposals;
+        return { content: [{ type: "text", text: JSON.stringify({ proposals, total: data.total, returned: proposals.length }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
       }

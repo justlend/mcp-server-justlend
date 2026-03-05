@@ -102,8 +102,18 @@ export async function getProposalList(network = "mainnet"): Promise<{
   }
 
   const proposalList: Proposal[] = (data.data?.proposalList || []).map((item: any) => ({
-    ...item,
+    proposalId: item.proposalId ?? item.id,
+    state: item.state,
     stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
+    title: item.title || "",
+    proposer: item.proposer || "",
+    forVotes: item.forVotes || "0",
+    againstVotes: item.againstVotes || "0",
+    abstainVotes: item.abstainVotes || "0",
+    startBlock: item.startBlock,
+    endBlock: item.endBlock,
+    activeTime: item.activeTime,
+    endTime: item.endTime,
   }));
 
   // Sort by proposalId descending (newest first)
