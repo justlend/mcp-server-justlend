@@ -34,11 +34,11 @@ async function main() {
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", server: "mcp-server-TLD", version: "1.0.0" });
+    res.json({ status: "ok", server: "mcp-server-justlend", version: "1.0.0" });
   });
 
   app.listen(PORT, () => {
-    console.error(`mcp-server-TLD HTTP server listening on port ${PORT}`);
+    console.error(`mcp-server-justlend HTTP server listening on port ${PORT}`);
     console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
     console.error(`Health check: http://localhost:${PORT}/health`);
   });

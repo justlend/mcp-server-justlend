@@ -8,7 +8,7 @@ async function startServer() {
   try {
     const server = new McpServer(
       {
-        name: "mcp-server-TLD",
+        name: "mcp-server-justlend",
         version: "1.0.0",
       },
       {
@@ -25,7 +25,7 @@ async function startServer() {
     registerJustLendTools(server);
     registerJustLendPrompts(server);
 
-    console.error("mcp-server-TLD v1.0.0 initialized");
+    console.error("mcp-server-justlend v1.0.0 initialized");
     console.error(`Supported networks: ${getSupportedNetworks().join(", ")}`);
     console.error("Server is ready to handle requests");
 

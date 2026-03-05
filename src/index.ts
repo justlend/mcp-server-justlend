@@ -6,7 +6,7 @@ async function main() {
     const server = await startServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("mcp-server-TLD running on stdio");
+    console.error("mcp-server-justlend running on stdio");
   } catch (error) {
     console.error("Error starting MCP server:", error);
     process.exit(1);

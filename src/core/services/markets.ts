@@ -246,6 +246,130 @@ export async function getMarketDataFromAPI(network = "mainnet"): Promise<any> {
 }
 
 /**
+ * Fetch jToken details from API (includes mining reward data).
+ */
+async function getJTokenDetailFromAPI(jtokenAddr: string, network = "mainnet"): Promise<any> {
+  const host = getApiHost(network);
+  const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${jtokenAddr}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.code === 0 ? data.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface MarketOverview {
+  symbol: string;
+  underlyingSymbol: string;
+  jTokenAddress: string;
+  underlyingAddress: string;
+  /** Base supply APY from lending interest */
+  supplyAPY: string;
+  /** Borrow APY */
+  borrowAPY: string;
+  /** Total deposited value in USD */
+  depositedUSD: string;
+  /** Total borrowed value in USD */
+  borrowedUSD: string;
+  /** Collateral factor percentage */
+  collateralFactor: string;
+  /** Underlying asset increment APY (e.g. sTRX staking yield, wstUSDT staking yield) */
+  underlyingIncrementAPY: string;
+  /** Mining reward USD per day (from supply mining programs) */
+  miningRewardUSD24h: number;
+  /** Mining APY calculated from daily rewards and TVL */
+  miningAPY: string;
+  /** Mining reward breakdown */
+  miningRewardDetail: string;
+  /** Whether supply is paused */
+  mintPaused: boolean;
+  /** Whether borrow is paused */
+  borrowPaused: boolean;
+  /** Total APY = supplyAPY + underlyingIncrementAPY + miningAPY */
+  totalSupplyAPY: string;
+}
+
+/**
+ * Get all market data with mining rewards from API.
+ * Combines markets list API with jToken details API to get mining APY.
+ * This is the recommended method for comprehensive market overview.
+ */
+export async function getAllMarketOverview(network = "mainnet"): Promise<MarketOverview[]> {
+  const host = getApiHost(network);
+
+  // Fetch markets list
+  const marketsResp = await fetch(`${host}/justlend/markets`);
+  if (!marketsResp.ok) throw new Error(`Markets API failed: ${marketsResp.status}`);
+  const marketsData = await marketsResp.json();
+  if (marketsData.code !== 0) throw new Error(`Markets API error: ${marketsData.code}`);
+
+  const jtokenList: any[] = marketsData.data?.jtokenList || [];
+  if (jtokenList.length === 0) throw new Error("No markets returned from API");
+
+  // Filter active markets (isValid=1)
+  const activeMarkets = jtokenList.filter((m: any) => m.isValid === "1" || m.isValid === 1);
+
+  // Fetch jToken details for each market (includes mining data)
+  const detailPromises = activeMarkets.map((m: any) =>
+    getJTokenDetailFromAPI(m.jtokenAddress, network),
+  );
+  const details = await Promise.all(detailPromises);
+
+  return activeMarkets.map((m: any, i: number) => {
+    const detail = details[i];
+
+    const depositedUSD = parseFloat(m.depositedUSD || "0");
+    const supplyAPY = parseFloat(m.depositedAPY || "0") * 100;
+    const borrowAPY = parseFloat(m.borrowedAPY || "0") * 100;
+    const underlyingIncrementAPY = parseFloat(m.underlyingIncrementApy || "0") * 100;
+
+    // Mining data from jToken details API
+    const farmRewardUSD24h = detail ? parseFloat(detail.farmRewardUSD24h || "0") : 0;
+    const farmRewardUsdd = detail ? parseFloat(detail.farmRewardUsddAmount24h || "0") : 0;
+    const farmRewardTrx = detail ? parseFloat(detail.farmRewardTrxAmount24h || "0") : 0;
+
+    // Calculate mining APY: (daily_reward_USD * 365) / TVL * 100
+    const miningAPY = depositedUSD > 0 ? (farmRewardUSD24h * 365 / depositedUSD) * 100 : 0;
+
+    // Build mining reward detail string
+    let miningDetail = "";
+    if (farmRewardUsdd > 0 && farmRewardTrx > 0) {
+      miningDetail = `${farmRewardUsdd.toFixed(2)} USDD + ${farmRewardTrx.toFixed(2)} TRX per day ($${farmRewardUSD24h.toFixed(2)}/day)`;
+    } else if (farmRewardUsdd > 0) {
+      miningDetail = `${farmRewardUsdd.toFixed(2)} USDD per day ($${farmRewardUSD24h.toFixed(2)}/day)`;
+    } else if (farmRewardTrx > 0) {
+      miningDetail = `${farmRewardTrx.toFixed(2)} TRX per day ($${farmRewardUSD24h.toFixed(2)}/day)`;
+    } else if (farmRewardUSD24h > 0) {
+      miningDetail = `$${farmRewardUSD24h.toFixed(2)}/day in mining rewards`;
+    }
+
+    const totalAPY = supplyAPY + underlyingIncrementAPY + miningAPY;
+
+    return {
+      symbol: `j${m.collateralSymbol}`,
+      underlyingSymbol: m.collateralSymbol,
+      jTokenAddress: m.jtokenAddress,
+      underlyingAddress: m.collateralAddress,
+      supplyAPY: `${supplyAPY.toFixed(4)}%`,
+      borrowAPY: `${borrowAPY.toFixed(4)}%`,
+      depositedUSD: `$${depositedUSD.toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+      borrowedUSD: `$${parseFloat(m.borrowedUSD || "0").toLocaleString("en-US", { maximumFractionDigits: 0 })}`,
+      collateralFactor: `${(parseFloat(m.collateralFactor || "0") / 1e16).toFixed(0)}%`,
+      underlyingIncrementAPY: underlyingIncrementAPY > 0 ? `${underlyingIncrementAPY.toFixed(4)}%` : "-",
+      miningRewardUSD24h: farmRewardUSD24h,
+      miningAPY: miningAPY > 0 ? `${miningAPY.toFixed(4)}%` : "-",
+      miningRewardDetail: miningDetail || "-",
+      mintPaused: m.mintPaused === "1" || m.mintPaused === 1,
+      borrowPaused: m.borrowPaused === "1" || m.borrowPaused === 1,
+      totalSupplyAPY: `${totalAPY.toFixed(4)}%`,
+    };
+  });
+}
+
+/**
  * Get market dashboard data from JustLend V1 API.
  * Includes protocol-level statistics like total supply, total borrow, etc.
  *

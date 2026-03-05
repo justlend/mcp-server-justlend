@@ -30,7 +30,7 @@ export const JTOKEN_ABI = [
     type: "function", name: "getAccountSnapshot",
     inputs: [{ type: "address", name: "account" }],
     outputs: [
-      { type: "uint256", name: "error" },
+      { type: "uint256", name: "err" },
       { type: "uint256", name: "jTokenBalance" },
       { type: "uint256", name: "borrowBalance" },
       { type: "uint256", name: "exchangeRateMantissa" },
@@ -94,7 +94,7 @@ export const COMPTROLLER_ABI = [
     type: "function", name: "getAccountLiquidity",
     inputs: [{ type: "address", name: "account" }],
     outputs: [
-      { type: "uint256", name: "error" },
+      { type: "uint256", name: "err" },
       { type: "uint256", name: "liquidity" },
       { type: "uint256", name: "shortfall" },
     ],
@@ -134,6 +134,69 @@ export const TRC20_ABI = [
   { type: "function", name: "allowance", inputs: [{ type: "address", name: "owner" }, { type: "address", name: "spender" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "approve", inputs: [{ type: "address", name: "spender" }, { type: "uint256", name: "amount" }], outputs: [{ type: "bool" }], stateMutability: "nonpayable" },
   { type: "function", name: "transfer", inputs: [{ type: "address", name: "to" }, { type: "uint256", name: "amount" }], outputs: [{ type: "bool" }], stateMutability: "nonpayable" },
+];
+
+// ============================================================================
+// GovernorAlpha ABI (JST Voting / Governance)
+// ============================================================================
+export const GOVERNOR_ALPHA_ABI = [
+  // --- Read ---
+  {
+    type: "function", name: "castVote",
+    inputs: [
+      { type: "uint256", name: "proposalId" },
+      { type: "uint256", name: "votes" },
+      { type: "uint8", name: "support" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function", name: "withdrawVotes",
+    inputs: [{ type: "uint256", name: "proposalId" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+];
+
+// ============================================================================
+// WJST (Wrapped JST for governance voting) ABI
+// ============================================================================
+export const WJST_ABI = [
+  // --- Read ---
+  { type: "function", name: "balanceOf", inputs: [{ type: "address", name: "account" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "allowance", inputs: [{ type: "address", name: "owner" }, { type: "address", name: "spender" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  {
+    type: "function", name: "lockTo",
+    inputs: [{ type: "address", name: "user" }, { type: "uint256", name: "proposalId" }],
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+  },
+  // --- Write ---
+  { type: "function", name: "deposit", inputs: [{ type: "uint256", name: "amount" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "withdraw", inputs: [{ type: "uint256", name: "amount" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "approve", inputs: [{ type: "address", name: "spender" }, { type: "uint256", name: "amount" }], outputs: [{ type: "bool" }], stateMutability: "nonpayable" },
+];
+
+// ============================================================================
+// Poly (getVoteInfo helper) ABI
+// ============================================================================
+export const POLY_ABI = [
+  {
+    type: "function", name: "getVoteInfo",
+    inputs: [
+      { type: "address", name: "user" },
+      { type: "address", name: "jstAddr" },
+      { type: "address", name: "wjstAddr" },
+    ],
+    outputs: [
+      { type: "uint256", name: "jstBalance" },
+      { type: "uint256", name: "surplusVotes" },
+      { type: "uint256", name: "totalVote" },
+      { type: "uint256", name: "castVote" },
+    ],
+    stateMutability: "view",
+  },
 ];
 
 // ============================================================================

@@ -53,6 +53,19 @@ vi.mock("../../src/core/services/index.js", () => ({
     },
   ]),
 
+  getAllMarketOverview: vi.fn(async () => [
+    {
+      symbol: "jUSDT",
+      underlyingSymbol: "USDT",
+      supplyAPY: "3.25%",
+      borrowAPY: "5.50%",
+      miningAPY: "0.00%",
+      totalSupplyAPY: "3.25%",
+      depositedUSD: "100000000.00",
+      borrowedUSD: "50000000.00",
+    },
+  ]),
+
   getProtocolSummary: vi.fn(async () => ({
     comptroller: "TGjYzgCyPobsNS9n6WcbdLVR9dH7mWqFx7",
     oracle: "TXjzHPaDeR2KYXQ3Gfwj82PQ2qHaGThFhi",
@@ -83,7 +96,7 @@ vi.mock("../../src/core/services/index.js", () => ({
     jTokenAddress: "TXJgMdjVX5dKiQaUi9QobR2d1pTdip5xG3",
   })),
 
-  getTRXBalance: vi.fn(async () => "1000.000000"),
+  getTRXBalance: vi.fn(async () => ({ formatted: "1000.000000" })),
 
   getTokenBalance: vi.fn(async () => ({
     balance: "5000.000000",
@@ -145,6 +158,46 @@ vi.mock("../../src/core/services/index.js", () => ({
     txID: "mock_claim_tx_id_123",
     message: "Claimed JustLend rewards for TTestWalletAddress123456789012345",
   })),
+
+  // Resource estimation
+  estimateLendingEnergy: vi.fn(async () => ({
+    operation: "supply",
+    market: "jUSDT",
+    steps: [],
+    totalEnergy: 100000,
+    totalBandwidth: 310,
+    estimatedTRXCost: "42.310",
+    costBreakdown: { energyCostTRX: "42.000", bandwidthCostTRX: "0.310", note: "" },
+    note: "",
+  })),
+
+  getTypicalResources: vi.fn(() => ({ energy: 100000, bandwidth: 310 })),
+
+  checkResourceSufficiency: vi.fn(async () => ({
+    hasEnoughEnergy: true,
+    hasEnoughBandwidth: true,
+    accountEnergy: 200000,
+    accountBandwidth: 5000,
+    requiredEnergy: 100000,
+    requiredBandwidth: 310,
+    energyDeficit: 0,
+    bandwidthDeficit: 0,
+    energyBurnTRX: "0.000",
+    bandwidthBurnTRX: "0.000",
+    totalBurnTRX: "0.000",
+    warning: "",
+  })),
+
+  // API-based queries
+  getMarketDataFromAPI: vi.fn(async () => ({ data: [] })),
+  getMarketDashboardFromAPI: vi.fn(async () => ({ data: {} })),
+  getJTokenDetailsFromAPI: vi.fn(async () => ({ data: {} })),
+  getAccountDataFromAPI: vi.fn(async () => ({ data: {} })),
+
+  // Mining rewards
+  getMiningRewardsFromAPI: vi.fn(async () => ({ rewards: [] })),
+  getUSDDMiningConfig: vi.fn(() => ({ periods: [] })),
+  getWBTCMiningConfig: vi.fn(() => ({ periods: [] })),
 }));
 
 import { registerJustLendTools } from "../../src/core/tools.js";
@@ -197,7 +250,7 @@ function getToolOutput(result: any): any {
 // ============================================================================
 
 describe("Tool Registration", () => {
-  it("should register all 19 JustLend tools", () => {
+  it("should register all JustLend tools", () => {
     const expectedTools = [
       "get_wallet_address",
       "get_supported_networks",
@@ -205,10 +258,14 @@ describe("Tool Registration", () => {
       "get_market_data",
       "get_all_markets",
       "get_protocol_summary",
+      "get_markets_from_api",
+      "get_dashboard_from_api",
+      "get_jtoken_details_from_api",
       "get_account_summary",
       "check_allowance",
       "get_trx_balance",
       "get_token_balance",
+      "get_account_data_from_api",
       "supply",
       "withdraw",
       "withdraw_all",
@@ -218,6 +275,10 @@ describe("Tool Registration", () => {
       "exit_market",
       "approve_underlying",
       "claim_rewards",
+      "estimate_lending_energy",
+      "get_mining_rewards",
+      "get_usdd_mining_config",
+      "get_wbtc_mining_config",
     ];
 
     for (const name of expectedTools) {
@@ -333,7 +394,7 @@ describe("Market Data Tools", () => {
     expect(output.markets).toBeInstanceOf(Array);
     expect(output.markets[0].symbol).toBe("jUSDT");
     expect(output.markets[0].supplyAPY).toBe("3.25%");
-    expect(services.getAllMarketData).toHaveBeenCalled();
+    expect(services.getAllMarketOverview).toHaveBeenCalled();
   });
 
   it("get_protocol_summary should return protocol info", async () => {
@@ -562,7 +623,7 @@ describe("Network Parameter Forwarding", () => {
 
   it("get_all_markets should default to mainnet", async () => {
     await callTool("get_all_markets");
-    expect(services.getAllMarketData).toHaveBeenCalledWith("mainnet");
+    expect(services.getAllMarketOverview).toHaveBeenCalledWith("mainnet");
   });
 
   it("get_protocol_summary should default to mainnet", async () => {

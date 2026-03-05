@@ -88,7 +88,7 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
 
   // Get account liquidity
   const [error, liquidity, shortfall] = await comptroller.methods.getAccountLiquidity(userAddress).call()
-    .then((r: any) => [BigInt(r.error || r[0]), BigInt(r.liquidity || r[1]), BigInt(r.shortfall || r[2])]);
+    .then((r: any) => [BigInt(r.err || r[0]), BigInt(r.liquidity || r[1]), BigInt(r.shortfall || r[2])]);
 
   // Get oracle for prices
   let oracle: any;

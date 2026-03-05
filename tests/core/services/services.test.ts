@@ -18,6 +18,7 @@ import {
   getTokenBalance,
 } from "../../../src/core/services/account.js";
 import { getTronWeb } from "../../../src/core/services/clients.js";
+import { skipOn429 } from "../../helpers.js";
 
 // Well-known mainnet addresses for testing
 const TEST_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
@@ -55,16 +56,16 @@ describe("TronWeb Client", () => {
 // ============================================================================
 
 describe("Balance Services (Mainnet)", () => {
-  it("should fetch TRX balance for a known address", async () => {
+  it("should fetch TRX balance for a known address", skipOn429(async () => {
     const balance = await getAccountTRXBalance(TEST_ADDRESS, "mainnet");
     expect(balance).toBeDefined();
     expect(typeof balance).toBe("string");
     const numBalance = parseFloat(balance);
     expect(numBalance).toBeGreaterThanOrEqual(0);
     console.log(`TRX Balance for ${TEST_ADDRESS}: ${balance} TRX`);
-  }, 20_000);
+  }), 20_000);
 
-  it("should fetch TRC20 token balance (USDT)", async () => {
+  it("should fetch TRC20 token balance (USDT)", skipOn429(async () => {
     await delay(1500);
     const result = await getTokenBalance(TEST_ADDRESS, USDT_ADDRESS, "mainnet");
     expect(result).toBeDefined();
@@ -74,16 +75,16 @@ describe("Balance Services (Mainnet)", () => {
     const numBalance = parseFloat(result.balance);
     expect(numBalance).toBeGreaterThanOrEqual(0);
     console.log(`USDT Balance: ${result.balance} ${result.symbol}`);
-  }, 20_000);
+  }), 20_000);
 
-  it("should return zero balance for empty address", async () => {
+  it("should return zero balance for empty address", skipOn429(async () => {
     await delay(1500);
     // Use a valid but likely empty address
     const balance = await getAccountTRXBalance("TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", "mainnet");
     expect(balance).toBeDefined();
     expect(typeof balance).toBe("string");
     console.log(`Empty address TRX Balance: ${balance} TRX`);
-  }, 20_000);
+  }), 20_000);
 });
 
 // ============================================================================

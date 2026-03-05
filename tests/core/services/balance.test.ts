@@ -8,6 +8,7 @@ import {
   getTRXBalance,
   getTRC20Balance,
 } from "../../../src/core/services/balance.js";
+import { skipOn429 } from "../../helpers.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,7 +16,7 @@ const TEST_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
 const USDT_ADDRESS = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
 describe("getTRXBalance (Mainnet)", () => {
-  it("should return a rich balance object", async () => {
+  it("should return a rich balance object", skipOn429(async () => {
     const result = await getTRXBalance(TEST_ADDRESS, "mainnet");
 
     expect(result).toBeDefined();
@@ -27,26 +28,26 @@ describe("getTRXBalance (Mainnet)", () => {
     expect(result.decimals).toBe(6);
     expect(result.ether).toBe(result.formatted);
     console.log(`TRX Balance: ${result.formatted} TRX (${result.wei} Sun)`);
-  }, 20_000);
+  }), 20_000);
 
-  it("wei and ether should be consistent", async () => {
+  it("wei and ether should be consistent", skipOn429(async () => {
     await delay(1000);
     const result = await getTRXBalance(TEST_ADDRESS, "mainnet");
     // ether = wei / 1e6
     const expectedEther = (Number(result.wei) / 1e6).toString();
     expect(parseFloat(result.ether)).toBeCloseTo(parseFloat(expectedEther), 3);
-  }, 20_000);
+  }), 20_000);
 
-  it("should handle an address with zero balance", async () => {
+  it("should handle an address with zero balance", skipOn429(async () => {
     await delay(1000);
     const result = await getTRXBalance("TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", "mainnet");
     expect(result.wei).toBeGreaterThanOrEqual(0n);
     expect(typeof result.formatted).toBe("string");
-  }, 20_000);
+  }), 20_000);
 });
 
 describe("getTRC20Balance (Mainnet)", () => {
-  it("should return USDT balance with token info", async () => {
+  it("should return USDT balance with token info", skipOn429(async () => {
     await delay(3000);
     const result = await getTRC20Balance(USDT_ADDRESS, TEST_ADDRESS, "mainnet");
 
@@ -58,7 +59,7 @@ describe("getTRC20Balance (Mainnet)", () => {
     expect(result.token.decimals).toBe(6);
     expect(result.token.address).toBe(USDT_ADDRESS);
     console.log(`USDT Balance: ${result.formatted} USDT`);
-  }, 20_000);
+  }), 20_000);
 
   it("should throw for an invalid token address", async () => {
     await delay(1000);

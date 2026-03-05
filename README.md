@@ -40,6 +40,7 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 - **Collateral Management**: Enter/exit markets, manage what counts as collateral
 - **Portfolio Analysis**: AI-guided risk assessment, health factor monitoring, optimization
 - **Token Approvals**: Manage TRC20 approvals for jToken contracts
+- **JST Voting / Governance**: View proposals, cast votes, deposit/withdraw JST for voting power, reclaim votes
 
 #### General TRON Chain
 - **Balances**: TRX balance (with Sun/TRX conversion), TRC20/TRC1155 token balances
@@ -106,7 +107,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "justlend": {
       "command": "npx",
-      "args": ["tsx", "mcp-server-justlend"],
+      "args": ["tsx", "/path/to/mcp-server-justlend/src/index.ts"],
       "env": {
         "TRONGRID_API_KEY": "your_key"
       }
@@ -124,7 +125,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "justlend": {
       "command": "npx",
-      "args": ["tsx", "mcp-server-justlend"]
+      "args": ["tsx", "/path/to/mcp-server-justlend/src/index.ts"]
     }
   }
 }
@@ -145,7 +146,7 @@ npm run dev
 
 ## API Reference
 
-### Tools (24 total)
+### Tools (34 total)
 
 #### Wallet & Network
 | Tool | Description | Write? |
@@ -186,6 +187,20 @@ npm run dev
 | `approve_underlying` | Approve TRC20 for jToken | **Yes** |
 | `claim_rewards` | Claim mining rewards | **Yes** |
 
+#### JST Voting / Governance
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_proposal_list` | List all governance proposals with status and vote counts | No |
+| `get_user_vote_status` | User's voting history: voted proposals, withdrawable votes | No |
+| `get_vote_info` | Voting power: JST balance, available votes, locked votes | No |
+| `get_locked_votes` | Votes locked in a specific proposal | No |
+| `check_jst_allowance_for_voting` | Check JST approval for WJST voting contract | No |
+| `approve_jst_for_voting` | Approve JST for the WJST voting contract | **Yes** |
+| `deposit_jst_for_votes` | Deposit JST to get voting power (1 JST = 1 Vote) | **Yes** |
+| `withdraw_votes_to_jst` | Withdraw WJST back to JST | **Yes** |
+| `cast_vote` | Cast for/against votes on a proposal | **Yes** |
+| `withdraw_votes_from_proposal` | Reclaim votes from completed proposals | **Yes** |
+
 ### Prompts (AI-Guided Workflows)
 
 | Prompt | Description |
@@ -214,6 +229,7 @@ mcp-server-justlend/
 │   │       ├── markets.ts     # APY, TVL, utilization, prices
 │   │       ├── account.ts     # User positions, liquidity, allowances
 │   │       ├── lending.ts     # supply, borrow, repay, withdraw, collateral
+│   │       ├── voting.ts      # JST governance: proposals, cast vote, deposit/withdraw WJST
 │   │       ├── # — General TRON chain —
 │   │       ├── address.ts     # Hex ↔ Base58 conversion, validation
 │   │       ├── balance.ts     # TRX balance (rich), TRC20/TRC1155 balances
@@ -298,6 +314,15 @@ TRON_PRIVATE_KEY=xxx TEST_STAKING=1 npx vitest run tests/core/services/staking.t
 **"Freeze 100 TRX for ENERGY"**
 → AI calls staking service to freeze via Stake 2.0, returns transaction hash
 
+**"Show me the latest governance proposals"**
+→ AI calls `get_proposal_list`, displays proposals sorted by ID with status and vote counts
+
+**"I want to vote for proposal #425 with 1000 JST"**
+→ AI checks `get_vote_info` → if no votes, suggests `approve_jst_for_voting` + `deposit_jst_for_votes` → then `cast_vote`
+
+**"Withdraw my votes from completed proposals"**
+→ AI calls `get_user_vote_status` to find withdrawable proposals → calls `withdraw_votes_from_proposal` for each
+
 ## License
 
-MIT License Copyright (c) 2026 JustLend
+MIT

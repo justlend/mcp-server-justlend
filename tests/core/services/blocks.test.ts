@@ -10,6 +10,7 @@ import {
   getBlockByNumber,
   getChainId,
 } from "../../../src/core/services/blocks.js";
+import { skipOn429 } from "../../helpers.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,30 +43,30 @@ describe("getLatestBlock (Mainnet)", () => {
 });
 
 describe("getBlockNumber (Mainnet)", () => {
-  it("should return a positive block number", async () => {
+  it("should return a positive block number", skipOn429(async () => {
     await delay(1000);
     const num = await getBlockNumber("mainnet");
     expect(typeof num).toBe("number");
     expect(num).toBeGreaterThan(0);
     console.log(`Current block number: ${num}`);
-  }, 20_000);
+  }), 20_000);
 });
 
 describe("getBlockByNumber (Mainnet)", () => {
-  it("should fetch a specific historical block", async () => {
+  it("should fetch a specific historical block", skipOn429(async () => {
     await delay(1000);
     // Use a well-known early block number
     const block = await getBlockByNumber(1, "mainnet");
     expect(block).toBeDefined();
     expect(block.block_header).toBeDefined();
-  }, 20_000);
+  }), 20_000);
 
-  it("should fetch a recent block using current block number", async () => {
+  it("should fetch a recent block using current block number", skipOn429(async () => {
     await delay(1000);
     const num = await getBlockNumber("mainnet");
     await delay(500);
     const block = await getBlockByNumber(num - 5, "mainnet");
     expect(block).toBeDefined();
     expect(block.block_header.raw_data.number).toBe(num - 5);
-  }, 30_000);
+  }), 30_000);
 });

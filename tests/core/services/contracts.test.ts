@@ -15,6 +15,7 @@ import {
   readContract,
   fetchContractABI,
 } from "../../../src/core/services/contracts.js";
+import { skipOn429 } from "../../helpers.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -134,7 +135,7 @@ describe("getFunctionFromABI", () => {
 // ============================================================================
 
 describe("readContract (Mainnet)", () => {
-  it("should read the USDT symbol from the contract", async () => {
+  it("should read the USDT symbol from the contract", skipOn429(async () => {
     const result = await readContract(
       {
         address: USDT_ADDRESS,
@@ -145,9 +146,9 @@ describe("readContract (Mainnet)", () => {
     );
     expect(String(result)).toBe("USDT");
     console.log(`USDT symbol: ${result}`);
-  }, 25_000);
+  }), 25_000);
 
-  it("should read USDT balanceOf for a known address", async () => {
+  it("should read USDT balanceOf for a known address", skipOn429(async () => {
     await delay(1500);
     const result = await readContract(
       {
@@ -160,7 +161,7 @@ describe("readContract (Mainnet)", () => {
     );
     expect(result).toBeDefined();
     console.log(`USDT balanceOf ${TEST_ADDRESS}: ${result}`);
-  }, 25_000);
+  }), 25_000);
 
   it("should throw when function is not found in contract", async () => {
     await delay(1000);
@@ -182,11 +183,11 @@ describe("readContract (Mainnet)", () => {
 // ============================================================================
 
 describe("fetchContractABI (Mainnet)", () => {
-  it("should fetch the ABI for the USDT contract", async () => {
+  it("should fetch the ABI for the USDT contract", skipOn429(async () => {
     await delay(1500);
     const abi = await fetchContractABI(USDT_ADDRESS, "mainnet");
     expect(Array.isArray(abi)).toBe(true);
     expect(abi.length).toBeGreaterThan(0);
     console.log(`USDT ABI has ${abi.length} entries`);
-  }, 30_000);
+  }), 30_000);
 });
