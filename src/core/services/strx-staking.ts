@@ -13,6 +13,7 @@
 import { getTronWeb, getWallet } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { STRX_ABI } from "../abis.js";
+import { checkResourceSufficiency } from "./lending.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
@@ -126,14 +127,19 @@ export async function stakeTrxToStrx(
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
-  // Check TRX balance
+  // Check TRX balance with dynamic gas estimation
+  // Typical stake tx: ~80k energy, ~300 bandwidth
   const balanceSun = await tronWeb.trx.getBalance(walletAddress);
   const balanceTrx = Number(balanceSun) / TRX_PRECISION;
-  const totalNeeded = amountTrx + DEFAULT_FEE_LIMIT / TRX_PRECISION;
+  const STAKE_ENERGY_ESTIMATE = 80000;
+  const STAKE_BANDWIDTH_ESTIMATE = 300;
+  const resourceCheck = await checkResourceSufficiency(walletAddress, STAKE_ENERGY_ESTIMATE, STAKE_BANDWIDTH_ESTIMATE, network);
+  const gasTrx = parseFloat(resourceCheck.energyBurnTRX) + parseFloat(resourceCheck.bandwidthBurnTRX);
+  const totalNeeded = amountTrx + gasTrx;
 
   if (balanceTrx < totalNeeded) {
     throw new Error(
-      `Insufficient TRX balance for staking. Need ~${totalNeeded.toFixed(2)} TRX (stake + gas)`,
+      `Insufficient TRX balance for staking. Need ~${totalNeeded.toFixed(2)} TRX (stake: ${amountTrx} TRX + gas: ${gasTrx.toFixed(2)} TRX)`,
     );
   }
 

@@ -279,8 +279,26 @@ export async function depositJSTForVotes(
 ): Promise<{ txID: string; amount: string; message: string }> {
   const tronWeb = getWallet(privateKey, network);
   const addresses = getJustLendAddresses(network);
-
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountRaw = utils.parseUnits(amount, JST_DECIMALS);
+
+  // Check JST balance
+  const token = tronWeb.contract(TRC20_ABI, addresses.jst);
+  const jstBalance = BigInt(await token.methods.balanceOf(walletAddress).call());
+  if (jstBalance < amountRaw) {
+    throw new Error(
+      `Insufficient JST balance. Have ${formatTokenAmount(jstBalance)} JST, need ${amount} JST`,
+    );
+  }
+
+  // Check JST allowance for WJST contract
+  const allowance = BigInt(await token.methods.allowance(walletAddress, addresses.wjst).call());
+  if (allowance < amountRaw) {
+    throw new Error(
+      `Insufficient JST allowance for WJST contract. Allowance: ${formatTokenAmount(allowance)} JST. Please approve first using approve_jst_for_voting.`,
+    );
+  }
+
   const contract = tronWeb.contract(WJST_ABI, addresses.wjst);
   const txID = await contract.methods.deposit(amountRaw.toString()).send();
 
@@ -303,8 +321,18 @@ export async function withdrawVotesToJST(
 ): Promise<{ txID: string; amount: string; message: string }> {
   const tronWeb = getWallet(privateKey, network);
   const addresses = getJustLendAddresses(network);
-
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountRaw = utils.parseUnits(amount, JST_DECIMALS);
+
+  // Check surplus (available, unlocked) votes
+  const voteInfo = await getVoteInfo(walletAddress, network);
+  const surplusVotes = BigInt(voteInfo.surplusVotesRaw);
+  if (surplusVotes < amountRaw) {
+    throw new Error(
+      `Insufficient available votes. Surplus votes: ${voteInfo.surplusVotes}, want to withdraw: ${amount}. Some votes may be locked in active proposals.`,
+    );
+  }
+
   const contract = tronWeb.contract(WJST_ABI, addresses.wjst);
   const txID = await contract.methods.withdraw(amountRaw.toString()).send();
 
@@ -331,8 +359,18 @@ export async function castVote(
 ): Promise<{ txID: string; proposalId: number; support: string; votes: string; message: string }> {
   const tronWeb = getWallet(privateKey, network);
   const addresses = getJustLendAddresses(network);
-
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
   const votesRaw = utils.parseUnits(votes, JST_DECIMALS);
+
+  // Check surplus (available) votes
+  const voteInfo = await getVoteInfo(walletAddress, network);
+  const surplusVotes = BigInt(voteInfo.surplusVotesRaw);
+  if (surplusVotes < votesRaw) {
+    throw new Error(
+      `Insufficient available votes. Surplus votes: ${voteInfo.surplusVotes}, want to cast: ${votes}. Deposit more JST to get voting power.`,
+    );
+  }
+
   const supportValue = support ? 1 : 0;
 
   const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
@@ -364,6 +402,13 @@ export async function withdrawVotesFromProposal(
 ): Promise<{ txID: string; proposalId: number; message: string }> {
   const tronWeb = getWallet(privateKey, network);
   const addresses = getJustLendAddresses(network);
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
+
+  // Check if user has locked votes on this proposal
+  const locked = await getLockedVotes(walletAddress, proposalId, network);
+  if (BigInt(locked.lockedVotesRaw) === 0n) {
+    throw new Error(`No locked votes found for proposal #${proposalId}. Nothing to withdraw.`);
+  }
 
   const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
   const txID = await contract.methods.withdrawVotes(proposalId).send();

@@ -108,14 +108,45 @@ export async function supply(
   const info = resolveJToken(jTokenSymbol, network);
   const tronWeb = getWallet(privateKey, network);
   const amountRaw = utils.parseUnits(amount, info.underlyingDecimals);
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
 
   if (info.underlyingSymbol === "TRX" || !info.underlying) {
+    // Check TRX balance with dynamic gas estimation
+    const balanceSun = await tronWeb.trx.getBalance(walletAddress);
+    const supplyTypical = getTypicalResources("supply", true);
+    const supplyResourceCheck = await checkResourceSufficiency(walletAddress, supplyTypical.energy, supplyTypical.bandwidth, network);
+    const supplyGasSun = BigInt(Math.ceil((parseFloat(supplyResourceCheck.energyBurnTRX) + parseFloat(supplyResourceCheck.bandwidthBurnTRX)) * 1e6));
+    const needed = BigInt(amountRaw.toString()) + supplyGasSun;
+    if (BigInt(balanceSun) < needed) {
+      throw new Error(
+        `Insufficient TRX balance. Have ${(Number(balanceSun) / 1e6).toFixed(2)} TRX, need ~${(Number(needed) / 1e6).toFixed(2)} TRX (supply + estimated gas)`,
+      );
+    }
+
     // jTRX: mint() is payable, amount via callValue (in Sun)
     const contract = tronWeb.contract(JTRX_MINT_ABI, info.address);
     const txID = await contract.methods.mint().send({ callValue: amountRaw.toString() });
     return { txID, jTokenSymbol, amount, message: `Supplied ${amount} TRX to ${jTokenSymbol}` };
   } else {
-    // TRC20: first check/do approval, then mint(amount)
+    // Check TRC20 token balance
+    const token = tronWeb.contract(TRC20_ABI, info.underlying);
+    const balance = BigInt(await token.methods.balanceOf(walletAddress).call());
+    if (balance < BigInt(amountRaw.toString())) {
+      throw new Error(
+        `Insufficient ${info.underlyingSymbol} balance. Have ${utils.formatUnits(balance.toString(), info.underlyingDecimals)}, need ${amount}`,
+      );
+    }
+
+    // Check TRC20 allowance for jToken contract
+    const allowance = BigInt(await token.methods.allowance(walletAddress, info.address).call());
+    const formattedAllowance = utils.formatUnits(allowance.toString(), info.underlyingDecimals);
+    if (allowance < BigInt(amountRaw.toString())) {
+      throw new Error(
+        `Insufficient ${info.underlyingSymbol} allowance for ${jTokenSymbol}. Current allowance: ${formattedAllowance}. You need to approve at least ${amount} ${info.underlyingSymbol}. Please call approve_underlying first.`,
+      );
+    }
+
+    // TRC20: mint(amount)
     const contract = tronWeb.contract(JTOKEN_ABI, info.address);
     const txID = await contract.methods.mint(amountRaw.toString()).send();
     return { txID, jTokenSymbol, amount, message: `Supplied ${amount} ${info.underlyingSymbol} to ${jTokenSymbol}` };
@@ -145,8 +176,21 @@ export async function withdraw(
   const info = resolveJToken(jTokenSymbol, network);
   const tronWeb = getWallet(privateKey, network);
   const amountRaw = utils.parseUnits(amount, info.underlyingDecimals);
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
 
+  // Check supply balance via jToken balanceOf * exchangeRateStored
+  // Note: balanceOfUnderlying is nonpayable (updates interest snapshot), so TronWeb disallows .call().
+  // Instead, compute underlying balance from jToken balance and stored exchange rate.
   const contract = tronWeb.contract(JTOKEN_ABI, info.address);
+  const jTokenBalance = BigInt(await contract.methods.balanceOf(walletAddress).call());
+  const exchangeRate = BigInt(await contract.methods.exchangeRateStored().call());
+  const supplyBalance = (jTokenBalance * exchangeRate) / BigInt(1e18);
+  if (supplyBalance < BigInt(amountRaw.toString())) {
+    throw new Error(
+      `Insufficient supply balance in ${jTokenSymbol}. Have ${utils.formatUnits(supplyBalance.toString(), info.underlyingDecimals)} ${info.underlyingSymbol}, want to withdraw ${amount}`,
+    );
+  }
+
   const txID = await contract.methods.redeemUnderlying(amountRaw.toString()).send();
   return { txID, jTokenSymbol, amount, message: `Withdrew ${amount} ${info.underlyingSymbol} from ${jTokenSymbol}` };
 }
@@ -354,6 +398,31 @@ export async function repay(
     throw new Error(`No outstanding ${info.underlyingSymbol} borrow on ${jTokenSymbol}. Nothing to repay.`);
   }
 
+  // Check wallet balance for repayment
+  if (!isMax) {
+    const repayRaw = BigInt(utils.parseUnits(amount, info.underlyingDecimals).toString());
+    if (info.underlyingSymbol === "TRX" || !info.underlying) {
+      const balanceSun = await tronWeb.trx.getBalance(walletAddress as string);
+      const repayTypical = getTypicalResources("repay", true);
+      const repayResourceCheck = await checkResourceSufficiency(walletAddress as string, repayTypical.energy, repayTypical.bandwidth, network);
+      const repayGasSun = BigInt(Math.ceil((parseFloat(repayResourceCheck.energyBurnTRX) + parseFloat(repayResourceCheck.bandwidthBurnTRX)) * 1e6));
+      const needed = repayRaw + repayGasSun;
+      if (BigInt(balanceSun) < needed) {
+        throw new Error(
+          `Insufficient TRX balance for repayment. Have ${(Number(balanceSun) / 1e6).toFixed(2)} TRX, need ~${(Number(needed) / 1e6).toFixed(2)} TRX (repay + estimated gas)`,
+        );
+      }
+    } else {
+      const token = tronWeb.contract(TRC20_ABI, info.underlying);
+      const tokenBal = BigInt(await token.methods.balanceOf(walletAddress).call());
+      if (tokenBal < repayRaw) {
+        throw new Error(
+          `Insufficient ${info.underlyingSymbol} balance for repayment. Have ${utils.formatUnits(tokenBal.toString(), info.underlyingDecimals)}, need ${amount}`,
+        );
+      }
+    }
+  }
+
   if (info.underlyingSymbol === "TRX" || !info.underlying) {
     // Add a small buffer (0.1%) for accrued interest
     const repayAmount = isMax
@@ -543,14 +612,21 @@ export async function approveUnderlying(
   if (!info.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
 
   const tronWeb = getWallet(privateKey, network);
+  const walletAddress = tronWeb.defaultAddress.base58 as string;
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
 
-  // WARNING: "max" approval grants unlimited spending permission to the jToken contract.
-  // This is convenient but carries risk — if the contract is compromised, all approved tokens
-  // could be drained. Consider approving only the exact amount needed for each operation.
+  // Check if current allowance is already sufficient
+  const currentAllowance = BigInt(await token.methods.allowance(walletAddress, info.address).call());
   const approveAmount = amount.toLowerCase() === "max"
     ? MAX_UINT256
     : utils.parseUnits(amount, info.underlyingDecimals).toString();
+
+  if (currentAllowance >= BigInt(approveAmount)) {
+    return {
+      txID: "",
+      message: `${info.underlyingSymbol} already has sufficient allowance (${utils.formatUnits(currentAllowance.toString(), info.underlyingDecimals)}) for ${jTokenSymbol}. No approve needed.`,
+    };
+  }
 
   const txID = await token.methods.approve(info.address, approveAmount).send();
   return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}` };

@@ -35,6 +35,19 @@ export const utils = {
   isAddress: (address: string): boolean => TronWeb.isAddress(address),
 
   /**
+   * Format a raw BigInt/string amount into a human-readable decimal string.
+   * Inverse of parseUnits. Example: formatUnits("1500000000000000000", 18) => "1.5"
+   */
+  formatUnits: (value: string | bigint, decimals: number): string => {
+    const s = value.toString();
+    if (decimals === 0) return s;
+    const padded = s.padStart(decimals + 1, "0");
+    const intPart = padded.slice(0, padded.length - decimals);
+    const fracPart = padded.slice(padded.length - decimals).replace(/0+$/, "");
+    return fracPart ? `${intPart}.${fracPart}` : intPart;
+  },
+
+  /**
    * Parse a human-readable decimal string into a BigInt of the smallest unit.
    * Uses pure string manipulation to avoid IEEE-754 floating-point precision loss.
    * Example: parseUnits("1.5", 18) => 1500000000000000000n

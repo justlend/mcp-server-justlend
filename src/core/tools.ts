@@ -431,6 +431,25 @@ export function registerJustLendTools(server: McpServer) {
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
         const walletAddr = services.getWalletAddress();
+
+        // For TRC20 markets, check allowance first and inform user
+        if (!isTRX) {
+          const allowanceResult = await services.checkAllowance(walletAddr, market, network);
+          const currentAllowance = parseFloat(allowanceResult.allowance);
+          const requiredAmount = parseFloat(amount);
+          if (currentAllowance < requiredAmount) {
+            const underlyingSymbol = info?.underlyingSymbol ?? market;
+            return { content: [{ type: "text", text: JSON.stringify({
+              status: "approval_required",
+              market,
+              amount,
+              currentAllowance: allowanceResult.allowance,
+              hasApproval: allowanceResult.hasApproval,
+              message: `Current ${underlyingSymbol} allowance is ${allowanceResult.allowance}. You need to approve at least ${amount} ${underlyingSymbol} before supplying. Please call approve_underlying first.`,
+            }, null, 2) }] };
+          }
+        }
+
         const resourceWarning = await getResourceWarning(walletAddr, "supply", isTRX, network, market, amount);
         const result = await services.supply(privateKey, market, amount, network);
         return { content: [{ type: "text", text: JSON.stringify({
@@ -553,6 +572,25 @@ export function registerJustLendTools(server: McpServer) {
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
         const walletAddr = services.getWalletAddress();
+
+        // For TRC20 markets, check allowance first and inform user (skip for 'max' repay)
+        if (!isTRX && amount !== "max") {
+          const allowanceResult = await services.checkAllowance(walletAddr, market, network);
+          const currentAllowance = parseFloat(allowanceResult.allowance);
+          const requiredAmount = parseFloat(amount);
+          if (currentAllowance < requiredAmount) {
+            const underlyingSymbol = info?.underlyingSymbol ?? market;
+            return { content: [{ type: "text", text: JSON.stringify({
+              status: "approval_required",
+              market,
+              amount,
+              currentAllowance: allowanceResult.allowance,
+              hasApproval: allowanceResult.hasApproval,
+              message: `Current ${underlyingSymbol} allowance is ${allowanceResult.allowance}. You need to approve at least ${amount} ${underlyingSymbol} before repaying. Please call approve_underlying first.`,
+            }, null, 2) }] };
+          }
+        }
+
         const resourceWarning = await getResourceWarning(walletAddr, "repay", isTRX, network, market, amount);
         const result = await services.repay(privateKey, market, amount, network);
         return { content: [{ type: "text", text: JSON.stringify({
@@ -1086,22 +1124,67 @@ export function registerJustLendTools(server: McpServer) {
       description:
         "Calculate the cost to rent a specific amount of energy for a given duration. " +
         "Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, and daily cost. " +
-        "Use this to estimate costs before renting energy.",
+        "For NEW rentals: provide energyAmount and durationHours. " +
+        "For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals " +
+        "and calculates the incremental cost (subtracting existing security deposit). " +
+        "durationHours is optional for renewals (defaults to 0 = no additional time).",
       inputSchema: {
-        energyAmount: z.number().min(100000).describe("Amount of energy to rent (minimum 100,000)"),
-        durationDays: z.number().min(1).describe("Rental duration in days"),
+        energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
+        durationHours: z.coerce.number().min(0).optional().describe("Rental duration in hours. Required for new rentals (minimum 1). Optional for renewals (default 0 = no additional time)."),
+        receiverAddress: z.string().optional().describe("Receiver address. If provided, checks for existing rental to calculate renewal cost."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Calculate Energy Rental Price", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ energyAmount, durationDays, network = "mainnet" }) => {
+    async ({ energyAmount, durationHours, receiverAddress, network = "mainnet" }) => {
       try {
-        const durationSeconds = durationDays * 86400;
+        // Check if this is a renewal by looking for existing rental
+        if (receiverAddress) {
+          const privateKey = services.getConfiguredPrivateKey();
+          const tronWeb = services.getWallet(privateKey, network);
+          const walletAddress = tronWeb.defaultAddress.base58 as string;
+          const existingRental = await services.getRentInfo(walletAddress, receiverAddress, network);
+
+          if (existingRental.hasActiveRental) {
+            // Get remaining seconds from order
+            const orders = await services.getUserRentalOrders(walletAddress, "renter", 0, 50, network);
+            const matchingOrder = orders.orders.find(
+              (o: any) => o.receiver === receiverAddress && o.renter === walletAddress,
+            );
+            const remainingSeconds = matchingOrder ? Number(matchingOrder.canRentSeconds || 0) : 0;
+            const additionalSeconds = (durationHours || 0) * 3600;
+
+            const estimate = await services.calculateRenewalPrice(
+              energyAmount,
+              existingRental.rentBalance,
+              existingRental.securityDeposit,
+              remainingSeconds,
+              additionalSeconds,
+              network,
+            );
+            return { content: [{ type: "text", text: JSON.stringify({
+              ...estimate,
+              isRenewal: true,
+              durationHours: estimate.durationSeconds / 3600,
+              summary: `Renewal: adding ${energyAmount} energy costs ~${estimate.renewalPrepayment.toFixed(2)} TRX ` +
+                `(existing deposit: ${estimate.existingSecurityDeposit.toFixed(2)} TRX, ` +
+                `existing TRX: ${estimate.existingTrxAmount.toFixed(2)}, ` +
+                `total TRX after: ${estimate.totalTrxAmount})`,
+            }, null, 2) }] };
+          }
+        }
+
+        // New rental calculation
+        if (!durationHours || durationHours < 1) {
+          throw new Error("durationHours is required (minimum 1) for new rentals");
+        }
+        const durationSeconds = durationHours * 3600;
         const estimate = await services.calculateRentalPrice(energyAmount, durationSeconds, network);
         return { content: [{ type: "text", text: JSON.stringify({
           ...estimate,
-          durationDays,
-          summary: `Renting ${energyAmount} energy for ${durationDays} days costs ~${estimate.totalPrepayment.toFixed(2)} TRX ` +
+          isRenewal: false,
+          durationHours,
+          summary: `Renting ${energyAmount} energy for ${durationHours} hours costs ~${estimate.totalPrepayment.toFixed(2)} TRX ` +
             `(daily: ${estimate.dailyRentalCost.toFixed(2)} TRX, deposit: ${estimate.securityDeposit.toFixed(2)} TRX)`,
         }, null, 2) }] };
       } catch (error: any) {
@@ -1186,8 +1269,9 @@ export function registerJustLendTools(server: McpServer) {
     "get_return_rental_info",
     {
       description:
-        "Get information needed to return/cancel an energy rental, including remaining rent, " +
-        "security deposit refund, unrecovered energy amount, and daily rent cost.",
+        "Get estimated refund info for returning/canceling an energy rental. " +
+        "Shows how much TRX would be refunded (estimatedRefundTrx), remaining rent, " +
+        "security deposit, usage rental cost, unrecovered energy, and daily rent cost.",
       inputSchema: {
         renterAddress: z.string().optional().describe("Renter address. Default: configured wallet"),
         receiverAddress: z.string().describe("Receiver address"),
@@ -1215,20 +1299,23 @@ export function registerJustLendTools(server: McpServer) {
     {
       description:
         "Rent energy from JustLend for a specified receiver address. " +
-        "Automatically calculates TRX needed based on energy amount and duration. " +
+        "Automatically calculates TRX needed based on energy amount. " +
+        "For NEW rentals: durationHours is required (minimum 1 hour), minimum energy is 300,000. " +
+        "For RENEWALS (existing active rental to the same receiver): durationHours is NOT needed — " +
+        "the remaining duration from the existing order is used automatically. Minimum energy for renewal is 50,000. " +
         "Pre-checks: rental not paused, amount within limits, sufficient TRX balance.",
       inputSchema: {
         receiverAddress: z.string().describe("Address that will receive the energy"),
-        energyAmount: z.number().min(100000).describe("Amount of energy to rent (minimum 100,000)"),
-        durationDays: z.number().min(1).describe("Rental duration in days"),
+        energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
+        durationHours: z.coerce.number().min(1).optional().describe("Rental duration in hours (minimum 1 hour). Required for new rentals. Ignored for renewals (uses existing order's remaining duration)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Rent Energy", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ receiverAddress, energyAmount, durationDays, network = "mainnet" }) => {
+    async ({ receiverAddress, energyAmount, durationHours, network = "mainnet" }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
-        const durationSeconds = durationDays * 86400;
+        const durationSeconds = durationHours ? durationHours * 3600 : undefined;
         const result = await services.rentEnergy(privateKey, receiverAddress, energyAmount, durationSeconds, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {

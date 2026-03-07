@@ -12,6 +12,8 @@
 import { getTronWeb, getWallet } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { ENERGY_MARKET_ABI } from "../abis.js";
+import { waitForTransaction } from "./transactions.js";
+import { checkResourceSufficiency } from "./lending.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
@@ -147,6 +149,14 @@ export interface RentalPriceEstimate {
   dailyRentalCost: number;
 }
 
+export interface RenewalPriceEstimate extends RentalPriceEstimate {
+  existingTrxAmount: number;
+  existingSecurityDeposit: number;
+  existingRemainingSeconds: number;
+  totalTrxAmount: number;
+  renewalPrepayment: number;
+}
+
 /**
  * Calculate the rental price for a given energy amount and duration.
  */
@@ -202,6 +212,79 @@ export async function calculateRentalPrice(
   };
 }
 
+/**
+ * Calculate the renewal price for adding energy to an existing rental.
+ *
+ * Key differences from new rental calculation:
+ * - Uses totalTrxAmount (existing + new) for prepayment and fee
+ * - Subtracts existing security deposit from total prepayment
+ * - Rate is queried based on new/incremental TRX amount only
+ */
+export async function calculateRenewalPrice(
+  energyAmount: number,
+  existingTrxAmount: number,
+  existingSecurityDeposit: number,
+  existingRemainingSeconds: number,
+  additionalDurationSeconds = 0,
+  network = "mainnet",
+): Promise<RenewalPriceEstimate> {
+  const dashboard = await getEnergyRentalDashboard(network);
+  const params = await getEnergyRentalParams(network);
+
+  if (params.rentPaused) {
+    throw new Error("Energy rental is currently paused");
+  }
+
+  const energyStakePerTrx = Number(dashboard.energyStakePerTrx);
+  if (!energyStakePerTrx || energyStakePerTrx <= 0 || Number.isNaN(energyStakePerTrx)) {
+    throw new Error("Invalid energyStakePerTrx from dashboard");
+  }
+
+  // New TRX to add (incremental)
+  const newTrxAmount = energyAmount > 0 ? Math.ceil(energyAmount / energyStakePerTrx) : 0;
+  const totalTrxAmount = newTrxAmount + existingTrxAmount;
+
+  // Rate is based on the NEW/incremental amount
+  const rateInfo = await getRentalRate(newTrxAmount, network);
+  const rate = rateInfo.effectiveRate;
+
+  // Fee on total TRX amount
+  const fee = Math.max(params.minFee, totalTrxAmount * params.feeRatio);
+
+  // Total seconds = existing remaining + additional duration
+  const totalSeconds = existingRemainingSeconds + additionalDurationSeconds;
+
+  // Gross prepayment for the combined order, minus existing deposit
+  const grossPrepayment =
+    totalTrxAmount * rate * (totalSeconds + 86400 + params.liquidateThreshold) + fee;
+  const renewalPrepayment = Math.max(0, grossPrepayment - existingSecurityDeposit);
+
+  // Security deposit for the combined order
+  const unUsageChargeRent =
+    totalTrxAmount *
+    rate *
+    (86400 * (1 - params.usageChargeRatio) + params.liquidateThreshold);
+  const securityDeposit = unUsageChargeRent + fee;
+
+  const dailyRentalCost = totalTrxAmount * rate * 86400;
+
+  return {
+    energyAmount,
+    trxAmount: newTrxAmount,
+    durationSeconds: totalSeconds,
+    rate,
+    fee,
+    totalPrepayment: renewalPrepayment,
+    securityDeposit,
+    dailyRentalCost,
+    existingTrxAmount,
+    existingSecurityDeposit,
+    existingRemainingSeconds,
+    totalTrxAmount,
+    renewalPrepayment,
+  };
+}
+
 // ============================================================================
 // User Rental Queries
 // ============================================================================
@@ -218,21 +301,46 @@ export async function getUserRentalOrders(
 ) {
   validateTronAddress(address, "address");
   const apiHost = getApiHost(network);
+  // Always pass both renter and receiver to get complete results,
+  // since self-rental orders (renter === receiver) only appear in
+  // the renter-side `orders` list from the API.
   const params = new URLSearchParams({
     rentType: "1",
     orderBy: "0",
     page: String(page),
     pageSize: String(pageSize),
+    renter: address,
+    receiver: address,
   });
-
-  if (type === "renter" || type === "all") params.set("renter", address);
-  if (type === "receiver" || type === "all") params.set("receiver", address);
 
   const resp = await fetchWithTimeout(`${apiHost}/strx/rent/allOrderList?${params}`);
   const json = await resp.json();
   if (json.code !== 0) throw new Error(`Order list API error: ${json.code}`);
 
-  return json.data;
+  const data = json.data;
+  const renterOrders: any[] = data.orders || [];
+  const receiverOrders: any[] = data.receiverOrders || [];
+
+  // Self-rental orders (renter === receiver) appear only in renterOrders,
+  // but should also be visible when querying as "receiver".
+  const selfRentalOrders = renterOrders.filter((o: any) => o.renter === o.receiver);
+
+  if (type === "renter") {
+    return { total: data.total || 0, receiverTotal: 0, orders: renterOrders, receiverOrders: [] };
+  }
+  if (type === "receiver") {
+    // Merge receiverOrders with self-rental orders from the renter side
+    const merged = [...receiverOrders, ...selfRentalOrders];
+    return { total: 0, receiverTotal: merged.length, orders: [], receiverOrders: merged };
+  }
+  // "all" — include self-rental orders in receiverOrders as well
+  const mergedReceiverOrders = [...receiverOrders, ...selfRentalOrders];
+  return {
+    total: data.total || 0,
+    receiverTotal: mergedReceiverOrders.length,
+    orders: renterOrders,
+    receiverOrders: mergedReceiverOrders,
+  };
 }
 
 /**
@@ -263,7 +371,8 @@ export async function getRentInfo(
 }
 
 /**
- * Get return rental info from the API.
+ * Get return rental info from the API and on-chain data.
+ * Includes estimated TRX refund if the rental is returned now.
  */
 export async function getReturnRentalInfo(
   renter: string,
@@ -274,15 +383,35 @@ export async function getReturnRentalInfo(
   validateTronAddress(receiver, "receiver address");
   const apiHost = getApiHost(network);
   const params = new URLSearchParams({ renter, receiver, rentType: "1" });
-  const resp = await fetchWithTimeout(`${apiHost}/strx/rent/quit?${params}`);
-  const json = await resp.json();
+
+  const [apiResp, onChainInfo] = await Promise.all([
+    fetchWithTimeout(`${apiHost}/strx/rent/quit?${params}`),
+    getRentInfo(renter, receiver, network),
+  ]);
+
+  const json = await apiResp.json();
+  const data = json.data || {};
+
+  const securityDeposit = Number(data.securityDeposit || 0);
+  const rentRemain = Number(data.rentRemain || 0);
+  const usageRental = Number(data.usageRental || 0);
+  const dailyRent = Number(data.dailyRent || 0);
+  const rentAmount = Number(data.rentAmount || 0);
+  const unrecoveredEnergyAmount = Number(data.unrecoveredEnergyAmount || 0);
+
+  // Estimated refund = securityDeposit + rentRemain (remaining prepayment not yet consumed)
+  const estimatedRefundTrx = (securityDeposit + rentRemain) / TRX_PRECISION;
 
   return {
-    securityDeposit: json.data?.securityDeposit,
-    rentRemain: json.data?.rentRemain,
-    unrecoveredEnergyAmount: json.data?.unrecoveredEnergyAmount,
-    dailyRent: json.data?.dailyRent,
-    rentAmount: json.data?.rentAmount,
+    hasActiveRental: onChainInfo.hasActiveRental,
+    delegatedTrx: onChainInfo.rentBalance,
+    securityDeposit: securityDeposit / TRX_PRECISION,
+    rentRemain: rentRemain / TRX_PRECISION,
+    usageRental: usageRental / TRX_PRECISION,
+    dailyRent: dailyRent / TRX_PRECISION,
+    rentAmount: rentAmount / TRX_PRECISION,
+    unrecoveredEnergyAmount,
+    estimatedRefundTrx,
   };
 }
 
@@ -293,6 +422,10 @@ export async function getReturnRentalInfo(
 /**
  * Rent energy for a receiver address.
  *
+ * For new rentals, durationSeconds is required.
+ * For renewals (existing active rental), durationSeconds is ignored —
+ * the remaining duration from the existing order is used automatically.
+ *
  * Validations:
  * 1. Rental not paused
  * 2. Amount within max rentable
@@ -302,24 +435,66 @@ export async function rentEnergy(
   privateKey: string,
   receiverAddress: string,
   energyAmount: number,
-  durationSeconds: number,
+  durationSeconds: number | undefined,
   network = "mainnet",
 ) {
   validateTronAddress(receiverAddress, "receiver address");
 
-  // Calculate price first (includes pause check and max rentable check)
-  const priceEstimate = await calculateRentalPrice(energyAmount, durationSeconds, network);
+  // Check if this is a renewal (existing active rental)
+  const tronWebForCheck = getWallet(privateKey, network);
+  const walletAddress = tronWebForCheck.defaultAddress.base58 as string;
+  const existingRental = await getRentInfo(walletAddress, receiverAddress, network);
+  const isRenewal = existingRental.hasActiveRental;
 
-  // Check TRX balance
-  const tronWeb = getWallet(privateKey, network);
-  const walletAddress = tronWeb.defaultAddress.base58 as string;
-  const balanceSun = await tronWeb.trx.getBalance(walletAddress);
+  let priceEstimate: RentalPriceEstimate;
+
+  if (isRenewal) {
+    // For renewals, get existing order remaining duration
+    const orders = await getUserRentalOrders(walletAddress, "renter", 0, 50, network);
+    const matchingOrder = orders.orders.find(
+      (o: any) => o.receiver === receiverAddress && o.renter === walletAddress,
+    );
+    if (!matchingOrder || !matchingOrder.canRentSeconds) {
+      throw new Error("Active rental found but could not retrieve remaining duration from order");
+    }
+    const remainingSeconds = Number(matchingOrder.canRentSeconds);
+    if (remainingSeconds <= 0) {
+      throw new Error("Existing rental has no remaining duration. Please create a new rental instead.");
+    }
+
+    // Use renewal calculation: accounts for existing deposit and TRX
+    priceEstimate = await calculateRenewalPrice(
+      energyAmount,
+      existingRental.rentBalance,
+      existingRental.securityDeposit,
+      remainingSeconds,
+      0, // no additional duration for pure energy renewal
+      network,
+    );
+  } else {
+    if (!durationSeconds || durationSeconds <= 0) {
+      throw new Error("durationSeconds is required for new rentals");
+    }
+    if (energyAmount < 300000) {
+      throw new Error("Minimum energy amount for new rentals is 300,000. For renewals, minimum is 50,000.");
+    }
+    priceEstimate = await calculateRentalPrice(energyAmount, durationSeconds, network);
+  }
+
+  // Check TRX balance with dynamic gas estimation
+  const balanceSun = await tronWebForCheck.trx.getBalance(walletAddress);
   const balanceTrx = Number(balanceSun) / TRX_PRECISION;
 
-  const totalNeeded = priceEstimate.totalPrepayment + DEFAULT_FEE_LIMIT / TRX_PRECISION;
+  // Typical rent_energy tx: ~69k energy, ~383 bandwidth
+  const RENT_ENERGY_ESTIMATE = 70000;
+  const RENT_BANDWIDTH_ESTIMATE = 400;
+  const resourceCheck = await checkResourceSufficiency(walletAddress, RENT_ENERGY_ESTIMATE, RENT_BANDWIDTH_ESTIMATE, network);
+  const gasTrx = parseFloat(resourceCheck.energyBurnTRX) + parseFloat(resourceCheck.bandwidthBurnTRX);
+
+  const totalNeeded = priceEstimate.totalPrepayment + gasTrx;
   if (balanceTrx < totalNeeded) {
     throw new Error(
-      `Insufficient TRX balance for energy rental. Need ~${totalNeeded.toFixed(2)} TRX (prepayment + gas)`,
+      `Insufficient TRX balance for energy rental. Need ~${totalNeeded.toFixed(2)} TRX (prepayment: ${priceEstimate.totalPrepayment.toFixed(2)} TRX + gas: ${gasTrx.toFixed(2)} TRX)`,
     );
   }
 
@@ -327,8 +502,8 @@ export async function rentEnergy(
   const stakeAmountSun = BigInt(Math.floor(priceEstimate.trxAmount * TRX_PRECISION));
   const prepaymentSun = BigInt(Math.ceil(priceEstimate.totalPrepayment * TRX_PRECISION));
 
-  const contract = tronWeb.contract(ENERGY_MARKET_ABI, addrs.strx.market);
-  const txId = await contract.methods
+  const rentContract = tronWebForCheck.contract(ENERGY_MARKET_ABI, addrs.strx.market);
+  const txId = await rentContract.methods
     .rentResource(receiverAddress, stakeAmountSun.toString(), 1)
     .send({ callValue: prepaymentSun.toString(), feeLimit: DEFAULT_FEE_LIMIT });
 
@@ -338,7 +513,8 @@ export async function rentEnergy(
     energyAmount: priceEstimate.energyAmount,
     trxAmount: priceEstimate.trxAmount,
     totalPrepayment: priceEstimate.totalPrepayment,
-    durationSeconds,
+    durationSeconds: priceEstimate.durationSeconds,
+    isRenewal,
   };
 }
 
@@ -388,11 +564,52 @@ export async function returnEnergyRental(
     1,
   ).send({ feeLimit: DEFAULT_FEE_LIMIT });
 
+  // Parse ReturnResource event from transaction logs for actual refunded amounts
+  // ReturnResource(address indexed renter, address indexed receiver,
+  //   uint256 subedAmount, uint256 resourceType, uint256 usageRental,
+  //   uint256 subedSecurityDeposit, uint256 amount, uint256 securityDeposit, uint256 rentIndex)
+  let actualSubedAmount = rentInfo.rentBalance;
+  let actualSubedSecurityDeposit = rentInfo.securityDeposit;
+  let actualUsageRental = 0;
+
+  try {
+    const txInfo = await waitForTransaction(txId, network);
+    if (txInfo.log && txInfo.log.length > 0) {
+      // ReturnResource event topic: keccak256 of the event signature
+      const RETURN_RESOURCE_TOPIC =
+        tronWeb.sha3(
+          "ReturnResource(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
+        )?.replace(/^0x/, "");
+
+      for (const log of txInfo.log) {
+        const topics = log.topics || [];
+        if (topics.length > 0 && topics[0] === RETURN_RESOURCE_TOPIC) {
+          const data = log.data || "";
+          // data layout (each 64 hex chars = 32 bytes):
+          // [0..64]   subedAmount
+          // [64..128] resourceType
+          // [128..192] usageRental
+          // [192..256] subedSecurityDeposit
+          // [256..320] amount
+          // [320..384] securityDeposit
+          // [384..448] rentIndex
+          actualSubedAmount = Number(BigInt("0x" + data.slice(0, 64))) / TRX_PRECISION;
+          actualUsageRental = Number(BigInt("0x" + data.slice(128, 192))) / TRX_PRECISION;
+          actualSubedSecurityDeposit = Number(BigInt("0x" + data.slice(192, 256))) / TRX_PRECISION;
+          break;
+        }
+      }
+    }
+  } catch {
+    // If we can't parse the event, fall back to pre-tx estimates
+  }
+
   return {
     txId,
     renter,
     receiver,
-    returnedTrxAmount: rentInfo.rentBalance,
-    refundedDeposit: rentInfo.securityDeposit,
+    returnedTrxAmount: actualSubedAmount,
+    usageRental: actualUsageRental,
+    refundedDeposit: actualSubedSecurityDeposit,
   };
 }
