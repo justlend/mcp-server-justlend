@@ -593,9 +593,12 @@ export async function returnEnergyRental(
           // [256..320] amount
           // [320..384] securityDeposit
           // [384..448] rentIndex
-          actualSubedAmount = Number(BigInt("0x" + data.slice(0, 64))) / TRX_PRECISION;
-          actualUsageRental = Number(BigInt("0x" + data.slice(128, 192))) / TRX_PRECISION;
-          actualSubedSecurityDeposit = Number(BigInt("0x" + data.slice(192, 256))) / TRX_PRECISION;
+          // 安全剥离 0x 前缀
+          const cleanData = data.replace(/^0x/, "");
+          // 基于 cleanData 进行切片
+          actualSubedAmount = Number(BigInt("0x" + cleanData.slice(0, 64))) / TRX_PRECISION;
+          actualUsageRental = Number(BigInt("0x" + cleanData.slice(128, 192))) / TRX_PRECISION;
+          actualSubedSecurityDeposit = Number(BigInt("0x" + cleanData.slice(192, 256))) / TRX_PRECISION;
           break;
         }
       }

@@ -88,7 +88,7 @@ Provide a summary:
 **Objective**: Borrow ${amount} from the ${market} market on ${network}.
 
 ## Risk Assessment (CRITICAL)
-1. Call \`get_account_summary\` to check current position:
+1. Call \`get_account_summary\` tool to check current position:
    - Current collateral value (totalSupplyUSD)
    - Current borrows (totalBorrowUSD)
    - Health factor — must be > 1.0

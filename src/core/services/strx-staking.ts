@@ -184,7 +184,7 @@ export async function stakeTrxToStrx(
  */
 export async function unstakeStrx(
   privateKey: string,
-  amountStrx: number,
+  amountStrx: number | string,
   network = "mainnet",
 ) {
   const tronWeb = getWallet(privateKey, network);
@@ -195,13 +195,14 @@ export async function unstakeStrx(
   const strxBalance = await getStrxBalance(walletAddress, network);
   const balanceNum = Number(strxBalance.raw) / TOKEN_PRECISION;
 
-  if (balanceNum < amountStrx) {
+  if (tronWeb.toBigNumber(balanceNum).lt(amountStrx)) {
     throw new Error(
       `Insufficient sTRX balance for unstaking. Need ${amountStrx} sTRX`,
     );
   }
 
-  const amountWei = BigInt(Math.floor(amountStrx * TOKEN_PRECISION));
+  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
+  const amountWei = BigInt(amountWeiStr);
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
   const { txID: txId } = await safeSend(privateKey, {
@@ -219,7 +220,7 @@ export async function unstakeStrx(
     const dashboard = await getStrxDashboard(network);
     const exchangeRate = Number(dashboard.exchangeRate) / TOKEN_PRECISION;
     if (exchangeRate > 0) {
-      estimatedTrx = (amountStrx * (1 / exchangeRate)).toFixed(6);
+      estimatedTrx = (Number(amountStrx) * (1 / exchangeRate)).toFixed(6);
     }
     unfreezeDelayDays = dashboard.unfreezeDelayDays;
   } catch {
