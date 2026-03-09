@@ -31,24 +31,24 @@ export function registerJustLendPrompts(server: McpServer) {
 **Objective**: Supply ${amount} into the ${market} market on ${network} to earn interest.
 
 ## Pre-flight Checks
-1. **Wallet**: Call \`get_wallet_address\` to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
 2. **Balance Check**:
-   - If ${market} is jTRX: Call \`get_trx_balance\` to verify sufficient TRX.
-   - If TRC20 (jUSDT, jSUN, etc.): Call \`get_token_balance\` with the underlying token address to verify balance.
-3. **Market Status**: Call \`get_market_data\` for ${market} to check:
+   - If ${market} is jTRX: Call the \`get_trx_balance\` tool to verify sufficient TRX.
+   - If TRC20 (jUSDT, jSUN, etc.): Call the \`get_token_balance\` tool with the underlying token address to verify balance.
+3. **Market Status**: Call the \`get_market_data\` tool for ${market} to check:
    - Is \`mintPaused\` false? (supply must be enabled)
    - What is the current \`supplyAPY\`?
    - What is the \`collateralFactor\`?
 
 ## Approval (TRC20 only, skip for jTRX)
-4. Call \`check_allowance\` for ${market} passing amount='${amount}' to explicitly check sufficiency.
-5. If the returned \`isSufficient\` is false, call \`approve_underlying\` for ${market} with amount='max'.
+4. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
+5. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market} with amount='max'.
 
 ## Execute Supply
-6. Call \`supply\` with market='${market}', amount='${amount}'.
+6. Call the \`supply\` tool with market='${market}', amount='${amount}'.
 
 ## Post-Supply Verification
-7. **CRITICAL**: Call \`get_account_summary\` immediately to refresh your context with:
+7. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
    - Updated supply balance in ${market}
    - New health factor
    - Current block number and timestamp
@@ -89,12 +89,12 @@ Provide a summary:
 **Objective**: Borrow ${amount} from the ${market} market on ${network}.
 
 ## Risk Assessment (CRITICAL)
-1. Call \`get_account_summary\` tool to check current position:
+1. Call the \`get_account_summary\` tool to check current position:
    - Current collateral value (totalSupplyUSD)
    - Current borrows (totalBorrowUSD)
    - Health factor — must be > 1.0
    - Liquidity available
-2. Call \`get_market_data\` for ${market} to check:
+2. Call the \`get_market_data\` tool for ${market} to check:
    - Is \`borrowPaused\` false?
    - Current \`borrowAPY\` (cost of borrowing)
    - Available liquidity (can the market fulfill this borrow?)
@@ -102,7 +102,7 @@ Provide a summary:
 ## Collateral Verification
 3. Ensure at least one market is entered as collateral.
    - Check \`collateralMarkets\` from account summary.
-   - If none: guide user to \`enter_market\` first.
+   - If none: guide user to the \`enter_market\` tool first.
 4. Calculate projected health factor after borrow:
    - New borrow = current borrow + ${amount} * price
    - New health = collateral / new borrow
@@ -110,10 +110,10 @@ Provide a summary:
    - **REFUSE if health factor would drop below 1.05** (too dangerous)
 
 ## Execute Borrow
-5. Call \`borrow\` with market='${market}', amount='${amount}'.
+5. Call the \`borrow\` tool with market='${market}', amount='${amount}'.
 
 ## Post-Borrow Verification
-6. **CRITICAL**: Call \`get_account_summary\` immediately to refresh your context with:
+6. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
    - New borrow balance
    - Updated health factor
    - Remaining borrowing capacity
@@ -154,20 +154,20 @@ Provide a summary:
 **Objective**: Repay ${amount} to the ${market} market on ${network}.
 
 ## Pre-flight Checks
-1. Call \`get_account_summary\` to see current borrow balance in ${market}.
+1. Call the \`get_account_summary\` tool to see current borrow balance in ${market}.
 2. Verify wallet has enough tokens to repay:
-   - jTRX: Call \`get_trx_balance\`
-   - TRC20: Call \`get_token_balance\` for the underlying
+   - jTRX: Call the \`get_trx_balance\` tool
+   - TRC20: Call the \`get_token_balance\` tool for the underlying
 
 ## Approval (TRC20 only, skip for jTRX)
-3. Call \`check_allowance\` for ${market} passing amount='${amount}' to explicitly check sufficiency.
-4. If the returned \`isSufficient\` is false, call \`approve_underlying\` for ${market}.
+3. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
+4. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market}.
 
 ## Execute Repay
-5. Call \`repay\` with market='${market}', amount='${amount}'.
+5. Call the \`repay\` tool with market='${market}', amount='${amount}'.
 
 ## Verification
-6. **CRITICAL**: Call \`get_account_summary\` immediately to refresh your context with:
+6. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
    - Reduced borrow balance
    - Improved health factor
    - Current block number and timestamp
@@ -204,9 +204,9 @@ Provide a summary:
 **Objective**: Provide a comprehensive analysis of the lending portfolio${address ? ` for ${address}` : ""} on ${network}.
 
 ## Data Collection
-1. Call \`get_account_summary\`${address ? ` with address='${address}'` : ""} to get all positions.
-2. Call \`get_all_markets\` to get current market conditions.
-3. Call \`get_protocol_summary\` for protocol parameters.
+1. Call the \`get_account_summary\` tool${address ? ` with address='${address}'` : ""} to get all positions.
+2. Call the \`get_all_markets\` tool to get current market conditions.
+3. Call the \`get_protocol_summary\` tool for protocol parameters.
 
 ## Analysis Points
 
@@ -267,26 +267,26 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Rent ${energyAmount} energy for ${durationDays} days to ${receiverAddress} on ${network}.
 
 ## Pre-flight Checks
-1. **Wallet**: Call \`get_wallet_address\` to confirm the active wallet.
-2. **Rental Status**: Call \`get_energy_rental_params\` to check:
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Rental Status**: Call the \`get_energy_rental_params\` tool to check:
    - Is \`rentPaused\` false? (rental must be enabled)
    - What is the max rentable amount?
-3. **Price Estimate**: Call \`calculate_energy_rental_price\` with energyAmount=${energyAmount}, durationDays=${durationDays} to get:
+3. **Price Estimate**: Call the \`calculate_energy_rental_price\` tool with energyAmount=${energyAmount}, durationDays=${durationDays} to get:
    - Total TRX prepayment needed
    - Security deposit amount
    - Daily rental cost
-4. **Balance Check**: Call \`get_trx_balance\` to verify sufficient TRX for prepayment + gas (~200 TRX).
-5. **Existing Rental**: Call \`get_energy_rent_info\` with receiverAddress='${receiverAddress}' to check if there's already an active rental.
+4. **Balance Check**: Call the \`get_trx_balance\` tool to verify sufficient TRX for prepayment + gas (~200 TRX).
+5. **Existing Rental**: Call the \`get_energy_rent_info\` tool with receiverAddress='${receiverAddress}' to check if there's already an active rental.
 
 ## Execute Rental
-6. If all checks pass, call \`rent_energy\` with:
+6. If all checks pass, call the \`rent_energy\` tool with:
    - receiverAddress='${receiverAddress}'
    - energyAmount=${energyAmount}
    - durationDays=${durationDays}
 
 ## Post-Rental Verification
-7. Call \`get_energy_rent_info\` to confirm the rental is active.
-8. Call \`get_user_energy_rental_orders\` to see the new order.
+7. Call the \`get_energy_rent_info\` tool to confirm the rental is active.
+8. Call the \`get_user_energy_rental_orders\` tool to see the new order.
 
 ## Report
 - Energy rented and duration
@@ -322,85 +322,4 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Stake ${amount} TRX on ${network} to receive sTRX and earn staking rewards.
 
 ## Pre-flight Checks
-1. **Wallet**: Call \`get_wallet_address\` to confirm the active wallet.
-2. **Dashboard**: Call \`get_strx_dashboard\` to check:
-   - Current sTRX/TRX exchange rate
-   - Total APY (vote APY + rental income)
-   - How much sTRX you'll receive for ${amount} TRX
-3. **Balance Check**: Call \`get_trx_balance\` to verify sufficient TRX for staking + gas.
-4. **Current Position**: Call \`get_strx_account\` to see existing staking position.
-
-## Execute Staking
-5. Call \`stake_trx_to_strx\` with amount=${amount}.
-
-## Post-Staking Verification
-6. Call \`get_strx_balance\` to confirm sTRX received.
-7. Call \`get_strx_account\` to see updated staking position.
-
-## Report
-- Amount of TRX staked
-- sTRX received (or estimated)
-- Current APY and estimated annual earnings
-- Note about unstaking: requires unbonding period
-
-**Safety**: If balance is insufficient, STOP and report.`,
-        },
-      }],
-    }),
-  );
-
-  // ============================================================================
-  // MARKET COMPARISON
-  // ============================================================================
-  server.registerPrompt(
-    "compare_markets",
-    {
-      description: "Compare JustLend markets to find the best opportunities for supply or borrow",
-      argsSchema: {
-        action: z.enum(["supply", "borrow"]).describe("Whether looking to supply or borrow"),
-        network: z.string().optional().describe("Network (default: mainnet)"),
-      },
-    },
-    ({ action, network = "mainnet" }) => ({
-      messages: [{
-        role: "user",
-        content: {
-          type: "text",
-          text: `# JustLend Market Comparison — Best ${action === "supply" ? "Supply" : "Borrow"} Opportunities
-
-**Objective**: Compare all JustLend markets to find the best ${action} opportunities on ${network}.
-
-## Data Collection
-1. Call \`get_all_markets\` to get all market data.
-
-## Analysis
-${action === "supply" ? `
-### Best Supply Opportunities (sorted by APY)
-- Rank markets by supplyAPY (highest first)
-- For each market show: symbol, APY, TVL, utilization, collateral factor
-- Flag any paused markets
-- Note: higher utilization often means more volatile APY
-
-### Considerations
-- Collateral factor: higher = more borrowing power if used as collateral
-- Utilization rate: very high (>90%) may cause withdrawal delays
-- TVL: larger markets are generally more stable
-` : `
-### Best Borrow Opportunities (sorted by APY)
-- Rank markets by borrowAPY (lowest first — cheapest to borrow)
-- For each market show: symbol, APY, available liquidity, collateral factor
-- Flag any paused markets
-
-### Considerations
-- Available liquidity: ensure enough exists for your borrow size
-- Borrow APY: lower is better (less interest cost)
-- Utilization: if near kink, rates may jump suddenly
-`}
-
-## Recommendation
-Provide a top-3 recommendation with reasoning.`,
-        },
-      }],
-    }),
-  );
-}
+1. **Wallet**: Call the \`get

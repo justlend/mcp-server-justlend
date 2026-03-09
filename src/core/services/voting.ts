@@ -25,7 +25,6 @@ const JST_DECIMALS = 18;
 const TOKEN_PRECISION = 10n ** BigInt(JST_DECIMALS);
 const BLOCK_TIME_MS = 3000; // TRON block time ~3 seconds
 
-
 /**
  * Estimate the current block number by fetching the latest block
  * and extrapolating based on time difference (3s per block on TRON).
@@ -95,7 +94,8 @@ export async function getProposalList(network = "mainnet"): Promise<{
     proposalId: item.proposalId ?? item.id,
     state: item.state,
     stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
-    title: item.title || "",
+    // 修改点：处理由于前端硬编码导致后端无 title 返回的情况
+    title: item.title ? item.title : `[Proposal #${item.proposalId ?? item.id}] (Details maintained in frontend)`,
     proposer: item.proposer || "",
     forVotes: item.forVotes || "0",
     againstVotes: item.againstVotes || "0",
