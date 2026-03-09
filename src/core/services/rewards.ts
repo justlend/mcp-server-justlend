@@ -15,16 +15,17 @@
 
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
+import { getJTokenDetailsFromAPI } from "./markets.js";
 
 // Merkle Distributor ABI (simplified)
 const MERKLE_DISTRIBUTOR_ABI = [
   {
     "name": "claim",
     "inputs": [
-      {"name": "index", "type": "uint256"},
-      {"name": "account", "type": "address"},
-      {"name": "amount", "type": "uint256"},
-      {"name": "merkleProof", "type": "bytes32[]"}
+      { "name": "index", "type": "uint256" },
+      { "name": "account", "type": "address" },
+      { "name": "amount", "type": "uint256" },
+      { "name": "merkleProof", "type": "bytes32[]" }
     ],
     "outputs": [],
     "stateMutability": "Nonpayable",
@@ -32,8 +33,8 @@ const MERKLE_DISTRIBUTOR_ABI = [
   },
   {
     "name": "isClaimed",
-    "inputs": [{"name": "index", "type": "uint256"}],
-    "outputs": [{"name": "", "type": "bool"}],
+    "inputs": [{ "name": "index", "type": "uint256" }],
+    "outputs": [{ "name": "", "type": "bool" }],
     "stateMutability": "View",
     "type": "Function"
   }
@@ -304,23 +305,49 @@ export async function claimMiningRewards(
  * VERSION: V1 - JustLend V1 USDD mining program configuration
  * USDD has special mining periods with different reward tokens (single vs dual-token mining).
  */
-export function getUSDDMiningConfig() {
-  return {
-    usddV1: {
-      endTime: 1737896400000, // 2025-01-26 21:00:00
-      rewardToken: "USDD",
-      jToken: "TX7kybeP6UwTBRHLNPYmswFESHfyjm9bAS", // jUSDD OLD
-    },
-    usddV2: {
-      startTime: 1738411200000, // 2025-02-01 20:00:00
-      rewardTokens: ["USDD", "TRX"], // Dual token rewards
-      jToken: "TKFRELGGoRgiayhwJTNNLqCNjFoLBh3Mnf", // jUSDD
-    },
-    dualMining: {
-      startTime: 1764041700000, // Future date
-      description: "Enhanced dual-token mining program"
-    }
-  };
+export async function getUSDDMiningConfig(network = "mainnet") {
+  const addresses = getJustLendAddresses(network);
+  const jUsddAddress = addresses.jTokens["jUSDD"]?.address; // jUSDD specifically
+
+  if (!jUsddAddress) {
+    throw new Error("jUSDD market not found in configuration for network: " + network);
+  }
+
+  try {
+    const detail = await getJTokenDetailsFromAPI(jUsddAddress, network);
+    if (!detail) throw new Error("API returned no data");
+
+    const usddReward = parseFloat(detail.farmRewardUsddAmount24h || "0");
+    const trxReward = parseFloat(detail.farmRewardTrxAmount24h || "0");
+    const totalUsdReward = parseFloat(detail.farmRewardUSD24h || "0");
+    const apy = parseFloat(detail.farmApy || "0") * 100;
+
+    const activeTokens = [];
+    if (usddReward > 0) activeTokens.push("USDD");
+    if (trxReward > 0) activeTokens.push("TRX");
+
+    return {
+      jToken: jUsddAddress,
+      isDualMiningActive: usddReward > 0 && trxReward > 0,
+      activeRewardTokens: activeTokens,
+      dailyRewardUSDD: usddReward,
+      dailyRewardTRX: trxReward,
+      dailyTotalMiningRewardUSD: totalUsdReward,
+      miningAPY: `${apy.toFixed(4)}%`,
+      statusDescription: activeTokens.length > 1
+        ? "Dual-token mining is currently ACTIVE."
+        : activeTokens.length === 1
+          ? `Single-token mining (${activeTokens[0]}) is currently ACTIVE. Dual-mining has ended.`
+          : "USDD mining rewards have ended or are currently paused."
+    };
+  } catch (error) {
+    // Fallback if API fails
+    return {
+      statusDescription: "Failed to fetch live mining config, assuming dual-mining has ended.",
+      isDualMiningActive: false,
+      activeRewardTokens: ["USDD"],
+    };
+  }
 }
 
 /**
