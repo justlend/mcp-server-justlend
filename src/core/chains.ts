@@ -76,9 +76,9 @@ export const NETWORKS: Record<TronNetwork, NetworkConfig> = {
   },
   [TronNetwork.Nile]: {
     name: "Nile Testnet",
-    fullNode: "https://nile.trongrid.io",
-    solidityNode: "https://nile.trongrid.io",
-    eventServer: "https://nile.trongrid.io",
+    fullNode: "https://nile.trongrid.org",     // 替换掉原来的 https://nile.trongrid.io
+    solidityNode: "https://nile.trongrid.org", // 替换掉原来的 https://nile.trongrid.io
+    eventServer: "https://nile.trongrid.org",
     explorer: "https://nile.tronscan.org",
   },
 };
