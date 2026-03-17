@@ -90,6 +90,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     marketInfo,
     mintPaused,
     borrowPaused,
+    oracleAddressHex // <--- 动态从代理合约获取真实的 PriceOracle 地址
   ] = await Promise.all([
     jToken.methods.supplyRatePerBlock().call(),
     jToken.methods.borrowRatePerBlock().call(),
@@ -102,14 +103,17 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     comptroller.methods.markets(jTokenInfo.address).call(),
     comptroller.methods.mintGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.borrowGuardianPaused(jTokenInfo.address).call(),
+    comptroller.methods.oracle().call(),
   ]);
 
-  // Get price from oracle
+  // Get price from oracle (使用动态获取的真实地址)
   let underlyingPriceRaw: bigint;
   try {
-    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, addresses.priceOracle);
+    const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
+    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
     underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
-  } catch {
+  } catch (err) {
+    console.error(`[Oracle] Failed to fetch price for ${jTokenInfo.symbol}:`, err);
     underlyingPriceRaw = 0n;
   }
 
