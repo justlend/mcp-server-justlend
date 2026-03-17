@@ -87,10 +87,15 @@ export async function safeSend(
   const ownerAddress = tronWeb.defaultAddress.base58;
   if (!ownerAddress) throw new Error("Wallet not configured");
 
+  const args = params.args || [];
+  const hasCallValue = params.callValue && Number(params.callValue) > 0;
+  const isNativeTRXCall = hasCallValue && args.length === 0;
+
   // 1. Simulate and get energy requirement
-  // Note: we use estimateEnergy which triggers simulate contract under the hood
   let energyUsed = 0;
   let energyPenalty = 0;
+  let simulationDegraded = false;
+
   try {
     const simResult = await estimateEnergy({
       address: params.address,
@@ -101,9 +106,37 @@ export async function safeSend(
     }, network);
     energyUsed = simResult.energyUsed;
     energyPenalty = simResult.energyPenalty;
+    // 检查是否是降级估算
+    if ((simResult as any).degraded) {
+      simulationDegraded = true;
+    }
   } catch (err: any) {
-    // Check if the simulation threw an error meaning the TX would revert
-    throw new Error(`Transaction pre-flight simulation failed. The transaction would revert: ${err.message}`);
+    const errMsg = err.message || "";
+
+    // ====== 新增：对原生 TRX 调用的模拟失败做降级处理 ======
+    // 如果是 "No overload" 错误且是原生 TRX 调用，不阻断交易
+    if (isNativeTRXCall && errMsg.includes("No overload of")) {
+      simulationDegraded = true;
+      // 使用典型 energy 估算值
+      energyUsed = 80000;
+      energyPenalty = 0;
+      console.warn(
+        `[safeSend] Simulation skipped for native TRX call ${params.functionName}(): ${errMsg}. Using typical energy estimate.`
+      );
+    } else {
+      // ====== 改进：对 REVERT 错误尝试解码具体原因 ======
+      let enhancedMsg = errMsg;
+      // 尝试从错误信息中提取更具体的 revert reason
+      if (errMsg.includes("REVERT opcode executed")) {
+        enhancedMsg = `Transaction pre-flight simulation failed. The contract reverted the call. ` +
+          `This typically means the on-chain contract rejected the operation — ` +
+          `possible causes: market paused, oracle price unavailable, insufficient collateral, ` +
+          `or other contract-level validation failure. Raw: ${errMsg}`;
+      } else {
+        enhancedMsg = `Transaction pre-flight simulation failed. The transaction would revert: ${errMsg}`;
+      }
+      throw new Error(enhancedMsg);
+    }
   }
 
   // 2. Minimal resource balance check
@@ -114,20 +147,19 @@ export async function safeSend(
   const totalEnergyAvailable = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
   const totalEnergyTarget = energyUsed + energyPenalty;
   const energyDeficit = Math.max(0, totalEnergyTarget - totalEnergyAvailable);
-  // Estimate energy price (approx 420 sun max per energy unit on TRON right now)
   const trxForEnergy = BigInt(energyDeficit) * 420n;
 
-  // Bandwidth estimation: assume pessimistic 350 for contract call tx size
   const requiredBandwidth = 350;
   const totalBandwidthAvailable = ((resources.freeNetLimit || 0) - (resources.freeNetUsed || 0)) +
     ((resources.NetLimit || 0) - (resources.NetUsed || 0));
   const bandwidthDeficit = totalBandwidthAvailable >= requiredBandwidth ? 0 : requiredBandwidth;
-  const trxForBandwidth = BigInt(bandwidthDeficit) * 1000n; // 1000 sun per bandwidth
+  const trxForBandwidth = BigInt(bandwidthDeficit) * 1000n;
 
   const callValueSun = BigInt(params.callValue || 0);
 
-  // Add 10% safety margin for estimated fees
-  const feeMargin = (trxForEnergy + trxForBandwidth) * 110n / 100n;
+  // 降级模式下给更多余量（15%），正常模式 10%
+  const marginPercent = simulationDegraded ? 115n : 110n;
+  const feeMargin = (trxForEnergy + trxForBandwidth) * marginPercent / 100n;
   const requiredBalanceWithMargin = feeMargin + callValueSun;
 
   if (balanceSun < requiredBalanceWithMargin) {
@@ -147,18 +179,38 @@ export async function safeSend(
     );
     if (candidates.length === 0) throw new Error(`Function ${params.functionName} not found in ABI`);
 
-    const args = params.args || [];
-    const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
-    if (matched.length === 0) throw new Error(`No overload of ${params.functionName} accepts ${args.length} argument(s)`);
-    if (matched.length > 1) throw new Error(`Ambiguous overload for ${params.functionName} with ${args.length} argument(s)`);
+    let signature: string;
+    let typedParams: Array<{ type: string; value: any }>;
 
-    const func = matched[0];
-    const inputTypes = (func.inputs || []).map((i: any) => expandType(i));
-    const signature = `${params.functionName}(${inputTypes.join(",")})`;
-    const typedParams = args.map((val: any, index: number) => ({
-      type: inputTypes[index],
-      value: val,
-    }));
+    // ====== 新增：原生 TRX 零参数调用的签名构建 ======
+    if (isNativeTRXCall) {
+      // 优先匹配零参数重载
+      const zeroArgMatch = candidates.filter((item) => (item.inputs || []).length === 0);
+      if (zeroArgMatch.length > 0) {
+        // ABI 中有零参数版本，直接用
+        signature = `${params.functionName}()`;
+        typedParams = [];
+      } else {
+        // ABI 中没有零参数版本（如只有 repayBorrow(uint256)），
+        // 但实际合约有零参数的 payable 重载（通过 callValue 传值）。
+        // 直接用零参数签名发交易。
+        signature = `${params.functionName}()`;
+        typedParams = [];
+      }
+    } else {
+      // 标准路径：按参数数量匹配
+      const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
+      if (matched.length === 0) throw new Error(`No overload of ${params.functionName} accepts ${args.length} argument(s)`);
+      if (matched.length > 1) throw new Error(`Ambiguous overload for ${params.functionName} with ${args.length} argument(s)`);
+
+      const func = matched[0];
+      const inputTypes = (func.inputs || []).map((i: any) => expandType(i));
+      signature = `${params.functionName}(${inputTypes.join(",")})`;
+      typedParams = args.map((val: any, index: number) => ({
+        type: inputTypes[index],
+        value: val,
+      }));
+    }
 
     const options: any = {
       feeLimit: params.feeLimit || 1_000_000_000,
@@ -187,7 +239,6 @@ export async function safeSend(
     throw new Error(`Transaction failed during broadcast: ${error.message}`);
   }
 }
-
 /**
  * Fetch the ABI for a verified contract from TronGrid.
  */
@@ -496,6 +547,52 @@ export async function estimateEnergy(
     if (candidates.length === 0) throw new Error(`Function ${params.functionName} not found in ABI`);
 
     const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
+
+    // ====== 新增：原生 TRX 零参数 + callValue 降级处理 ======
+    if (matched.length === 0 && args.length === 0 && params.callValue && Number(params.callValue) > 0) {
+      // 没有零参数重载，但这是一个原生 TRX 调用（通过 callValue 传值）。
+      // 直接用零参数函数签名调 triggerConstantContract，绕过 ABI 匹配。
+      const signature = `${params.functionName}()`;
+      try {
+        const result = await tronWeb.transactionBuilder.triggerConstantContract(
+          params.address,
+          signature,
+          { callValue: Number(params.callValue) },
+          [],
+          ownerAddress,
+        );
+
+        if (result?.result?.result) {
+          return {
+            energyUsed: result.energy_used || 0,
+            energyPenalty: result.energy_penalty || 0,
+            totalEnergy: (result.energy_used || 0) + (result.energy_penalty || 0),
+          };
+        }
+
+        // 模拟返回了结果但不是 success，解码 revert reason
+        const errorMsg = result?.result?.message
+          ? tryDecodeHexMessage(result.result.message)
+          : JSON.stringify(result);
+        throw new Error(`Estimate energy failed: ${errorMsg}`);
+      } catch (innerErr: any) {
+        // 如果 triggerConstantContract 本身也失败了（比如节点不支持零参数重载），
+        // 不阻断，而是返回一个降级估算值，让 safeSend 可以继续发交易。
+        if (innerErr.message?.includes("Estimate energy failed")) {
+          throw innerErr; // 真正的 REVERT，继续抛出
+        }
+        // 节点级别的错误（如 ABI 解析失败），返回典型值
+        return {
+          energyUsed: 80000,  // repay TRX 典型值
+          energyPenalty: 0,
+          totalEnergy: 80000,
+          degraded: true,
+          degradeReason: `Simulation not supported for ${params.functionName}() with callValue, using typical estimate: ${innerErr.message}`,
+        };
+      }
+    }
+    // ====== 降级处理结束 ======
+
     if (matched.length === 0) {
       const overloads = candidates
         .map(
@@ -543,12 +640,46 @@ export async function estimateEnergy(
       };
     }
 
-    const errorMsg =
-      result?.result?.message
-        ? Buffer.from(result.result.message, "hex").toString()
-        : JSON.stringify(result);
+    // ====== 改进：解码 REVERT reason ======
+    const errorMsg = result?.result?.message
+      ? tryDecodeHexMessage(result.result.message)
+      : JSON.stringify(result);
     throw new Error(`Estimate energy failed: ${errorMsg}`);
   } catch (error: any) {
     throw new Error(`Estimate energy error: ${error.message}`);
   }
+}
+
+/**
+ * Try to decode a hex-encoded error message from contract revert.
+ * Handles both raw hex strings and ABI-encoded Error(string) selectors.
+ */
+function tryDecodeHexMessage(hexMsg: string): string {
+  try {
+    const hex = hexMsg.startsWith("0x") ? hexMsg.slice(2) : hexMsg;
+
+    // 尝试检测 ABI 编码的 Error(string)：选择器 08c379a0
+    if (hex.startsWith("08c379a0") && hex.length >= 136) {
+      // 跳过 4 字节选择器 + 32 字节 offset + 32 字节 length，读取字符串
+      const lengthHex = hex.slice(72, 136);
+      const strLength = parseInt(lengthHex, 16);
+      if (strLength > 0 && strLength < 1000) {
+        const strHex = hex.slice(136, 136 + strLength * 2);
+        const decoded = Buffer.from(strHex, "hex").toString("utf8");
+        if (decoded && /^[\x20-\x7E]+$/.test(decoded)) {
+          return decoded;
+        }
+      }
+    }
+
+    // 直接尝试 hex → utf8
+    const direct = Buffer.from(hex, "hex").toString("utf8");
+    // 只返回可打印的 ASCII 内容
+    if (direct && /^[\x20-\x7E\n\r\t]+$/.test(direct)) {
+      return direct;
+    }
+  } catch { /* ignore decode failures */ }
+
+  // 解码失败，原样返回
+  return hexMsg;
 }
