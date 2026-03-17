@@ -940,7 +940,7 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_proposal_list",
     {
-      description: "Get the list of JustLend DAO governance proposals. Returns proposals with their status (Active, Passed, Defeated, etc.), vote counts, and details. Sorted by newest first.",
+      description: "Get the list of JustLend DAO governance proposals. Returns proposals with their status (Active, Passed, Defeated, etc.), vote counts, and details. Sorted by newest first. NOTE: If the JustLend API is unavailable (e.g., on Nile testnet), this tool will automatically fallback to on-chain queries and return ONLY the single most recent proposal with default 0 votes.",
       inputSchema: {
         network: z.string().optional().describe("Network. Default: mainnet"),
         limit: z.number().optional().describe("Max number of proposals to return. Default: 10. Use 0 for all."),

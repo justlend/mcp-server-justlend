@@ -216,56 +216,127 @@ const HARDCODED_PROPOSALS: Record<number, { title?: string; content?: string }> 
 };
 
 /**
- * Get the list of governance proposals from JustLend API.
+ * 直接从链上查询最新提案的状态
+ * @param network "mainnet" | "nile"
  */
+export async function getLatestProposalState(network = "mainnet"): Promise<{
+  proposalId: number;
+  state: number;
+  stateText: string;
+}> {
+  const tronWeb = getTronWeb(network);
+  const addresses = getJustLendAddresses(network);
+
+  // 初始化治理合约
+  const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
+
+  // 1. 获取提案总数，这个数值也是最新提案的 ID
+  const countBigInt = await contract.methods.proposalCount().call();
+  const latestProposalId = Number(countBigInt.toString());
+
+  if (latestProposalId === 0) {
+    throw new Error(`[${network}] No proposals found in the governance contract.`);
+  }
+
+  // 2. 根据最新提案 ID 查询其当前状态
+  const stateBigInt = await contract.methods.state(latestProposalId).call();
+  const stateNum = Number(stateBigInt.toString());
+
+  return {
+    proposalId: latestProposalId,
+    state: stateNum,
+    stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
+  };
+}
+
 export async function getProposalList(network = "mainnet"): Promise<{
   proposals: Proposal[];
   total: number;
 }> {
   const host = getApiHost(network);
-  const block = await getCurrentBlock(network);
-  const url = `${host}/justlend/gov/proposalList?block=${block}`;
-  const response = await fetch(url);
-  const data = await response.json();
 
-  if (data.code !== 0 && data.message !== "SUCCESS") {
-    throw new Error(`Failed to fetch proposal list: ${data.message || "Unknown error"}`);
-  }
+  try {
+    // 1. 优先尝试从 API 获取完整列表
+    const block = await getCurrentBlock(network);
+    const url = `${host}/justlend/gov/proposalList?block=${block}`;
+    const response = await fetch(url);
+    const data = await response.json();
 
-  const proposalList: Proposal[] = (data.data?.proposalList || []).map((item: any) => {
-    const pId = item.proposalId ?? item.id;
-    const hardcoded = HARDCODED_PROPOSALS[pId];
+    if (data.code !== 0 && data.message !== "SUCCESS") {
+      throw new Error(`API returned error: ${data.message || "Unknown error"}`);
+    }
 
-    // 【核心逻辑】：优先使用本地硬编码的字典，如果字典里没有（比如 1-6号 或未来的新提案），则自动回退使用 API 返回的 title 和 content。
-    const title = hardcoded?.title || item.title || `[Proposal #${pId}]`;
-    const content = hardcoded?.content || item.content || "Details maintained in frontend.";
+    const proposalList: Proposal[] = (data.data?.proposalList || []).map((item: any) => {
+      const pId = item.proposalId ?? item.id;
+      const hardcoded = HARDCODED_PROPOSALS[pId];
+      const title = hardcoded?.title || item.title || `[Proposal #${pId}]`;
+      const content = hardcoded?.content || item.content || "Details maintained in frontend.";
+
+      return {
+        proposalId: pId,
+        state: item.state,
+        stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
+        title,
+        content,
+        proposer: item.proposer || "",
+        forVotes: item.forVotes || "0",
+        againstVotes: item.againstVotes || "0",
+        abstainVotes: item.abstainVotes || "0",
+        startBlock: item.startBlock,
+        endBlock: item.endBlock,
+        activeTime: item.activeTime,
+        endTime: item.endTime,
+      };
+    });
+
+    // 按 ID 倒序排列（最新的在前）
+    proposalList.sort((a, b) => b.proposalId - a.proposalId);
 
     return {
-      proposalId: pId,
-      state: item.state,
-      stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
-      title,
-      content, // 直接暴露给 AI
-      proposer: item.proposer || "",
-      forVotes: item.forVotes || "0",
-      againstVotes: item.againstVotes || "0",
-      abstainVotes: item.abstainVotes || "0",
-      startBlock: item.startBlock,
-      endBlock: item.endBlock,
-      activeTime: item.activeTime,
-      endTime: item.endTime,
+      proposals: proposalList,
+      total: proposalList.length,
     };
-  });
 
-  // Sort by proposalId descending (newest first)
-  proposalList.sort((a, b) => b.proposalId - a.proposalId);
+  } catch (error) {
+    console.warn(`[API Fallback] Fetching latest proposal from contract due to API failure:`, error);
 
-  return {
-    proposals: proposalList,
-    total: proposalList.length,
-  };
+    // 2. API 失败，降级为链上查询（按要求仅查询最新提案的状态）
+    const tronWeb = getTronWeb(network);
+    const addresses = getJustLendAddresses(network);
+    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
+
+    // 2.1 获取提案总数 (即最新提案的 ID)
+    const countBigInt = await contract.methods.proposalCount().call();
+    const latestProposalId = Number(countBigInt.toString());
+
+    if (latestProposalId === 0) {
+      return { proposals: [], total: 0 };
+    }
+
+    // 2.2 获取最新提案的状态
+    const stateBigInt = await contract.methods.state(latestProposalId).call();
+    const stateNum = Number(stateBigInt.toString());
+
+    // 2.3 结合本地硬编码数据组装最小化的 Proposal 对象
+    const hardcoded = HARDCODED_PROPOSALS[latestProposalId];
+
+    const latestProposal: Proposal = {
+      proposalId: latestProposalId,
+      state: stateNum,
+      stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
+      title: hardcoded?.title || `[Proposal #${latestProposalId}]`,
+      content: hardcoded?.content || "Details fetched from on-chain fallback.",
+      forVotes: "0",      // 降级模式下为了提速，暂不查询具体票数
+      againstVotes: "0",
+      abstainVotes: "0",
+    };
+
+    return {
+      proposals: [latestProposal], // 返回仅包含最新一条提案的数组
+      total: latestProposalId,     // 返回真实的提案总数
+    };
+  }
 }
-
 // ============================================================================
 // READ — User Vote Status (API)
 // ============================================================================
@@ -280,9 +351,6 @@ export interface UserVoteStatus {
   stateText: string;
 }
 
-/**
- * Get user's voting status across all proposals from JustLend API.
- */
 export async function getUserVoteStatus(
   address: string,
   network = "mainnet",
@@ -292,24 +360,85 @@ export async function getUserVoteStatus(
   withdrawableProposals: UserVoteStatus[];
 }> {
   const host = getApiHost(network);
-  const block = await getCurrentBlock(network);
-  const url = `${host}/justlend/gov/voteStatus?account=${encodeURIComponent(address)}&block=${block}`;
-  const response = await fetch(url);
-  const data = await response.json();
 
-  const statusList: UserVoteStatus[] = (data.data?.statusList || []).map((item: any) => ({
-    ...item,
-    stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
-  }));
+  try {
+    // 1. 优先尝试从 API 获取数据
+    const block = await getCurrentBlock(network);
+    const url = `${host}/justlend/gov/voteStatus?account=${encodeURIComponent(address)}&block=${block}`;
+    const response = await fetch(url);
+    const data = await response.json();
 
+    if (data.code !== 0 && data.message !== "SUCCESS") {
+      throw new Error(`API returned error: ${data.message}`);
+    }
+
+    const statusList: UserVoteStatus[] = (data.data?.statusList || []).map((item: any) => ({
+      ...item,
+      stateText: PROPOSAL_STATES[item.state] || `Unknown(${item.state})`,
+    }));
+
+    return processVoteStatusData(statusList);
+
+  } catch (error) {
+    console.warn(`[API Fallback] Fetching user vote status from contract due to:`, error);
+
+    // 2. API 失败，降级为链上查询
+    const tronWeb = getTronWeb(network);
+    const addresses = getJustLendAddresses(network);
+    const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
+
+    const proposalCount = await contract.methods.proposalCount().call();
+    const count = Number(proposalCount.toString());
+    const statusList: UserVoteStatus[] = [];
+
+    // 为了避免节点超时，可能需要分批或限制深度（比如只查最近的提案），这里做全量遍历
+    for (let pId = count; pId >= 1; pId--) {
+      try {
+        const receipt = await contract.methods.getReceipt(pId, address).call();
+        const hasVoted = receipt.hasVoted || receipt[0];
+
+        if (hasVoted) {
+          const support = Number((receipt.support || receipt[1]).toString());
+          const votesRaw = BigInt((receipt.votes || receipt[2]).toString());
+          const votesFmt = formatTokenAmount(votesRaw);
+
+          const pState = await contract.methods.state(pId).call();
+          const stateNum = Number(pState.toString());
+
+          // 根据 JustLend 的逻辑，提案不再 Active (1) 且用户有票在里面，通常就能 withdraw
+          // 如果升级到了 Bravo，Canceled (2) 也可以提取，具体看前端逻辑限制
+          const canWithdraw = stateNum !== 1;
+
+          statusList.push({
+            proposalId: pId,
+            forVotes: support === 1 ? votesFmt : "0",
+            againstVotes: support === 0 ? votesFmt : "0",
+            abstainVotes: support === 2 ? votesFmt : "0", // Governor Bravo 支持弃权票
+            canWithdraw: canWithdraw,
+            state: stateNum,
+            stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to fetch vote receipt for proposal #${pId}`, err);
+      }
+    }
+
+    return processVoteStatusData(statusList);
+  }
+}
+
+// 提取出的公共数据处理逻辑
+function processVoteStatusData(statusList: UserVoteStatus[]) {
   const votedProposals: number[] = [];
   const withdrawableProposals: UserVoteStatus[] = [];
 
   for (const item of statusList) {
-    const hasVoted = BigInt(item.forVotes || "0") > 0n || BigInt(item.againstVotes || "0") > 0n;
+    const hasVoted = BigInt(item.forVotes || "0") > 0n || BigInt(item.againstVotes || "0") > 0n || BigInt(item.abstainVotes || "0") > 0n;
     if (hasVoted) {
       votedProposals.push(item.proposalId);
     }
+    // 过滤掉被取消(2)且无法提取的情况（视具体合约逻辑而定，旧版 Alpha 取消后可能依然需要提票）
     if (item.canWithdraw && item.state !== 2) {
       withdrawableProposals.push(item);
     }
@@ -317,7 +446,6 @@ export async function getUserVoteStatus(
 
   return { statusList, votedProposals, withdrawableProposals };
 }
-
 // ============================================================================
 // READ — Vote Info (On-chain via Poly contract)
 // ============================================================================

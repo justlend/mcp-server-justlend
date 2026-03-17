@@ -149,7 +149,7 @@ export const TRC20_ABI = [
 // GovernorAlpha ABI (JST Voting / Governance)
 // ============================================================================
 export const GOVERNOR_ALPHA_ABI = [
-  // --- Read ---
+  // --- Write ---
   {
     type: "function", name: "castVote",
     inputs: [
@@ -166,6 +166,52 @@ export const GOVERNOR_ALPHA_ABI = [
     outputs: [],
     stateMutability: "nonpayable",
   },
+
+  // --- Read (新增：用于链上状态查询) ---
+  {
+    type: "function", name: "proposalCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function", name: "state",
+    inputs: [{ name: "proposalId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint8" }], // 返回 0~7 代表不同状态
+    stateMutability: "view",
+  },
+  {
+    type: "function", name: "getReceipt",
+    inputs: [
+      { name: "proposalId", type: "uint256" },
+      { name: "voter", type: "address" }
+    ],
+    outputs: [
+      { name: "hasVoted", type: "bool" },
+      { name: "support", type: "uint8" },
+      { name: "votes", type: "uint96" }
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function", name: "proposals",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "id", type: "uint256" },
+      { name: "proposer", type: "address" },
+      { name: "eta", type: "uint256" },
+      { name: "startBlock", type: "uint256" },
+      { name: "endBlock", type: "uint256" },
+      { name: "forVotes", type: "uint256" },
+      { name: "againstVotes", type: "uint256" },
+      // 注意：如果是 Governor Bravo 升级后，可能会多一个 abstainVotes。
+      // 如果调用报错，可以尝试把这一行注释掉，按你的合约实际版本来。
+      { name: "abstainVotes", type: "uint256" },
+      { name: "canceled", type: "bool" },
+      { name: "executed", type: "bool" }
+    ],
+    stateMutability: "view",
+  }
 ];
 
 // ============================================================================
