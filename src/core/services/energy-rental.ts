@@ -10,7 +10,7 @@
  */
 
 import { getTronWeb, getWallet } from "./clients.js";
-import { getJustLendAddresses, getApiHost } from "../chains.js";
+import { getJustLendAddresses, getApiHost, getNetworkConfig } from "../chains.js";
 import { ENERGY_MARKET_ABI } from "../abis.js";
 import { waitForTransaction } from "./transactions.js";
 import { checkResourceSufficiency } from "./lending.js";
