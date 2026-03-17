@@ -448,9 +448,9 @@ export async function calculateRenewalPrice(
 // ============================================================================
 
 /**
- * Fallback: scan RentResource events from the market contract to discover
- * rental orders for a given address, then verify each on-chain.
- * This is used when the backend API is unavailable (e.g., Nile testnet).
+ * Fallback: scan RentResource events from the market contract via TronGrid v1 API
+ * to discover rental orders for a given address, then verify each on-chain.
+ * This is used when the backend JustLend API is unavailable (e.g., Nile testnet).
  */
 async function getOrdersFromContractEvents(
   address: string,
@@ -459,18 +459,18 @@ async function getOrdersFromContractEvents(
   const tronWeb = getTronWeb(network);
   const addrs = getJustLendAddresses(network);
   const marketAddress = addrs.strx.market;
+  const networkConfig = getNetworkConfig(network);
 
   try {
-    // Query events from the market contract using TronWeb event API
-    // Look for RentResource events where the address is involved
-    // Note: TronWeb type defs don't fully match runtime API, cast to any
-    const events: any[] = await (tronWeb as any).getEventResult(marketAddress, {
-      eventName: "RentResource",
-      size: 200,
-      onlyConfirmed: true,
-    });
+    // Use TronGrid v1 event API directly (tronWeb.getEventResult is unreliable on Nile)
+    const eventUrl =
+      `${networkConfig.fullNode}/v1/contracts/${marketAddress}/events` +
+      `?event_name=RentResource&only_confirmed=true&limit=200`;
 
-    if (!events || !Array.isArray(events) || events.length === 0) {
+    const resp = await fetchWithTimeout(eventUrl);
+    const json = await resp.json();
+
+    if (!json.success || !json.data || !Array.isArray(json.data) || json.data.length === 0) {
       return { orders: [], receiverOrders: [] };
     }
 
@@ -479,17 +479,24 @@ async function getOrdersFromContractEvents(
     const receiverPairs: Array<{ renter: string; receiver: string }> = [];
     const seenPairs = new Set<string>();
 
-    for (const event of events) {
+    for (const event of json.data) {
       const result = event.result || {};
-      // Event params may use different naming conventions
-      const renter = result.renter || result._renter || result["0"];
-      const receiver = result.receiver || result._receiver || result["1"];
+      // v1 API returns hex addresses (without 41 prefix)
+      const renterHex = result.renter || result._renter || result["0"];
+      const receiverHex = result.receiver || result._receiver || result["1"];
 
-      if (!renter || !receiver) continue;
+      if (!renterHex || !receiverHex) continue;
 
-      // Convert hex addresses to base58 if needed
-      const renterB58 = renter.startsWith("T") ? renter : tronWeb.address.fromHex(renter);
-      const receiverB58 = receiver.startsWith("T") ? receiver : tronWeb.address.fromHex(receiver);
+      // Convert hex addresses to base58
+      // TronGrid v1 returns "0x..." format, need to convert to "41..." TRON hex first
+      const toB58 = (hex: string): string => {
+        if (hex.startsWith("T")) return hex;
+        const cleanHex = hex.replace(/^0x/, "");
+        return tronWeb.address.fromHex("41" + cleanHex);
+      };
+
+      const renterB58 = toB58(renterHex);
+      const receiverB58 = toB58(receiverHex);
 
       const pairKey = `${renterB58}-${receiverB58}`;
       if (seenPairs.has(pairKey)) continue;
