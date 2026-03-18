@@ -6,6 +6,8 @@ export * from "./account.js";
 export * from "./lending.js";
 export * from "./rewards.js";
 export * from "./voting.js";
+export * from "./energy-rental.js";
+export * from "./strx-staking.js";
 
 // General TRON chain services
 export * from "./address.js";
@@ -18,3 +20,4 @@ export * from "./tokens.js";
 export * from "./transactions.js";
 export * from "./transfer.js";
 export * from "./utils.js";
+export * from "./global.js";

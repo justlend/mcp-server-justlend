@@ -145,7 +145,7 @@ describe("readContract (Mainnet)", () => {
       "mainnet",
     );
     expect(String(result)).toBe("USDT");
-    console.log(`USDT symbol: ${result}`);
+    console.error(`USDT symbol: ${result}`);
   }), 25_000);
 
   it("should read USDT balanceOf for a known address", skipOn429(async () => {
@@ -160,7 +160,7 @@ describe("readContract (Mainnet)", () => {
       "mainnet",
     );
     expect(result).toBeDefined();
-    console.log(`USDT balanceOf ${TEST_ADDRESS}: ${result}`);
+    console.error(`USDT balanceOf ${TEST_ADDRESS}: ${result}`);
   }), 25_000);
 
   it("should throw when function is not found in contract", async () => {
@@ -188,6 +188,6 @@ describe("fetchContractABI (Mainnet)", () => {
     const abi = await fetchContractABI(USDT_ADDRESS, "mainnet");
     expect(Array.isArray(abi)).toBe(true);
     expect(abi.length).toBeGreaterThan(0);
-    console.log(`USDT ABI has ${abi.length} entries`);
+    console.error(`USDT ABI has ${abi.length} entries`);
   }), 30_000);
 });

@@ -5,6 +5,18 @@ import {
   getSupportedNetworks, getNetworkConfig,
 } from "./chains.js";
 import * as services from "./services/index.js";
+import { utils } from "./services/utils.js";
+
+/**
+ * Sanitize error messages for MCP client responses.
+ * Strips internal details (contract addresses, node URLs, stack traces)
+ * while preserving user-actionable information.
+ */
+function sanitizeError(error: any): string {
+  const msg = error?.message || String(error);
+  // Remove full URLs that might expose internal infrastructure
+  return msg.replace(/https?:\/\/[^\s,)]+/g, "[redacted-url]");
+}
 
 /**
  * Register all JustLend MCP tools.
@@ -30,7 +42,7 @@ export function registerJustLendTools(server: McpServer) {
         const address = services.getWalletAddress();
         return { content: [{ type: "text", text: JSON.stringify({ address, message: "This wallet will be used for all JustLend operations" }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -56,7 +68,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Supported Markets", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const tokens = getAllJTokens(network);
         const addresses = getJustLendAddresses(network);
@@ -79,7 +91,7 @@ export function registerJustLendTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -100,14 +112,14 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Market Data", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const info = getJTokenInfo(market, network);
         if (!info) throw new Error(`Unknown market: ${market}. Use get_supported_markets to see available markets.`);
         const data = await services.getMarketData(info, network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -125,7 +137,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get All Markets", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const markets = await services.getAllMarketOverview(network);
         return {
@@ -138,8 +150,24 @@ export function registerJustLendTools(server: McpServer) {
             }, null, 2),
           }],
         };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+      } catch {
+        // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
+        try {
+          const markets = await services.getAllMarketData(network);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                totalMarkets: markets.length,
+                markets,
+                note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
+                source: "contract",
+              }, null, 2),
+            }],
+          };
+        } catch (error: any) {
+          return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        }
       }
     },
   );
@@ -153,12 +181,12 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Protocol Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const summary = await services.getProtocolSummary(network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -176,12 +204,12 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Markets from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getMarketDataFromAPI(network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -195,12 +223,12 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Dashboard from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getMarketDashboardFromAPI(network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -215,12 +243,12 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get jToken Details from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ jtokenAddr, network = "mainnet" }) => {
+    async ({ jtokenAddr, network = services.getGlobalNetwork() }) => {
       try {
         const data = await services.getJTokenDetailsFromAPI(jtokenAddr, network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -233,21 +261,22 @@ export function registerJustLendTools(server: McpServer) {
     "get_account_summary",
     {
       description:
-        "Get a comprehensive view of a user's JustLend positions: supply balances, borrow balances, " +
-        "collateral status, health factor, liquidation risk, and USD values for each market.",
+        "Get a comprehensive view of a user's JustLend positions (supply, borrow, health factor). " +
+        "IMPORTANT: Returns a snapshot tied to a specific block. " +
+        "You MUST call this again after any transaction (supply, withdraw, etc.) to get updated balances and health factor.",
       inputSchema: {
         address: z.string().describe("TRON address (Base58 T... format) to check. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Account Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const summary = await services.getAccountSummary(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -257,21 +286,42 @@ export function registerJustLendTools(server: McpServer) {
     {
       description:
         "Check if the underlying TRC20 token has been approved for a jToken market. " +
-        "Must be approved before supply() or repay() for TRC20 markets. Not needed for jTRX.",
+        "Must be approved before supply() or repay() for TRC20 markets. Not needed for jTRX. " +
+        "The returned 'allowance' is in human-readable token units (e.g. '1' means 1 USDT, not 1 raw unit). " +
+        "Compare it directly with the amount the user wants to supply/repay. 'allowanceUnit' indicates the token symbol.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT')"),
+        amount: z.string().optional().describe("Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient."),
         address: z.string().optional().describe("Address to check. Default: configured wallet"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Check Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, address, network = "mainnet" }) => {
+    async ({ market, amount, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const result = await services.checkAllowance(userAddress, market, network);
-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+
+        let sufficiency = {};
+        if (amount) {
+          const info = getJTokenInfo(market, network);
+          const decimals = info?.underlyingDecimals ?? 6;
+          const allowanceRaw = BigInt(result.allowanceRaw);
+          const requiredRaw = utils.parseUnits(amount, decimals);
+
+          const isSufficient = allowanceRaw >= requiredRaw;
+          sufficiency = {
+            requiredAmount: amount,
+            isSufficient,
+            message: isSufficient
+              ? `Allowance of ${result.allowance} ${result.allowanceUnit} is sufficient for ${amount} ${result.allowanceUnit}. No approve needed.`
+              : `Allowance of ${result.allowance} ${result.allowanceUnit} is NOT sufficient for ${amount} ${result.allowanceUnit}. Please call approve_underlying first.`,
+          };
+        }
+
+        return { content: [{ type: "text", text: JSON.stringify({ ...result, ...sufficiency }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -286,13 +336,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get TRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const balance = await services.getTRXBalance(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, balance: `${balance.formatted} TRX` }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -314,7 +364,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Token Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ token, tokenAddress, address, network = "mainnet" }) => {
+    async ({ token, tokenAddress, address, network = services.getGlobalNetwork() }) => {
       try {
         const tokenInput = token || tokenAddress;
         if (!tokenInput) {
@@ -334,16 +384,20 @@ export function registerJustLendTools(server: McpServer) {
         }
 
         const result = await services.getTokenBalance(userAddress, resolvedAddress, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          address: userAddress,
-          balance: result.balance,
-          balanceNote: "This balance is already in human-readable token units (decimals already applied). Do not divide again.",
-          symbol: result.symbol,
-          decimals: result.decimals,
-          tokenAddress: resolvedAddress,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              address: userAddress,
+              balance: result.balance,
+              balanceNote: "This balance is already in human-readable token units (decimals already applied). Do not divide again.",
+              symbol: result.symbol,
+              decimals: result.decimals,
+              tokenAddress: resolvedAddress,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -351,20 +405,21 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_account_data_from_api",
     {
-      description: "Get user account data from JustLend API. More stable and comprehensive than contract queries. Returns lending positions, balances, mining rewards, health factor, etc.",
+      description: "Get user account data from JustLend API. Returns lending positions, balances, mining rewards, health factor, etc. " +
+        "Note: API data may have a slight delay compared to contract queries. Refresh after transactions for accuracy.",
       inputSchema: {
         address: z.string().describe("TRON address to check. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Account Data from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getAccountDataFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -414,20 +469,49 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Supply Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
         const walletAddr = services.getWalletAddress();
+
+        // For TRC20 markets, check allowance first and inform user
+        if (!isTRX) {
+          const allowanceResult = await services.checkAllowance(walletAddr, market, network);
+          const decimals = info?.underlyingDecimals ?? 6;
+          const currentAllowanceRaw = BigInt(allowanceResult.allowanceRaw);
+          const requiredAmountRaw = utils.parseUnits(amount, decimals);
+
+          if (currentAllowanceRaw < requiredAmountRaw) {
+            const underlyingSymbol = info?.underlyingSymbol ?? market;
+            return {
+              content: [{
+                type: "text", text: JSON.stringify({
+                  status: "approval_required",
+                  market,
+                  amount,
+                  currentAllowance: allowanceResult.allowance,
+                  hasApproval: allowanceResult.hasApproval,
+                  message: `Current ${underlyingSymbol} allowance is ${allowanceResult.allowance}. You need to approve at least ${amount} ${underlyingSymbol} before supplying. Please call approve_underlying first.`,
+                }, null, 2)
+              }]
+            };
+          }
+        }
+
         const resourceWarning = await getResourceWarning(walletAddr, "supply", isTRX, network, market, amount);
         const result = await services.supply(privateKey, market, amount, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -446,18 +530,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "withdraw", false, network, market, amount);
         const result = await services.withdraw(privateKey, market, amount, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -474,18 +562,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw All", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "withdraw_all", false, network, market);
         const result = await services.withdrawAll(privateKey, market, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -505,18 +597,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Borrow Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "borrow", false, network, market, amount);
         const result = await services.borrow(privateKey, market, amount, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -536,20 +632,49 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Repay Borrow", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, amount, network = "mainnet" }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
         const walletAddr = services.getWalletAddress();
+
+        // For TRC20 markets, check allowance first and inform user (skip for 'max' repay)
+        if (!isTRX && amount !== "max") {
+          const allowanceResult = await services.checkAllowance(walletAddr, market, network);
+          const decimals = info?.underlyingDecimals ?? 6;
+          const currentAllowanceRaw = BigInt(allowanceResult.allowanceRaw);
+          const requiredAmountRaw = utils.parseUnits(amount, decimals);
+
+          if (currentAllowanceRaw < requiredAmountRaw) {
+            const underlyingSymbol = info?.underlyingSymbol ?? market;
+            return {
+              content: [{
+                type: "text", text: JSON.stringify({
+                  status: "approval_required",
+                  market,
+                  amount,
+                  currentAllowance: allowanceResult.allowance,
+                  hasApproval: allowanceResult.hasApproval,
+                  message: `Current ${underlyingSymbol} allowance is ${allowanceResult.allowance}. You need to approve at least ${amount} ${underlyingSymbol} before repaying. Please call approve_underlying first.`,
+                }, null, 2)
+              }]
+            };
+          }
+        }
+
         const resourceWarning = await getResourceWarning(walletAddr, "repay", isTRX, network, market, amount);
         const result = await services.repay(privateKey, market, amount, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -567,18 +692,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Enter Market (Enable Collateral)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "enter_market", false, network, market);
         const result = await services.enterMarket(privateKey, market, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -596,7 +725,7 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Exit Market (Disable Collateral)", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ market, network = "mainnet" }) => {
+    async ({ market, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
@@ -606,19 +735,27 @@ export function registerJustLendTools(server: McpServer) {
         // Check if transaction events contain a Failure
         const failureEvent = result.events?.find((e: any) => e.name === "Failure");
         if (failureEvent) {
-          return { content: [{ type: "text", text: JSON.stringify({
-            ...result,
-            ...resourceWarning,
-            error: `Transaction succeeded on-chain but contract returned Failure: error=${failureEvent.params.error}, info=${failureEvent.params.info}, detail=${failureEvent.params.detail}`,
-          }, null, 2) }], isError: true };
+          return {
+            content: [{
+              type: "text", text: JSON.stringify({
+                ...result,
+                ...resourceWarning,
+                error: `Transaction succeeded on-chain but contract returned Failure: error=${failureEvent.params.error}, info=${failureEvent.params.info}, detail=${failureEvent.params.detail}`,
+              }, null, 2)
+            }], isError: true
+          };
         }
 
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -638,18 +775,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Approve Underlying Token", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, amount = "max", network = "mainnet" }) => {
+    async ({ market, amount = "max", network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "approve", false, network, market, amount);
         const result = await services.approveUnderlying(privateKey, market, amount, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -665,18 +806,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Claim Rewards", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ network = "mainnet" }) => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const walletAddr = services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "claim_rewards", false, network);
         const result = await services.claimRewards(privateKey, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...resourceWarning,
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...resourceWarning,
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -707,18 +852,22 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Estimate Operation Resources", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ operation, market, amount = "1", spender, address, network = "mainnet" }) => {
+    async ({ operation, market, amount = "1", spender, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const result = await services.estimateLendingEnergy(operation, market, amount, userAddress, network, spender);
         // Also check resource sufficiency
         const resourceCheck = await services.checkResourceSufficiency(userAddress, result.totalEnergy, result.totalBandwidth, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          ...result,
-          ...(resourceCheck.warning ? { resourceWarning: resourceCheck } : {}),
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...result,
+              ...(resourceCheck.warning ? { resourceWarning: resourceCheck } : {}),
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -737,13 +886,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Mining Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const rewards = await services.getMiningRewardsFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(rewards, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -752,15 +901,17 @@ export function registerJustLendTools(server: McpServer) {
     "get_usdd_mining_config",
     {
       description: "Get USDD mining configuration including mining periods, reward tokens (USDD/TRX dual mining), and schedule.",
-      inputSchema: {},
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
       annotations: { title: "Get USDD Mining Config", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async () => {
+    async ({ network = services.getGlobalNetwork() }) => {
       try {
-        const config = services.getUSDDMiningConfig();
+        const config = await services.getUSDDMiningConfig(network);
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -777,7 +928,7 @@ export function registerJustLendTools(server: McpServer) {
         const config = services.getWBTCMiningConfig();
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -796,13 +947,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Proposal List", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ network = "mainnet", limit = 10 }) => {
+    async ({ network = services.getGlobalNetwork(), limit = 10 }) => {
       try {
         const data = await services.getProposalList(network);
         const proposals = limit > 0 ? data.proposals.slice(0, limit) : data.proposals;
         return { content: [{ type: "text", text: JSON.stringify({ proposals, total: data.total, returned: proposals.length }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -817,13 +968,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get User Vote Status", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getUserVoteStatus(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -840,22 +991,26 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Vote Info", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getVoteInfo(userAddress, network);
-        return { content: [{ type: "text", text: JSON.stringify({
-          address: userAddress,
-          ...data,
-          explanation: {
-            jstBalance: "JST tokens in wallet (not yet deposited for voting)",
-            surplusVotes: "Available votes that can be cast on proposals",
-            totalVote: "Total votes deposited (WJST balance)",
-            castVote: "Votes currently locked in active proposals",
-          },
-        }, null, 2) }] };
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              address: userAddress,
+              ...data,
+              explanation: {
+                jstBalance: "JST tokens in wallet (not yet deposited for voting)",
+                surplusVotes: "Available votes that can be cast on proposals",
+                totalVote: "Total votes deposited (WJST balance)",
+                castVote: "Votes currently locked in active proposals",
+              },
+            }, null, 2)
+          }]
+        };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -871,13 +1026,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Get Locked Votes", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ proposalId, address, network = "mainnet" }) => {
+    async ({ proposalId, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.getLockedVotes(userAddress, proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -892,13 +1047,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Check JST Voting Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = "mainnet" }) => {
+    async ({ address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || services.getWalletAddress();
         const data = await services.checkJSTAllowanceForVoting(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -915,13 +1070,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Approve JST for Voting", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ amount = "max", network = "mainnet" }) => {
+    async ({ amount = "max", network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.approveJSTForVoting(privateKey, amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -939,13 +1094,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Deposit JST for Votes", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.depositJSTForVotes(privateKey, amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -962,13 +1117,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Votes to JST", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ amount, network = "mainnet" }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.withdrawVotesToJST(privateKey, amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -988,13 +1143,13 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Cast Vote", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ proposalId, support, votes, network = "mainnet" }) => {
+    async ({ proposalId, support, votes, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.castVote(privateKey, proposalId, support, votes, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -1012,14 +1167,507 @@ export function registerJustLendTools(server: McpServer) {
       },
       annotations: { title: "Withdraw Votes from Proposal", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     },
-    async ({ proposalId, network = "mainnet" }) => {
+    async ({ proposalId, network = services.getGlobalNetwork() }) => {
       try {
         const privateKey = services.getConfiguredPrivateKey();
         const result = await services.withdrawVotesFromProposal(privateKey, proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${error.message}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
+    },
+  );
+
+  // ============================================================================
+  // ENERGY RENTAL (Read)
+  // ============================================================================
+
+  server.registerTool(
+    "get_energy_rental_dashboard",
+    {
+      description:
+        "Get JustLend energy rental market dashboard data including TRX price, exchange rate, " +
+        "total APY, energy per TRX, total supply, and other market parameters.",
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Energy Rental Dashboard", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ network = services.getGlobalNetwork() }) => {
+      try {
+        const dashboard = await services.getEnergyRentalDashboard(network);
+        return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_energy_rental_params",
+    {
+      description:
+        "Get on-chain energy rental parameters: liquidation threshold, fee ratio, min fee, " +
+        "total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio.",
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Energy Rental Parameters", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ network = services.getGlobalNetwork() }) => {
+      try {
+        const params = await services.getEnergyRentalParams(network);
+        return { content: [{ type: "text", text: JSON.stringify(params, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "calculate_energy_rental_price",
+    {
+      description:
+        "Calculate the cost to rent a specific amount of energy for a given duration. " +
+        "Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, and daily cost. " +
+        "For NEW rentals: provide energyAmount and durationHours. " +
+        "For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals " +
+        "and calculates the incremental cost (subtracting existing security deposit). " +
+        "durationHours is optional for renewals (defaults to 0 = no additional time).",
+      inputSchema: {
+        energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
+        durationHours: z.coerce.number().min(0).optional().describe("Rental duration in hours. Required for new rentals (minimum 1). Optional for renewals (default 0 = no additional time)."),
+        receiverAddress: z.string().optional().describe("Receiver address. If provided, checks for existing rental to calculate renewal cost."),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Calculate Energy Rental Price", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ energyAmount, durationHours, receiverAddress, network = services.getGlobalNetwork() }) => {
+      try {
+        // Check if this is a renewal by looking for existing rental
+        if (receiverAddress) {
+          const privateKey = services.getConfiguredPrivateKey();
+          const tronWeb = services.getWallet(privateKey, network);
+          const walletAddress = tronWeb.defaultAddress.base58 as string;
+          const existingRental = await services.getRentInfo(walletAddress, receiverAddress, network);
+
+          if (existingRental.hasActiveRental) {
+            // Get remaining seconds from order
+            const orders = await services.getUserRentalOrders(walletAddress, "renter", 0, 50, network);
+            const matchingOrder = orders.orders.find(
+              (o: any) => o.receiver === receiverAddress && o.renter === walletAddress,
+            );
+            const remainingSeconds = matchingOrder ? Number(matchingOrder.canRentSeconds || 0) : 0;
+            const additionalSeconds = (durationHours || 0) * 3600;
+
+            const estimate = await services.calculateRenewalPrice(
+              energyAmount,
+              existingRental.rentBalance,
+              existingRental.securityDeposit,
+              remainingSeconds,
+              additionalSeconds,
+              network,
+            );
+            return {
+              content: [{
+                type: "text", text: JSON.stringify({
+                  ...estimate,
+                  isRenewal: true,
+                  durationHours: estimate.durationSeconds / 3600,
+                  summary: `Renewal: adding ${energyAmount} energy costs ~${estimate.renewalPrepayment.toFixed(2)} TRX ` +
+                    `(existing deposit: ${estimate.existingSecurityDeposit.toFixed(2)} TRX, ` +
+                    `existing TRX: ${estimate.existingTrxAmount.toFixed(2)}, ` +
+                    `total TRX after: ${estimate.totalTrxAmount})`,
+                }, null, 2)
+              }]
+            };
+          }
+        }
+
+        // New rental calculation
+        if (!durationHours || durationHours < 1) {
+          throw new Error("durationHours is required (minimum 1) for new rentals");
+        }
+        const durationSeconds = durationHours * 3600;
+        const estimate = await services.calculateRentalPrice(energyAmount, durationSeconds, network);
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...estimate,
+              isRenewal: false,
+              durationHours,
+              summary: `Renting ${energyAmount} energy for ${durationHours} hours costs ~${estimate.totalPrepayment.toFixed(2)} TRX ` +
+                `(daily: ${estimate.dailyRentalCost.toFixed(2)} TRX, deposit: ${estimate.securityDeposit.toFixed(2)} TRX)`,
+            }, null, 2)
+          }]
+        };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_energy_rental_rate",
+    {
+      description:
+        "Get the current energy rental rate for a given TRX amount. " +
+        "Returns rental rate, stable rate, and effective rate (max of both).",
+      inputSchema: {
+        trxAmount: z.number().min(0).describe("TRX amount to check rate for (0 for base rate)"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Energy Rental Rate", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ trxAmount, network = services.getGlobalNetwork() }) => {
+      try {
+        const rate = await services.getRentalRate(trxAmount, network);
+        return { content: [{ type: "text", text: JSON.stringify(rate, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_user_energy_rental_orders",
+    {
+      description:
+        "Get a user's energy rental orders from JustLend. Can filter by role: " +
+        "'renter' (orders where user is renting out), 'receiver' (orders where user receives energy), or 'all'.",
+      inputSchema: {
+        address: z.string().optional().describe("Address to query. Default: configured wallet"),
+        type: z.enum(["renter", "receiver", "all"]).optional().describe("Filter by role. Default: all"),
+        page: z.number().optional().describe("Page number (0-indexed). Default: 0"),
+        pageSize: z.number().optional().describe("Results per page. Default: 10"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "User Energy Rental Orders", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ address, type = "all", page = 0, pageSize = 10, network = services.getGlobalNetwork() }) => {
+      try {
+        const addr = address || services.getWalletAddress();
+        const orders = await services.getUserRentalOrders(addr, type, page, pageSize, network);
+        return { content: [{ type: "text", text: JSON.stringify(orders, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_energy_rent_info",
+    {
+      description:
+        "Get on-chain energy rental info for a specific renter-receiver pair. " +
+        "Returns security deposit, rent balance, and whether an active rental exists.",
+      inputSchema: {
+        renterAddress: z.string().optional().describe("Renter address. Default: configured wallet"),
+        receiverAddress: z.string().describe("Receiver address"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Energy Rent Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
+      try {
+        const renter = renterAddress || services.getWalletAddress();
+        const info = await services.getRentInfo(renter, receiverAddress, network);
+        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_return_rental_info",
+    {
+      description:
+        "Get estimated refund info for returning/canceling an energy rental. " +
+        "Shows how much TRX would be refunded (estimatedRefundTrx), remaining rent, " +
+        "security deposit, usage rental cost, unrecovered energy, and daily rent cost.",
+      inputSchema: {
+        renterAddress: z.string().optional().describe("Renter address. Default: configured wallet"),
+        receiverAddress: z.string().describe("Receiver address"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Return Rental Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
+      try {
+        const renter = renterAddress || services.getWalletAddress();
+        const info = await services.getReturnRentalInfo(renter, receiverAddress, network);
+        return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  // ============================================================================
+  // ENERGY RENTAL (Write)
+  // ============================================================================
+
+  server.registerTool(
+    "rent_energy",
+    {
+      description:
+        "Rent energy from JustLend for a specified receiver address. " +
+        "Automatically calculates TRX needed based on energy amount. " +
+        "For NEW rentals: durationHours is required (minimum 1 hour), minimum energy is 300,000. " +
+        "For RENEWALS (existing active rental to the same receiver): durationHours is NOT needed — " +
+        "the remaining duration from the existing order is used automatically. Minimum energy for renewal is 50,000. " +
+        "Pre-checks: rental not paused, amount within limits, sufficient TRX balance.",
+      inputSchema: {
+        receiverAddress: z.string().describe("Address that will receive the energy"),
+        energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
+        durationHours: z.coerce.number().min(1).optional().describe("Rental duration in hours (minimum 1 hour). Required for new rentals. Ignored for renewals (uses existing order's remaining duration)."),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Rent Energy", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ receiverAddress, energyAmount, durationHours, network = services.getGlobalNetwork() }) => {
+      try {
+        const privateKey = services.getConfiguredPrivateKey();
+        const durationSeconds = durationHours ? durationHours * 3600 : undefined;
+        const result = await services.rentEnergy(privateKey, receiverAddress, energyAmount, durationSeconds, network);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "return_energy_rental",
+    {
+      description:
+        "Return (cancel) an active energy rental. As a renter, provide the receiver address. " +
+        "As a receiver, provide the renter address. " +
+        "Pre-checks: active rental must exist between the two addresses.",
+      inputSchema: {
+        counterpartyAddress: z.string().describe("The other party's address (receiver if you are renter, renter if you are receiver)"),
+        endOrderType: z.enum(["renter", "receiver"]).optional().describe("Your role: 'renter' (default) or 'receiver'"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Return Energy Rental", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ counterpartyAddress, endOrderType = "renter", network = services.getGlobalNetwork() }) => {
+      try {
+        const privateKey = services.getConfiguredPrivateKey();
+        const result = await services.returnEnergyRental(privateKey, counterpartyAddress, endOrderType, network);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  // ============================================================================
+  // sTRX STAKING (Read)
+  // ============================================================================
+
+  server.registerTool(
+    "get_strx_dashboard",
+    {
+      description:
+        "Get sTRX staking dashboard data including TRX price, sTRX/TRX exchange rate, " +
+        "total APY, vote APY, total supply, unfreeze delay days, and energy stake per TRX.",
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "sTRX Dashboard", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ network = services.getGlobalNetwork() }) => {
+      try {
+        const dashboard = await services.getStrxDashboard(network);
+        return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_strx_account",
+    {
+      description:
+        "Get user's sTRX staking account info including staked amount, income, " +
+        "claimable rewards, withdrawn amount, and rental energy amount.",
+      inputSchema: {
+        address: z.string().optional().describe("Address to query. Default: configured wallet"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "sTRX Account Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ address, network = services.getGlobalNetwork() }) => {
+      try {
+        const addr = address || services.getWalletAddress();
+        const account = await services.getStrxStakeAccount(addr, network);
+        return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_strx_balance",
+    {
+      description: "Get the sTRX token balance for an address.",
+      inputSchema: {
+        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "sTRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ address, network = services.getGlobalNetwork() }) => {
+      try {
+        const addr = address || services.getWalletAddress();
+        const balance = await services.getStrxBalance(addr, network);
+        return {
+          content: [{
+            type: "text", text: JSON.stringify({
+              ...balance,
+              raw: balance.raw.toString(),
+            }, null, 2)
+          }]
+        };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "check_strx_withdrawal_eligibility",
+    {
+      description:
+        "Check if user has TRX available to withdraw after sTRX unstaking unbonding period. " +
+        "Shows staked amount, claimable rewards, pending/completed unstake rounds, and withdrawal status.",
+      inputSchema: {
+        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Check sTRX Withdrawal Eligibility", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ address, network = services.getGlobalNetwork() }) => {
+      try {
+        const addr = address || services.getWalletAddress();
+        const eligibility = await services.checkWithdrawalEligibility(addr, network);
+        return { content: [{ type: "text", text: JSON.stringify(eligibility, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  // ============================================================================
+  // sTRX STAKING (Write)
+  // ============================================================================
+
+  server.registerTool(
+    "stake_trx_to_strx",
+    {
+      description:
+        "Stake TRX via JustLend to receive sTRX tokens. " +
+        "sTRX earns staking rewards (vote APY + energy rental income). " +
+        "Pre-checks: sufficient TRX balance for staking amount + gas.",
+      inputSchema: {
+        amount: z.number().min(1).describe("Amount of TRX to stake"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Stake TRX to sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ amount, network = services.getGlobalNetwork() }) => {
+      try {
+        const privateKey = services.getConfiguredPrivateKey();
+        const result = await services.stakeTrxToStrx(privateKey, amount, network);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "unstake_strx",
+    {
+      description:
+        "Unstake sTRX to receive TRX back. " +
+        "Note: unstaked TRX has an unbonding period (typically 14 days) before withdrawal. " +
+        "Pre-checks: sufficient sTRX balance.",
+      inputSchema: {
+        amount: z.number().min(0.000001).describe("Amount of sTRX to unstake"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Unstake sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ amount, network = services.getGlobalNetwork() }) => {
+      try {
+        const privateKey = services.getConfiguredPrivateKey();
+        const result = await services.unstakeStrx(privateKey, amount, network);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "claim_strx_rewards",
+    {
+      description:
+        "Claim all available sTRX staking rewards. " +
+        "Pre-checks: verifies there are claimable rewards before executing.",
+      inputSchema: {
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Claim sTRX Rewards", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ network = services.getGlobalNetwork() }) => {
+      try {
+        const privateKey = services.getConfiguredPrivateKey();
+        const result = await services.claimStrxRewards(privateKey, network);
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  // ============================================================================
+  // GLOBAL CONFIGURATION
+  // ============================================================================
+
+  server.registerTool(
+    "set_network",
+    {
+      description: "Set the global default network used by all JustLend operations unless explicitly overridden.",
+      inputSchema: {
+        network: z.string().describe("Network name (mainnet, nile)."),
+      },
+      annotations: { title: "Set Global Network", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ network }) => {
+      try {
+        services.setGlobalNetwork(network);
+        return { content: [{ type: "text", text: `Successfully switched global default network to: ${network}` }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_network",
+    {
+      description: "Get the current global default network used by all JustLend operations.",
+      inputSchema: {},
+      annotations: { title: "Get Global Network", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async () => {
+      return { content: [{ type: "text", text: `Current global default network: ${services.getGlobalNetwork()}` }] };
     },
   );
 }

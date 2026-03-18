@@ -31,26 +31,27 @@ export function registerJustLendPrompts(server: McpServer) {
 **Objective**: Supply ${amount} into the ${market} market on ${network} to earn interest.
 
 ## Pre-flight Checks
-1. **Wallet**: Call \`get_wallet_address\` to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
 2. **Balance Check**:
-   - If ${market} is jTRX: Call \`get_trx_balance\` to verify sufficient TRX.
-   - If TRC20 (jUSDT, jSUN, etc.): Call \`get_token_balance\` with the underlying token address to verify balance.
-3. **Market Status**: Call \`get_market_data\` for ${market} to check:
+   - If ${market} is jTRX: Call the \`get_trx_balance\` tool to verify sufficient TRX.
+   - If TRC20 (jUSDT, jSUN, etc.): Call the \`get_token_balance\` tool with the underlying token address to verify balance.
+3. **Market Status**: Call the \`get_market_data\` tool for ${market} to check:
    - Is \`mintPaused\` false? (supply must be enabled)
    - What is the current \`supplyAPY\`?
    - What is the \`collateralFactor\`?
 
 ## Approval (TRC20 only, skip for jTRX)
-4. Call \`check_allowance\` for ${market}.
-5. If allowance is insufficient, call \`approve_underlying\` for ${market} with amount='max'.
+4. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
+5. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market} with amount='max'.
 
 ## Execute Supply
-6. Call \`supply\` with market='${market}', amount='${amount}'.
+6. Call the \`supply\` tool with market='${market}', amount='${amount}'.
 
 ## Post-Supply Verification
-7. Call \`get_account_summary\` to verify:
-   - New supply balance in ${market}
-   - Updated health factor
+7. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
+   - Updated supply balance in ${market}
+   - New health factor
+   - Current block number and timestamp
 
 ## Report
 Provide a summary:
@@ -88,12 +89,12 @@ Provide a summary:
 **Objective**: Borrow ${amount} from the ${market} market on ${network}.
 
 ## Risk Assessment (CRITICAL)
-1. Call \`get_account_summary\` to check current position:
+1. Call the \`get_account_summary\` tool to check current position:
    - Current collateral value (totalSupplyUSD)
    - Current borrows (totalBorrowUSD)
    - Health factor — must be > 1.0
    - Liquidity available
-2. Call \`get_market_data\` for ${market} to check:
+2. Call the \`get_market_data\` tool for ${market} to check:
    - Is \`borrowPaused\` false?
    - Current \`borrowAPY\` (cost of borrowing)
    - Available liquidity (can the market fulfill this borrow?)
@@ -101,7 +102,7 @@ Provide a summary:
 ## Collateral Verification
 3. Ensure at least one market is entered as collateral.
    - Check \`collateralMarkets\` from account summary.
-   - If none: guide user to \`enter_market\` first.
+   - If none: guide user to the \`enter_market\` tool first.
 4. Calculate projected health factor after borrow:
    - New borrow = current borrow + ${amount} * price
    - New health = collateral / new borrow
@@ -109,13 +110,14 @@ Provide a summary:
    - **REFUSE if health factor would drop below 1.05** (too dangerous)
 
 ## Execute Borrow
-5. Call \`borrow\` with market='${market}', amount='${amount}'.
+5. Call the \`borrow\` tool with market='${market}', amount='${amount}'.
 
 ## Post-Borrow Verification
-6. Call \`get_account_summary\` to confirm:
+6. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
    - New borrow balance
    - Updated health factor
    - Remaining borrowing capacity
+   - Current block number and timestamp
 
 ## Report
 - Amount borrowed and annual interest cost
@@ -152,22 +154,23 @@ Provide a summary:
 **Objective**: Repay ${amount} to the ${market} market on ${network}.
 
 ## Pre-flight Checks
-1. Call \`get_account_summary\` to see current borrow balance in ${market}.
+1. Call the \`get_account_summary\` tool to see current borrow balance in ${market}.
 2. Verify wallet has enough tokens to repay:
-   - jTRX: Call \`get_trx_balance\`
-   - TRC20: Call \`get_token_balance\` for the underlying
+   - jTRX: Call the \`get_trx_balance\` tool
+   - TRC20: Call the \`get_token_balance\` tool for the underlying
 
 ## Approval (TRC20 only, skip for jTRX)
-3. Call \`check_allowance\` for ${market}.
-4. If insufficient, call \`approve_underlying\` for ${market}.
+3. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
+4. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market}.
 
 ## Execute Repay
-5. Call \`repay\` with market='${market}', amount='${amount}'.
+5. Call the \`repay\` tool with market='${market}', amount='${amount}'.
 
 ## Verification
-6. Call \`get_account_summary\` to confirm:
+6. **CRITICAL**: Call the \`get_account_summary\` tool immediately to refresh your context with:
    - Reduced borrow balance
    - Improved health factor
+   - Current block number and timestamp
 
 ## Report
 - Amount repaid
@@ -201,9 +204,9 @@ Provide a summary:
 **Objective**: Provide a comprehensive analysis of the lending portfolio${address ? ` for ${address}` : ""} on ${network}.
 
 ## Data Collection
-1. Call \`get_account_summary\`${address ? ` with address='${address}'` : ""} to get all positions.
-2. Call \`get_all_markets\` to get current market conditions.
-3. Call \`get_protocol_summary\` for protocol parameters.
+1. Call the \`get_account_summary\` tool${address ? ` with address='${address}'` : ""} to get all positions.
+2. Call the \`get_all_markets\` tool to get current market conditions.
+3. Call the \`get_protocol_summary\` tool for protocol parameters.
 
 ## Analysis Points
 
@@ -241,6 +244,112 @@ Present as a structured portfolio report with clear sections, numbers, and actio
   );
 
   // ============================================================================
+  // ENERGY RENTAL WORKFLOW
+  // ============================================================================
+  server.registerPrompt(
+    "rent_energy",
+    {
+      description: "Step-by-step guide to safely rent energy from JustLend",
+      argsSchema: {
+        receiverAddress: z.string().describe("Address to receive the energy"),
+        energyAmount: z.string().describe("Amount of energy to rent (e.g. '300000')"),
+        durationDays: z.string().describe("Duration in days (e.g. '7')"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ receiverAddress, energyAmount, durationDays, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Rent Energy from JustLend
+
+**Objective**: Rent ${energyAmount} energy for ${durationDays} days to ${receiverAddress} on ${network}.
+
+## Pre-flight Checks
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Rental Status**: Call the \`get_energy_rental_params\` tool to check:
+   - Is \`rentPaused\` false? (rental must be enabled)
+   - What is the max rentable amount?
+3. **Price Estimate**: Call the \`calculate_energy_rental_price\` tool with energyAmount=${energyAmount}, durationDays=${durationDays} to get:
+   - Total TRX prepayment needed
+   - Security deposit amount
+   - Daily rental cost
+4. **Balance Check**: Call the \`get_trx_balance\` tool to verify sufficient TRX for prepayment + gas (~200 TRX).
+5. **Existing Rental**: Call the \`get_energy_rent_info\` tool with receiverAddress='${receiverAddress}' to check if there's already an active rental.
+
+## Execute Rental
+6. If all checks pass, call the \`rent_energy\` tool with:
+   - receiverAddress='${receiverAddress}'
+   - energyAmount=${energyAmount}
+   - durationDays=${durationDays}
+
+## Post-Rental Verification
+7. Call the \`get_energy_rent_info\` tool to confirm the rental is active.
+8. Call the \`get_user_energy_rental_orders\` tool to see the new order.
+
+## Report
+- Energy rented and duration
+- Total cost and security deposit
+- Estimated daily rental cost
+- Receiver address confirmed
+
+**Safety**: If rental is paused, balance insufficient, or any check fails, STOP and report the issue.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // STRX STAKING WORKFLOW
+  // ============================================================================
+  server.registerPrompt(
+    "stake_trx",
+    {
+      description: "Step-by-step guide to stake TRX in JustLend to earn sTRX rewards",
+      argsSchema: {
+        amount: z.string().describe("Amount of TRX to stake"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ amount, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Stake TRX in JustLend (sTRX)
+
+**Objective**: Stake ${amount} TRX on ${network} to receive sTRX and earn staking rewards.
+
+## Pre-flight Checks
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Dashboard**: Call the \`get_strx_dashboard\` tool to check:
+   - Current sTRX/TRX exchange rate
+   - Total APY (vote APY + rental income)
+   - How much sTRX you'll receive for ${amount} TRX
+3. **Balance Check**: Call the \`get_trx_balance\` tool to verify sufficient TRX for staking + gas.
+4. **Current Position**: Call the \`get_strx_account\` tool to see existing staking position.
+
+## Execute Staking
+5. Call the \`stake_trx_to_strx\` tool with amount=${amount}.
+
+## Post-Staking Verification
+6. Call the \`get_strx_balance\` tool to confirm sTRX received.
+7. Call the \`get_strx_account\` tool to see updated staking position.
+
+## Report
+- Amount of TRX staked
+- sTRX received (or estimated)
+- Current APY and estimated annual earnings
+- Note about unstaking: requires unbonding period
+
+**Safety**: If balance is insufficient, STOP and report.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
   // MARKET COMPARISON
   // ============================================================================
   server.registerPrompt(
@@ -262,7 +371,7 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Compare all JustLend markets to find the best ${action} opportunities on ${network}.
 
 ## Data Collection
-1. Call \`get_all_markets\` to get all market data.
+1. Call the \`get_all_markets\` tool to get all market data.
 
 ## Analysis
 ${action === "supply" ? `
@@ -290,6 +399,87 @@ ${action === "supply" ? `
 
 ## Recommendation
 Provide a top-3 recommendation with reasoning.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // GOVERNANCE & VOTING WORKFLOW
+  // ============================================================================
+  server.registerPrompt(
+    "query_proposals",
+    {
+      description: "Guide to checking active governance proposals and user voting status",
+      argsSchema: {
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Check JustLend Governance Proposals
+
+**Objective**: Check the latest DAO proposals and see if the user has available votes.
+
+## Pre-flight Checks
+1. Call the \`get_proposal_list\` tool to fetch recent proposals. Filter for those with state "Active" (state: 1).
+2. The tool now returns both \`title\` and \`content\` for most proposals (including summaries for historically hardcoded ones). Use this information to explain the active proposals clearly to the user.
+3. Note: If a very early proposal (e.g., ID 1-6) specifically returns "Details maintained in frontend." in its content, gently explain to the user that the exact text is unavailable via API, but they can still vote on it using its Proposal ID.
+4. Call the \`get_wallet_address\` tool to get the active wallet.
+5. Call the \`get_vote_info\` tool to check the user's available voting power (surplusVotes).
+
+## Report
+Provide a summary:
+- List of Active proposals (ID, Title, Brief summary of content, Current For/Against votes)
+- User's available voting power (WJST)
+- Ask if the user wants to cast a vote or needs to deposit JST for more voting power.`,
+        },
+      }],
+    }),
+  );
+
+  server.registerPrompt(
+    "cast_vote",
+    {
+      description: "Step-by-step guide to safely cast a vote on a JustLend governance proposal",
+      argsSchema: {
+        proposalId: z.string().describe("The ID of the proposal to vote on"),
+        support: z.enum(["for", "against"]).describe("Whether to vote 'for' or 'against'"),
+        amount: z.string().describe("Amount of votes (WJST) to cast"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ proposalId, support, amount, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Cast Vote on JustLend Proposal
+
+**Objective**: Cast ${amount} votes ${support.toUpperCase()} proposal #${proposalId} on ${network}.
+
+## Pre-flight Checks
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+2. **Voting Power Check**: Call the \`get_vote_info\` tool to verify the user has enough \`surplusVotes\` (>= ${amount}).
+   - If \`surplusVotes\` is insufficient, inform the user they need to deposit JST first using the \`deposit_jst_for_votes\` tool.
+3. **Proposal Status**: Call the \`get_proposal_list\` tool to verify that proposal #${proposalId} is currently "Active".
+
+## Execute Vote
+4. If checks pass, call the \`cast_vote\` tool with:
+   - proposalId=${proposalId}
+   - support=${support === "for" ? "true" : "false"}
+   - votes=${amount}
+
+## Post-Vote Verification
+5. Call the \`get_vote_info\` tool to confirm the votes were consumed from \`surplusVotes\` and added to \`castVote\`.
+
+## Report
+- Proposal ID and decision (For/Against)
+- Amount of votes cast
+- Remaining available voting power`,
         },
       }],
     }),

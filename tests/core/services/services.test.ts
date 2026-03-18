@@ -62,7 +62,7 @@ describe("Balance Services (Mainnet)", () => {
     expect(typeof balance).toBe("string");
     const numBalance = parseFloat(balance);
     expect(numBalance).toBeGreaterThanOrEqual(0);
-    console.log(`TRX Balance for ${TEST_ADDRESS}: ${balance} TRX`);
+    console.error(`TRX Balance for ${TEST_ADDRESS}: ${balance} TRX`);
   }), 20_000);
 
   it("should fetch TRC20 token balance (USDT)", skipOn429(async () => {
@@ -74,7 +74,7 @@ describe("Balance Services (Mainnet)", () => {
     expect(typeof result.balance).toBe("string");
     const numBalance = parseFloat(result.balance);
     expect(numBalance).toBeGreaterThanOrEqual(0);
-    console.log(`USDT Balance: ${result.balance} ${result.symbol}`);
+    console.error(`USDT Balance: ${result.balance} ${result.symbol}`);
   }), 20_000);
 
   it("should return zero balance for empty address", skipOn429(async () => {
@@ -83,7 +83,7 @@ describe("Balance Services (Mainnet)", () => {
     const balance = await getAccountTRXBalance("TJCnKsPa7y5okkXvQAidZBzqx3QyQ6sxMW", "mainnet");
     expect(balance).toBeDefined();
     expect(typeof balance).toBe("string");
-    console.log(`Empty address TRX Balance: ${balance} TRX`);
+    console.error(`Empty address TRX Balance: ${balance} TRX`);
   }), 20_000);
 });
 

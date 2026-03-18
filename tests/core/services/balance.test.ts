@@ -27,7 +27,7 @@ describe("getTRXBalance (Mainnet)", () => {
     expect(result.symbol).toBe("TRX");
     expect(result.decimals).toBe(6);
     expect(result.ether).toBe(result.formatted);
-    console.log(`TRX Balance: ${result.formatted} TRX (${result.wei} Sun)`);
+    console.error(`TRX Balance: ${result.formatted} TRX (${result.wei} Sun)`);
   }), 20_000);
 
   it("wei and ether should be consistent", skipOn429(async () => {
@@ -58,7 +58,7 @@ describe("getTRC20Balance (Mainnet)", () => {
     expect(result.token.symbol).toBe("USDT");
     expect(result.token.decimals).toBe(6);
     expect(result.token.address).toBe(USDT_ADDRESS);
-    console.log(`USDT Balance: ${result.formatted} USDT`);
+    console.error(`USDT Balance: ${result.formatted} USDT`);
   }), 20_000);
 
   it("should throw for an invalid token address", async () => {

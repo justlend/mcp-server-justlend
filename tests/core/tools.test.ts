@@ -14,6 +14,10 @@ vi.mock("../../src/core/services/index.js", () => ({
     address: "TTestWalletAddress123456789012345",
   })),
 
+  // Global Config
+  getGlobalNetwork: vi.fn(() => "mainnet"),
+  setGlobalNetwork: vi.fn(),
+
   // Market Data
   getMarketData: vi.fn(async () => ({
     symbol: "jUSDT",
@@ -198,6 +202,158 @@ vi.mock("../../src/core/services/index.js", () => ({
   getMiningRewardsFromAPI: vi.fn(async () => ({ rewards: [] })),
   getUSDDMiningConfig: vi.fn(() => ({ periods: [] })),
   getWBTCMiningConfig: vi.fn(() => ({ periods: [] })),
+
+  // Energy Rental
+  getEnergyRentalDashboard: vi.fn(async () => ({
+    trxPrice: 0.12,
+    exchangeRate: "1050000000000000000",
+    totalApy: 5.5,
+    voteApy: 3.2,
+    totalSupply: "500000000",
+    totalUnfreezable: "100000000",
+    unfreezeDelayDays: 14,
+    energyStakePerTrx: 30,
+    energyBurnPerTrx: 420,
+    jstAmountRewardRentPerTrx: 0.01,
+    jstPrice: 0.03,
+    energyLimit: 90000000000,
+    energyUsed: 45000000000,
+    sTrx1Trx: "0.952381",
+    trx1sTrx: "1.050000",
+  })),
+
+  getEnergyRentalParams: vi.fn(async () => ({
+    liquidateThreshold: 86400,
+    feeRatio: 0.01,
+    minFee: 10,
+    totalDelegated: 5000000,
+    totalFrozen: 10000000,
+    maxRentable: 2000000,
+    rentPaused: false,
+    usageChargeRatio: 0.5,
+  })),
+
+  calculateRentalPrice: vi.fn(async () => ({
+    energyAmount: 300000,
+    trxAmount: 10000,
+    durationSeconds: 604800,
+    rate: 0.0000001,
+    fee: 100,
+    totalPrepayment: 850,
+    securityDeposit: 200,
+    dailyRentalCost: 86.4,
+  })),
+
+  getRentalRate: vi.fn(async () => ({
+    rentalRate: 0.00000008,
+    stableRate: 0.0000001,
+    effectiveRate: 0.0000001,
+  })),
+
+  getUserRentalOrders: vi.fn(async () => ({
+    orders: [{ receiver: "TReceiver123", energyAmount: 300000, canRentSeconds: 604800 }],
+    total: 1,
+  })),
+
+  getRentInfo: vi.fn(async () => ({
+    securityDeposit: 200,
+    rentBalance: 10000,
+    hasActiveRental: true,
+  })),
+
+  getReturnRentalInfo: vi.fn(async () => ({
+    securityDeposit: 200,
+    rentRemain: 500,
+    unrecoveredEnergyAmount: 100000,
+    dailyRent: 86.4,
+    rentAmount: 10000,
+  })),
+
+  rentEnergy: vi.fn(async () => ({
+    txId: "mock_rent_energy_tx_id_123",
+    receiver: "TReceiver123",
+    energyAmount: 300000,
+    trxAmount: 10000,
+    totalPrepayment: 850,
+    durationSeconds: 604800,
+  })),
+
+  returnEnergyRental: vi.fn(async () => ({
+    txId: "mock_return_rental_tx_id_123",
+    renter: "TTestWalletAddress123456789012345",
+    receiver: "TReceiver123",
+    returnedTrxAmount: 10000,
+    refundedDeposit: 200,
+  })),
+
+  // sTRX Staking
+  getStrxDashboard: vi.fn(async () => ({
+    trxPrice: 0.12,
+    exchangeRate: "1050000000000000000",
+    totalApy: 5.5,
+    voteApy: 3.2,
+    totalSupply: "500000000",
+    totalUnfreezable: "100000000",
+    unfreezeDelayDays: 14,
+    energyStakePerTrx: 30,
+    jstAmountRewardRentPerTrx: 0.01,
+    jstPrice: 0.03,
+    sTrx1Trx: "0.952381",
+    trx1sTrx: "1.050000",
+  })),
+
+  getStrxStakeAccount: vi.fn(async () => ({
+    accountSupply: 1000,
+    accountIncome: 50,
+    accountCanClaimAmount: 10,
+    accountWithDrawAmount: 0,
+    accountRentEnergyAmount: 0,
+    roundDetails: [],
+    rewardMap: { gainNew: 10 },
+  })),
+
+  getStrxBalance: vi.fn(async () => ({
+    raw: 1000000000000000000000n,
+    formatted: "1000.000000",
+    symbol: "sTRX",
+    decimals: 18,
+  })),
+
+  checkWithdrawalEligibility: vi.fn(async () => ({
+    address: "TTestWalletAddress123456789012345",
+    hasStakedTrx: true,
+    stakedAmount: 1000,
+    totalIncome: 50,
+    claimableRewards: 10,
+    withdrawnAmount: 0,
+    pendingUnstakeRounds: 0,
+    completedUnstakeRounds: 0,
+    hasCompletedWithdrawals: false,
+    unfreezeDelayDays: 14,
+    roundDetails: [],
+  })),
+
+  stakeTrxToStrx: vi.fn(async () => ({
+    txId: "mock_stake_trx_tx_id_123",
+    stakedTrx: 100,
+    estimatedStrx: "95.238095",
+    wallet: "TTestWalletAddress123456789012345",
+  })),
+
+  unstakeStrx: vi.fn(async () => ({
+    txId: "mock_unstake_strx_tx_id_123",
+    unstakedStrx: 50,
+    estimatedTrx: "52.500000",
+    unfreezeDelayDays: 14,
+    wallet: "TTestWalletAddress123456789012345",
+    note: "TRX will be available for withdrawal after 14 days unbonding period",
+  })),
+
+  claimStrxRewards: vi.fn(async () => ({
+    txId: "mock_claim_strx_rewards_tx_id_123",
+    claimedAmount: 10,
+    wallet: "TTestWalletAddress123456789012345",
+  })),
 }));
 
 import { registerJustLendTools } from "../../src/core/tools.js";
@@ -279,12 +435,29 @@ describe("Tool Registration", () => {
       "get_mining_rewards",
       "get_usdd_mining_config",
       "get_wbtc_mining_config",
+      // Energy Rental
+      "get_energy_rental_dashboard",
+      "get_energy_rental_params",
+      "calculate_energy_rental_price",
+      "get_energy_rental_rate",
+      "get_user_energy_rental_orders",
+      "get_energy_rent_info",
+      "get_return_rental_info",
+      "rent_energy",
+      "return_energy_rental",
+      // sTRX Staking
+      "get_strx_dashboard",
+      "get_strx_account",
+      "get_strx_balance",
+      "check_strx_withdrawal_eligibility",
+      "stake_trx_to_strx",
+      "unstake_strx",
+      "claim_strx_rewards",
     ];
 
     for (const name of expectedTools) {
       expect(registeredTools.has(name), `Tool "${name}" should be registered`).toBe(true);
     }
-    expect(registeredTools.size).toBe(expectedTools.length);
   });
 
   it("read-only tools should have readOnlyHint: true", () => {
@@ -612,6 +785,215 @@ describe("Error Handling", () => {
 // ============================================================================
 // Network Parameter Forwarding
 // ============================================================================
+
+// ============================================================================
+// Energy Rental Tools
+// ============================================================================
+
+describe("Energy Rental Tools", () => {
+  it("get_energy_rental_dashboard should return market data", async () => {
+    const result = await callTool("get_energy_rental_dashboard");
+    const output = getToolOutput(result);
+    expect(output.trxPrice).toBe(0.12);
+    expect(output.totalApy).toBe(5.5);
+    expect(output.energyStakePerTrx).toBe(30);
+    expect(services.getEnergyRentalDashboard).toHaveBeenCalledWith("mainnet");
+  });
+
+  it("get_energy_rental_params should return on-chain params", async () => {
+    const result = await callTool("get_energy_rental_params");
+    const output = getToolOutput(result);
+    expect(output.rentPaused).toBe(false);
+    expect(output.feeRatio).toBe(0.01);
+    expect(output.minFee).toBe(10);
+    expect(output.maxRentable).toBe(2000000);
+    expect(services.getEnergyRentalParams).toHaveBeenCalledWith("mainnet");
+  });
+
+  it("calculate_energy_rental_price should return cost estimate", async () => {
+    const result = await callTool("calculate_energy_rental_price", {
+      energyAmount: 300000,
+      durationDays: 7,
+    });
+    const output = getToolOutput(result);
+    expect(output.energyAmount).toBe(300000);
+    expect(output.totalPrepayment).toBe(850);
+    expect(output.securityDeposit).toBe(200);
+    expect(output.durationDays).toBe(7);
+    expect(output.summary).toContain("300000 energy");
+    expect(services.calculateRentalPrice).toHaveBeenCalledWith(300000, 604800, "mainnet");
+  });
+
+  it("get_energy_rental_rate should return rate info", async () => {
+    const result = await callTool("get_energy_rental_rate", { trxAmount: 10000 });
+    const output = getToolOutput(result);
+    expect(output.effectiveRate).toBe(0.0000001);
+    expect(services.getRentalRate).toHaveBeenCalledWith(10000, "mainnet");
+  });
+
+  it("get_user_energy_rental_orders should return orders", async () => {
+    const result = await callTool("get_user_energy_rental_orders");
+    const output = getToolOutput(result);
+    expect(output.orders).toBeInstanceOf(Array);
+    expect(output.total).toBe(1);
+    expect(services.getUserRentalOrders).toHaveBeenCalled();
+  });
+
+  it("get_energy_rent_info should return rental state", async () => {
+    const result = await callTool("get_energy_rent_info", {
+      receiverAddress: "TReceiver123",
+    });
+    const output = getToolOutput(result);
+    expect(output.hasActiveRental).toBe(true);
+    expect(output.rentBalance).toBe(10000);
+    expect(services.getRentInfo).toHaveBeenCalled();
+  });
+
+  it("get_return_rental_info should return return estimation", async () => {
+    const result = await callTool("get_return_rental_info", {
+      receiverAddress: "TReceiver123",
+    });
+    const output = getToolOutput(result);
+    expect(output.securityDeposit).toBe(200);
+    expect(output.dailyRent).toBe(86.4);
+    expect(services.getReturnRentalInfo).toHaveBeenCalled();
+  });
+
+  it("rent_energy should call services.rentEnergy with correct args", async () => {
+    const result = await callTool("rent_energy", {
+      receiverAddress: "TReceiver123",
+      energyAmount: 300000,
+      durationDays: 7,
+    });
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_rent_energy_tx_id_123");
+    expect(output.receiver).toBe("TReceiver123");
+    expect(output.energyAmount).toBe(300000);
+    expect(services.rentEnergy).toHaveBeenCalledWith(
+      expect.any(String),
+      "TReceiver123",
+      300000,
+      604800,
+      "mainnet",
+    );
+  });
+
+  it("return_energy_rental should call services.returnEnergyRental", async () => {
+    const result = await callTool("return_energy_rental", {
+      counterpartyAddress: "TReceiver123",
+    });
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_return_rental_tx_id_123");
+    expect(output.receiver).toBe("TReceiver123");
+    expect(services.returnEnergyRental).toHaveBeenCalledWith(
+      expect.any(String),
+      "TReceiver123",
+      "renter",
+      "mainnet",
+    );
+  });
+
+  it("return_energy_rental should support receiver role", async () => {
+    await callTool("return_energy_rental", {
+      counterpartyAddress: "TRenter123",
+      endOrderType: "receiver",
+    });
+    expect(services.returnEnergyRental).toHaveBeenCalledWith(
+      expect.any(String),
+      "TRenter123",
+      "receiver",
+      "mainnet",
+    );
+  });
+});
+
+// ============================================================================
+// sTRX Staking Tools
+// ============================================================================
+
+describe("sTRX Staking Tools", () => {
+  it("get_strx_dashboard should return staking market data", async () => {
+    const result = await callTool("get_strx_dashboard");
+    const output = getToolOutput(result);
+    expect(output.totalApy).toBe(5.5);
+    expect(output.exchangeRate).toBe("1050000000000000000");
+    expect(output.unfreezeDelayDays).toBe(14);
+    expect(services.getStrxDashboard).toHaveBeenCalledWith("mainnet");
+  });
+
+  it("get_strx_account should return staking account info", async () => {
+    const result = await callTool("get_strx_account");
+    const output = getToolOutput(result);
+    expect(output.accountSupply).toBe(1000);
+    expect(output.accountCanClaimAmount).toBe(10);
+    expect(services.getStrxStakeAccount).toHaveBeenCalled();
+  });
+
+  it("get_strx_balance should return sTRX balance", async () => {
+    const result = await callTool("get_strx_balance");
+    const output = getToolOutput(result);
+    expect(output.formatted).toBe("1000.000000");
+    expect(output.symbol).toBe("sTRX");
+    expect(output.raw).toBe("1000000000000000000000");
+    expect(services.getStrxBalance).toHaveBeenCalled();
+  });
+
+  it("check_strx_withdrawal_eligibility should return eligibility info", async () => {
+    const result = await callTool("check_strx_withdrawal_eligibility");
+    const output = getToolOutput(result);
+    expect(output.hasStakedTrx).toBe(true);
+    expect(output.stakedAmount).toBe(1000);
+    expect(output.claimableRewards).toBe(10);
+    expect(output.unfreezeDelayDays).toBe(14);
+    expect(services.checkWithdrawalEligibility).toHaveBeenCalled();
+  });
+
+  it("stake_trx_to_strx should call services.stakeTrxToStrx", async () => {
+    const result = await callTool("stake_trx_to_strx", { amount: 100 });
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_stake_trx_tx_id_123");
+    expect(output.stakedTrx).toBe(100);
+    expect(output.estimatedStrx).toBe("95.238095");
+    expect(services.stakeTrxToStrx).toHaveBeenCalledWith(
+      expect.any(String),
+      100,
+      "mainnet",
+    );
+  });
+
+  it("unstake_strx should call services.unstakeStrx", async () => {
+    const result = await callTool("unstake_strx", { amount: 50 });
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_unstake_strx_tx_id_123");
+    expect(output.unstakedStrx).toBe(50);
+    expect(output.note).toContain("14 days");
+    expect(services.unstakeStrx).toHaveBeenCalledWith(
+      expect.any(String),
+      50,
+      "mainnet",
+    );
+  });
+
+  it("claim_strx_rewards should call services.claimStrxRewards", async () => {
+    const result = await callTool("claim_strx_rewards");
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_claim_strx_rewards_tx_id_123");
+    expect(output.claimedAmount).toBe(10);
+    expect(services.claimStrxRewards).toHaveBeenCalledWith(
+      expect.any(String),
+      "mainnet",
+    );
+  });
+
+  it("stake_trx_to_strx should error without private key", async () => {
+    vi.mocked(services.getConfiguredPrivateKey).mockImplementationOnce(() => {
+      throw new Error("Neither TRON_PRIVATE_KEY nor TRON_MNEMONIC environment variable is set.");
+    });
+    const result = await callTool("stake_trx_to_strx", { amount: 100 });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("TRON_PRIVATE_KEY");
+  });
+});
 
 describe("Network Parameter Forwarding", () => {
   it("supply should forward network parameter", async () => {

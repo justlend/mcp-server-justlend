@@ -44,7 +44,7 @@ describe("transferTRX (write — skipped by default)", () => {
       );
       expect(typeof txHash).toBe("string");
       expect(txHash.length).toBeGreaterThan(0);
-      console.log(`Transfer TX: ${txHash}`);
+      console.error(`Transfer TX: ${txHash}`);
     },
     60_000,
   );
@@ -64,7 +64,7 @@ describe("approveTRC20 (write — skipped by default)", () => {
         "nile",
       );
       expect(typeof txHash).toBe("string");
-      console.log(`Approve TX: ${txHash}`);
+      console.error(`Approve TX: ${txHash}`);
     },
     60_000,
   );

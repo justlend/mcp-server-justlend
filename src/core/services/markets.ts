@@ -1,87 +1,102 @@
 /**
  * JustLend V1 Market Data Services
- *
- * VERSION: JustLend V1
- * All calculation functions (APY, utilization, exchange rate) are based on JustLend V1 logic.
- * Interest rate model: Compound V2-style per-block rates.
  */
 
 import { getTronWeb } from "./clients.js";
-import { getJustLendAddresses, getAllJTokens, type JTokenInfo } from "../chains.js";
+import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 
-// V1 Constants: TRON produces ~1 block per 3 seconds, ~28,800 blocks/day, ~10,512,000 blocks/year
 const BLOCKS_PER_YEAR = 10_512_000;
 const MANTISSA = 1e18;
-
-// JustLend API endpoints
-const JUSTLEND_API_ENDPOINTS = {
-  mainnet: "https://labc.ablesdxd.link",
-  nile: "https://nileapi.justlend.org",
-};
-
-function getApiHost(network: string): string {
-  const n = network.toLowerCase();
-  if (n === "mainnet" || n === "tron" || n === "trx") return JUSTLEND_API_ENDPOINTS.mainnet;
-  if (n === "nile" || n === "testnet") return JUSTLEND_API_ENDPOINTS.nile;
-  return JUSTLEND_API_ENDPOINTS.mainnet;
-}
 
 export interface MarketData {
   symbol: string;
   underlyingSymbol: string;
   jTokenAddress: string;
   underlyingAddress: string;
-  // Rates (annualized percentages)
   supplyAPY: number;
   borrowAPY: number;
-  // Totals (in underlying token units)
   totalSupply: string;
   totalBorrows: string;
   totalReserves: string;
   availableLiquidity: string;
-  // Factors
   exchangeRate: string;
-  collateralFactor: number; // percentage, e.g. 75 means 75%
-  reserveFactor: number; // percentage
-  // Status
+  collateralFactor: number;
+  reserveFactor: number;
   isListed: boolean;
   mintPaused: boolean;
   borrowPaused: boolean;
-  // Price
   underlyingPriceUSD: string;
-  // Utilization
-  utilizationRate: number; // percentage
+  utilizationRate: number;
 }
 
-/**
- * Convert per-block rate to APY percentage (V1 calculation).
- * APY = ((1 + ratePerBlock)^blocksPerYear - 1) * 100
- *
- * VERSION: V1 - Uses Compound V2 per-block interest rate model
- */
 function rateToAPY(ratePerBlock: bigint): number {
   const rate = Number(ratePerBlock) / MANTISSA;
   const apy = (Math.pow(1 + rate, BLOCKS_PER_YEAR) - 1) * 100;
-  return Math.round(apy * 100) / 100; // 2 decimals
+  return Math.round(apy * 100) / 100;
 }
 
-/**
- * Format a raw amount using token decimals to a human-readable string.
- */
 function formatUnits(raw: bigint, decimals: number): string {
   const divisor = 10 ** decimals;
   const value = Number(raw) / divisor;
-  // Use enough precision
   if (value > 1e6) return value.toFixed(2);
   if (value > 1) return value.toFixed(6);
   return value.toFixed(decimals);
 }
 
 /**
+ * Fetch asset USD price from API using foolproof math: depositedUSD / underlyingAmount
+ */
+async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
+  const tryFetch = async (targetNetwork: string) => {
+    const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
+    const resp = await fetch(`${host}/justlend/markets`);
+    const data = await resp.json();
+    if (data.code !== 0 || !data.data || !data.data.jtokenList) {
+      throw new Error(`Invalid API response from ${host}`);
+    }
+
+    // 💡 核心修复：使用 Symbol 匹配，而不是地址。这样跨网兜底时才不会找不到！
+    const market = data.data.jtokenList.find((m: any) =>
+      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
+    );
+
+    if (!market) {
+      throw new Error(`Market for symbol ${underlyingSymbol} not found on ${targetNetwork} API`);
+    }
+
+    const depositedUSD = Number(market.depositedUSD || 0);
+    const totalSupplyRaw = Number(market.totalSupply || 0);
+    const exchangeRate = Number(market.exchangeRate || 0);
+
+    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
+
+    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
+    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
+
+    return depositedUSD / underlyingAmount;
+  };
+
+  try {
+    const price = await tryFetch(network);
+    if (price > 0) return price;
+    throw new Error(`Current network (${network}) API returned price 0`);
+  } catch (err: any) {
+    if (network === "nile") {
+      try {
+        // 💡 跨网终极兜底：去主网捞数据
+        const mainnetPrice = await tryFetch("mainnet");
+        if (mainnetPrice > 0) return mainnetPrice;
+      } catch (mainnetErr: any) {
+        throw new Error(`[Price Exception] Nile API failed (${err.message}) AND Mainnet fallback failed (${mainnetErr.message}).`);
+      }
+    }
+    throw new Error(`[Price Exception] API fetch failed: ${err.message}`);
+  }
+}
+
+/**
  * Get full market data for a single jToken market (V1).
- *
- * VERSION: V1 - Queries JustLend V1 contracts using Compound V2 ABI
  */
 export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
   const tronWeb = getTronWeb(network);
@@ -90,7 +105,6 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
   const jToken = tronWeb.contract(JTOKEN_ABI, jTokenInfo.address);
   const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
 
-  // Batch read calls
   const [
     supplyRatePerBlock,
     borrowRatePerBlock,
@@ -103,6 +117,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     marketInfo,
     mintPaused,
     borrowPaused,
+    oracleAddressHex
   ] = await Promise.all([
     jToken.methods.supplyRatePerBlock().call(),
     jToken.methods.borrowRatePerBlock().call(),
@@ -115,42 +130,45 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     comptroller.methods.markets(jTokenInfo.address).call(),
     comptroller.methods.mintGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.borrowGuardianPaused(jTokenInfo.address).call(),
+    comptroller.methods.oracle().call(),
   ]);
 
-  // Get price from oracle
-  let underlyingPriceRaw: bigint;
+  let underlyingPriceRaw = 0n;
+  let priceUSD = 0;
+
   try {
-    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, addresses.priceOracle);
+    const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
+    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
     underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
-  } catch {
-    underlyingPriceRaw = 0n;
+  } catch (err: any) {
+    // 链上报错静默，交由下游 API 兜底
+  }
+
+  // 价格决策：如果是测试网或者是0，强制走 API 兜底
+  if (underlyingPriceRaw > 0n && network === "mainnet") {
+    const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
+    priceUSD = Number(underlyingPriceRaw) / priceScale;
+  } else {
+    // 传入 UnderlyingSymbol 进行跨网查找
+    priceUSD = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+  }
+
+  // 💡 价格为 0 时强制抛出异常！
+  if (priceUSD === 0) {
+    throw new Error(`[Price Exception] Final computed price for ${jTokenInfo.symbol} is 0. This is considered an anomaly. Oracle raw: ${underlyingPriceRaw}`);
   }
 
   const supplyAPY = rateToAPY(BigInt(supplyRatePerBlock));
   const borrowAPY = rateToAPY(BigInt(borrowRatePerBlock));
-
   const totalBorrowsBig = BigInt(totalBorrowsRaw);
   const cashBig = BigInt(cashRaw);
   const totalSupplyBig = BigInt(totalSupplyRaw);
-
-  // Utilization = borrows / (cash + borrows - reserves)
   const totalReservesBig = BigInt(totalReservesRaw);
   const denominator = cashBig + totalBorrowsBig - totalReservesBig;
-  const utilizationRate = denominator > 0n
-    ? Math.round(Number(totalBorrowsBig * 10000n / denominator)) / 100
-    : 0;
-
+  const utilizationRate = denominator > 0n ? Math.round(Number(totalBorrowsBig * 10000n / denominator)) / 100 : 0;
   const collateralFactor = Number(BigInt(marketInfo.collateralFactorMantissa)) / MANTISSA * 100;
   const reserveFactor = Number(BigInt(reserveFactorRaw)) / MANTISSA * 100;
-
-  // Exchange rate: how many underlying per 1 jToken
-  // exchangeRate = (cash + totalBorrows - totalReserves) / totalSupply
-  // Stored as mantissa with 18 + underlyingDecimals - jTokenDecimals precision
   const exchangeRateNum = Number(BigInt(exchangeRateRaw)) / MANTISSA;
-
-  // Price: oracle returns price scaled to 36 - underlyingDecimals
-  const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
-  const priceUSD = Number(underlyingPriceRaw) / priceScale;
 
   return {
     symbol: jTokenInfo.symbol,
@@ -181,12 +199,17 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
  */
 export async function getAllMarketData(network = "mainnet"): Promise<MarketData[]> {
   const tokens = getAllJTokens(network);
-  const results = await Promise.allSettled(
-    tokens.map((t) => getMarketData(t, network)),
-  );
-  return results
-    .filter((r): r is PromiseFulfilledResult<MarketData> => r.status === "fulfilled")
-    .map((r) => r.value);
+  // Query sequentially to avoid RPC rate-limiting (especially on testnet nodes)
+  const allResults: MarketData[] = [];
+  for (const token of tokens) {
+    try {
+      const data = await getMarketData(token, network);
+      allResults.push(data);
+    } catch {
+      // Skip markets that fail to query
+    }
+  }
+  return allResults;
 }
 
 /**
@@ -250,7 +273,7 @@ export async function getMarketDataFromAPI(network = "mainnet"): Promise<any> {
  */
 async function getJTokenDetailFromAPI(jtokenAddr: string, network = "mainnet"): Promise<any> {
   const host = getApiHost(network);
-  const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${jtokenAddr}`;
+  const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
   try {
     const response = await fetch(url);
     if (!response.ok) return null;
@@ -404,7 +427,7 @@ export async function getMarketDashboardFromAPI(network = "mainnet"): Promise<an
  */
 export async function getJTokenDetailsFromAPI(jtokenAddr: string, network = "mainnet"): Promise<any> {
   const host = getApiHost(network);
-  const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${jtokenAddr}`;
+  const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
 
   try {
     const response = await fetch(url);

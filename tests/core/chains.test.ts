@@ -98,6 +98,14 @@ describe("getJustLendAddresses", () => {
     expect(addresses.jTokens["jUSDT"]).toBeDefined();
   });
 
+  it("should include sTRX and energy rental contract addresses", () => {
+    const addresses = getJustLendAddresses("mainnet");
+    expect(addresses.strx).toBeDefined();
+    expect(addresses.strx.proxy).toMatch(/^T/);
+    expect(addresses.strx.market).toMatch(/^T/);
+    expect(addresses.energyRateModel).toMatch(/^T/);
+  });
+
   it("should throw for unsupported network", () => {
     expect(() => getJustLendAddresses("bsc")).toThrow("Unsupported network");
   });

@@ -96,10 +96,9 @@ export async function signTypedData(
     headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : undefined,
   });
 
-  // @ts-ignore — TronWeb types may not expose _signTypedData yet
-  if (typeof tronWeb.trx._signTypedData === "function") {
-    // @ts-ignore
-    return tronWeb.trx._signTypedData(domain, types, value);
+  const trxAny = tronWeb.trx as any;
+  if (typeof trxAny._signTypedData === "function") {
+    return trxAny._signTypedData(domain, types, value);
   }
 
   throw new Error("signTypedData not supported by this TronWeb version or configuration");

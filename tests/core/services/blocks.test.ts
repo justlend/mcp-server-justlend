@@ -38,7 +38,7 @@ describe("getLatestBlock (Mainnet)", () => {
     expect(block.block_header).toBeDefined();
     expect(block.block_header.raw_data).toBeDefined();
     expect(typeof block.block_header.raw_data.number).toBe("number");
-    console.log(`Latest block: #${block.block_header.raw_data.number}`);
+    console.error(`Latest block: #${block.block_header.raw_data.number}`);
   }, 20_000);
 });
 
@@ -48,7 +48,7 @@ describe("getBlockNumber (Mainnet)", () => {
     const num = await getBlockNumber("mainnet");
     expect(typeof num).toBe("number");
     expect(num).toBeGreaterThan(0);
-    console.log(`Current block number: ${num}`);
+    console.error(`Current block number: ${num}`);
   }), 20_000);
 });
 

@@ -22,7 +22,7 @@ describe("getWalletAddressFromKey alias", () => {
 describe("getConfiguredWallet (no env)", () => {
   it("throws when neither TRON_PRIVATE_KEY nor TRON_MNEMONIC is set", () => {
     if (HAS_KEY) {
-      console.log("Skipping — env key is set");
+      console.error("Skipping — env key is set");
       return;
     }
     expect(() => getConfiguredWallet()).toThrow();

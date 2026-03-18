@@ -29,7 +29,7 @@ describe("getTransaction (Mainnet)", () => {
     const transactions = block?.transactions as any[] | undefined;
 
     if (!transactions || transactions.length === 0) {
-      console.log("Latest block has no transactions — skipping");
+      console.error("Latest block has no transactions — skipping");
       return;
     }
 
@@ -38,7 +38,7 @@ describe("getTransaction (Mainnet)", () => {
 
     expect(tx).toBeDefined();
     expect(typeof tx).toBe("object");
-    console.log(`Fetched tx: ${txHash}, keys: ${Object.keys(tx ?? {}).join(", ")}`);
+    console.error(`Fetched tx: ${txHash}, keys: ${Object.keys(tx ?? {}).join(", ")}`);
   }), 30_000);
 });
 
@@ -49,7 +49,7 @@ describe("getTransactionInfo (Mainnet)", () => {
     const transactions = block?.transactions as any[] | undefined;
 
     if (!transactions || transactions.length === 0) {
-      console.log("Latest block has no transactions — skipping");
+      console.error("Latest block has no transactions — skipping");
       return;
     }
 
@@ -57,6 +57,6 @@ describe("getTransactionInfo (Mainnet)", () => {
     const info = await getTransactionInfo(String(txHash), "mainnet");
 
     expect(info).toBeDefined();
-    console.log(`Transaction info: ${JSON.stringify(info).slice(0, 100)}...`);
+    console.error(`Transaction info: ${JSON.stringify(info).slice(0, 100)}...`);
   }), 30_000);
 });

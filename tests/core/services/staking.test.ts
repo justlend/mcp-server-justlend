@@ -38,7 +38,7 @@ describe("freezeBalanceV2 (write — skipped by default)", () => {
       const txHash = await freezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
       expect(typeof txHash).toBe("string");
       expect(txHash.length).toBeGreaterThan(0);
-      console.log(`Freeze TX: ${txHash}`);
+      console.error(`Freeze TX: ${txHash}`);
     },
     60_000,
   );
@@ -49,7 +49,7 @@ describe("freezeBalanceV2 (write — skipped by default)", () => {
       const privateKey = process.env.TRON_PRIVATE_KEY!;
       const txHash = await freezeBalanceV2(privateKey, "1000000", "ENERGY", "nile");
       expect(typeof txHash).toBe("string");
-      console.log(`Freeze ENERGY TX: ${txHash}`);
+      console.error(`Freeze ENERGY TX: ${txHash}`);
     },
     60_000,
   );
@@ -62,7 +62,7 @@ describe("unfreezeBalanceV2 (write — skipped by default)", () => {
       const privateKey = process.env.TRON_PRIVATE_KEY!;
       const txHash = await unfreezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
       expect(typeof txHash).toBe("string");
-      console.log(`Unfreeze TX: ${txHash}`);
+      console.error(`Unfreeze TX: ${txHash}`);
     },
     60_000,
   );
@@ -75,7 +75,7 @@ describe("withdrawExpireUnfreeze (write — skipped by default)", () => {
       const privateKey = process.env.TRON_PRIVATE_KEY!;
       const txHash = await withdrawExpireUnfreeze(privateKey, "nile");
       expect(typeof txHash).toBe("string");
-      console.log(`Withdraw TX: ${txHash}`);
+      console.error(`Withdraw TX: ${txHash}`);
     },
     60_000,
   );

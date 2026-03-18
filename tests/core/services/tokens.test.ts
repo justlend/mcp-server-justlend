@@ -42,7 +42,7 @@ describe("getTRC20TokenInfo (Mainnet)", () => {
       expect(typeof info.totalSupply).toBe("bigint");
       expect(info.totalSupply).toBeGreaterThan(0n);
       expect(typeof info.formattedTotalSupply).toBe("string");
-      console.log(
+      console.error(
         `USDT: name=${info.name}, supply=${info.formattedTotalSupply}, decimals=${info.decimals}`,
       );
     } catch (e) {
@@ -58,7 +58,7 @@ describe("getTRC20TokenInfo (Mainnet)", () => {
       expect(info.symbol).toBeTruthy();
       expect(typeof info.decimals).toBe("number");
       expect(info.totalSupply).toBeGreaterThan(0n);
-      console.log(`SUN: symbol=${info.symbol}, decimals=${info.decimals}`);
+      console.error(`SUN: symbol=${info.symbol}, decimals=${info.decimals}`);
     } catch (e) {
       skipOn429(e);
     }
