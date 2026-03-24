@@ -83,7 +83,7 @@ async function main() {
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", server: "mcp-server-justlend", version: "1.0.0" });
+    res.json({ status: "ok", server: "mcp-server-justlend", version: "1.0.2" });
   });
 
   app.listen(PORT, () => {

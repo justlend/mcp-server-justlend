@@ -10,7 +10,7 @@ async function startServer() {
     const server = new McpServer(
       {
         name: "mcp-server-justlend",
-        version: "1.0.0",
+        version: "1.0.2",
       },
       {
         capabilities: {
@@ -26,7 +26,7 @@ async function startServer() {
     registerJustLendTools(server);
     registerJustLendPrompts(server);
 
-    console.error("@justlend/mcp-server-justlend v1.0.0 initialized");
+    console.error("@justlend/mcp-server-justlend v1.0.2 initialized");
     console.error(`Supported networks: ${getSupportedNetworks().join(", ")}`);
 
     // Auto-initialize wallet on startup — generates a new encrypted wallet if none exists
