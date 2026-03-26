@@ -4,8 +4,7 @@
       "command": "npx",
       "args": ["-y", "@justlend/mcp-server-justlend"],
       "env": {
-        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV",
-        "TRON_PRIVATE_KEY": "SET_VIA_SYSTEM_ENV"
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
     }
   }

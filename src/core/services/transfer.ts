@@ -1,4 +1,4 @@
-import { getWallet } from "./clients.js";
+import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
 import { utils } from "./utils.js";
 import { checkResourceSufficiency } from "./lending.js";
 import { safeSend } from "./contracts.js";
@@ -9,12 +9,11 @@ import { TRC20_ABI } from "../abis.js";
  * @param amount - Amount in TRX (not Sun).
  */
 export async function transferTRX(
-  privateKey: string,
   to: string,
   amount: string,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountSun = utils.toSun(amount as any);
 
@@ -32,15 +31,18 @@ export async function transferTRX(
     );
   }
 
-  const tx = await tronWeb.trx.sendTransaction(to, amountSun as any);
+  // Build unsigned transaction, sign with agent-wallet, then broadcast
+  const unsignedTx = await tronWeb.transactionBuilder.sendTrx(to, Number(amountSun), walletAddress);
+  const signedTx = await signTransactionWithWallet(unsignedTx);
+  const broadcast = await tronWeb.trx.sendRawTransaction(signedTx);
 
-  if ((tx as any).result === true && (tx as any).transaction) {
-    return (tx as any).transaction.txID;
+  if ((broadcast as any).result) {
+    return (broadcast as any).txid || (broadcast as any).transaction?.txID || unsignedTx.txID;
   }
-  if ((tx as any).txID) {
-    return (tx as any).txID;
-  }
-  throw new Error(`Transaction failed: ${JSON.stringify(tx)}`);
+  const errorMsg = (broadcast as any).message
+    ? Buffer.from((broadcast as any).message, "hex").toString()
+    : JSON.stringify(broadcast);
+  throw new Error(`Broadcast failed: ${errorMsg}`);
 }
 
 /**
@@ -51,10 +53,9 @@ export async function transferTRC20(
   tokenAddress: string,
   to: string,
   amount: string,
-  privateKey: string,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   try {
     const contract = await tronWeb.contract().at(tokenAddress);
@@ -71,7 +72,7 @@ export async function transferTRC20(
       );
     }
 
-    const { txID: txId } = await safeSend(privateKey, {
+    const { txID: txId } = await safeSend({
       address: tokenAddress,
       abi: TRC20_ABI,
       functionName: "transfer",
@@ -103,13 +104,10 @@ export async function approveTRC20(
   tokenAddress: string,
   spenderAddress: string,
   amount: string,
-  privateKey: string,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
-
   try {
-    const { txID: txId } = await safeSend(privateKey, {
+    const { txID: txId } = await safeSend({
       address: tokenAddress,
       abi: TRC20_ABI,
       functionName: "approve",

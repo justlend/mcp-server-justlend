@@ -6,7 +6,8 @@
  * Based on Compound V2 protocol architecture with jToken (cToken) mechanism.
  */
 
-import { getTronWeb, getWallet } from "./clients.js";
+import { getTronWeb } from "./clients.js";
+import { getSigningClient } from "./wallet.js";
 import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
@@ -127,13 +128,12 @@ async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddres
 // ============================================================================
 
 export async function supply(
-  privateKey: string,
   jTokenSymbol: string,
   amount: string,
   network = "mainnet",
 ): Promise<{ txID: string; jTokenSymbol: string; amount: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const amountRaw = utils.parseUnits(amount, info.underlyingDecimals);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
 
@@ -149,7 +149,7 @@ export async function supply(
       );
     }
 
-    const { txID } = await safeSend(privateKey, {
+    const { txID } = await safeSend({
       address: info.address,
       abi: JTRX_MINT_ABI,
       functionName: "mint",
@@ -173,7 +173,7 @@ export async function supply(
       );
     }
 
-    const { txID } = await safeSend(privateKey, {
+    const { txID } = await safeSend({
       address: info.address,
       abi: JTOKEN_ABI,
       functionName: "mint",
@@ -188,13 +188,12 @@ export async function supply(
 // ============================================================================
 
 export async function withdraw(
-  privateKey: string,
   jTokenSymbol: string,
   amount: string,
   network = "mainnet",
 ): Promise<{ txID: string; jTokenSymbol: string; amount: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const amountRaw = utils.parseUnits(amount, info.underlyingDecimals);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
 
@@ -208,7 +207,7 @@ export async function withdraw(
     );
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: info.address,
     abi: JTOKEN_ABI,
     functionName: "redeemUnderlying",
@@ -218,12 +217,11 @@ export async function withdraw(
 }
 
 export async function withdrawAll(
-  privateKey: string,
   jTokenSymbol: string,
   network = "mainnet",
 ): Promise<{ txID: string; jTokenSymbol: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   const contract = tronWeb.contract(JTOKEN_ABI, info.address);
   const walletAddress = tronWeb.defaultAddress.base58;
@@ -233,7 +231,7 @@ export async function withdrawAll(
     throw new Error(`No ${jTokenSymbol} balance to withdraw`);
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: info.address,
     abi: JTOKEN_ABI,
     functionName: "redeem",
@@ -247,13 +245,12 @@ export async function withdrawAll(
 // ============================================================================
 
 export async function borrow(
-  privateKey: string,
   jTokenSymbol: string,
   amount: string,
   network = "mainnet",
 ): Promise<{ txID: string; jTokenSymbol: string; amount: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const amountRaw = utils.parseUnits(amount, info.underlyingDecimals);
   const walletAddress = tronWeb.defaultAddress.base58;
 
@@ -368,7 +365,7 @@ export async function borrow(
     );
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: info.address,
     abi: JTOKEN_ABI,
     functionName: "borrow",
@@ -382,13 +379,12 @@ export async function borrow(
 // ============================================================================
 
 export async function repay(
-  privateKey: string,
   jTokenSymbol: string,
   amount: string,
   network = "mainnet",
 ): Promise<{ txID: string; jTokenSymbol: string; amount: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   const isMax = amount === "-1" || amount.toLowerCase() === "max";
 
@@ -432,7 +428,7 @@ export async function repay(
     // ✅ 修正：TRX 还款与 dapp 前端一致
     // dapp 使用 repayBorrow(uint256) + parameters: [amount] + callValue: amount
     // 同时传参数和 callValue
-    const { txID } = await safeSend(privateKey, {
+    const { txID } = await safeSend({
       address: info.address,
       abi: JTRX_REPAY_ABI,                // ✅ 使用 payable ABI，与合约签名匹配
       functionName: "repayBorrow",
@@ -443,7 +439,7 @@ export async function repay(
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} TRX to ${jTokenSymbol}. IMPORTANT: Please call get_account_summary to see your updated position and health factor.` };
   } else {
     const repayAmount = isMax ? MAX_UINT256 : utils.parseUnits(amount, info.underlyingDecimals).toString();
-    const { txID } = await safeSend(privateKey, {
+    const { txID } = await safeSend({
       address: info.address,
       abi: JTOKEN_ABI,
       functionName: "repayBorrow",
@@ -459,12 +455,11 @@ export async function repay(
 // ============================================================================
 
 export async function enterMarket(
-  privateKey: string,
   jTokenSymbol: string,
   network = "mainnet",
 ): Promise<{ txID?: string; message: string }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
 
   const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
@@ -474,7 +469,7 @@ export async function enterMarket(
     return { message: `${jTokenSymbol} is already enabled as collateral, no need to enable again.` };
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.comptroller,
     abi: COMPTROLLER_ABI,
     functionName: "enterMarkets",
@@ -484,12 +479,11 @@ export async function enterMarket(
 }
 
 export async function exitMarket(
-  privateKey: string,
   jTokenSymbol: string,
   network = "mainnet",
 ): Promise<{ txID?: string; message: string; events?: any[] }> {
   const info = resolveJToken(jTokenSymbol, network);
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
 
   const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
@@ -570,7 +564,7 @@ export async function exitMarket(
     }
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.comptroller,
     abi: COMPTROLLER_ABI,
     functionName: "exitMarket",
@@ -586,7 +580,6 @@ export async function exitMarket(
 // ============================================================================
 
 export async function approveUnderlying(
-  privateKey: string,
   jTokenSymbol: string,
   amount: string = "max",
   network = "mainnet",
@@ -594,7 +587,7 @@ export async function approveUnderlying(
   const info = resolveJToken(jTokenSymbol, network);
   if (!info.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
 
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
 
@@ -610,7 +603,7 @@ export async function approveUnderlying(
     };
   }
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: info.underlying!,
     abi: TRC20_ABI,
     functionName: "approve",
@@ -624,14 +617,13 @@ export async function approveUnderlying(
 // ============================================================================
 
 export async function claimRewards(
-  privateKey: string,
   network = "mainnet",
 ): Promise<{ txID: string; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58;
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.comptroller,
     abi: COMPTROLLER_ABI,
     functionName: "claimReward",

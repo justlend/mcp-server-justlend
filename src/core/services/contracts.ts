@@ -1,4 +1,5 @@
-import { getTronWeb, getWallet } from "./clients.js";
+import { getTronWeb } from "./clients.js";
+import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
 import { MULTICALL2_ABI, MULTICALL3_ABI } from "./multicall-abi.js";
 import { waitForTransaction } from "./transactions.js";
 
@@ -33,9 +34,9 @@ export async function readContract(
 
 /**
  * Write to a smart contract (state-changing functions).
+ * Signing is handled by agent-wallet — no private key needed.
  */
 export async function writeContract(
-  privateKey: string,
   params: {
     address: string;
     functionName: string;
@@ -45,7 +46,7 @@ export async function writeContract(
   },
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   try {
     const contract = params.abi
@@ -56,10 +57,36 @@ export async function writeContract(
     if (!method) throw new Error(`Function ${params.functionName} not found in contract`);
 
     const args = params.args || [];
-    const options: any = {};
-    if (params.value) options.callValue = params.value;
+    const ownerAddress = tronWeb.defaultAddress.base58 as string;
 
-    return await method(...args).send(options);
+    // Build unsigned transaction via transactionBuilder
+    const inputTypes = (params.abi || [])
+      .find((item: any) => item.type === "function" && item.name === params.functionName)
+      ?.inputs?.map((i: any) => i.type) || [];
+    const signature = `${params.functionName}(${inputTypes.join(",")})`;
+    const typedParams = args.map((val: any, index: number) => ({
+      type: inputTypes[index],
+      value: val,
+    }));
+
+    const options: any = {};
+    if (params.value) options.callValue = Number(params.value);
+
+    const tx = await tronWeb.transactionBuilder.triggerSmartContract(
+      params.address,
+      signature,
+      options,
+      typedParams,
+      ownerAddress,
+    );
+
+    const signed = await signTransactionWithWallet(tx.transaction);
+    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
+
+    if (broadcast.result) {
+      return broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
+    }
+    throw new Error(`Broadcast failed: ${JSON.stringify(broadcast)}`);
   } catch (error: any) {
     throw new Error(`Write contract failed: ${error.message}`);
   }
@@ -77,13 +104,13 @@ export interface SafeSendParams {
 /**
  * Safe transaction interaction with pre-flight simulation and resource checks.
  * Prevents failed transactions from burning gas.
+ * Signing is handled by agent-wallet — no private key needed.
  */
 export async function safeSend(
-  privateKey: string,
   params: SafeSendParams,
   network = "mainnet"
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const ownerAddress = tronWeb.defaultAddress.base58;
   if (!ownerAddress) throw new Error("Wallet not configured");
 
@@ -226,7 +253,7 @@ export async function safeSend(
       ownerAddress
     );
 
-    const signed = await tronWeb.trx.sign(tx.transaction, privateKey);
+    const signed = await signTransactionWithWallet(tx.transaction);
     const broadcast = await tronWeb.trx.sendRawTransaction(signed);
 
     if (broadcast.result) {
@@ -444,7 +471,6 @@ export async function multicall(
  * Deploy a smart contract to TRON.
  */
 export async function deployContract(
-  privateKey: string,
   params: {
     abi: any[];
     bytecode: string;
@@ -462,7 +488,7 @@ export async function deployContract(
     );
   }
 
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   try {
     const deploymentOptions = {
@@ -479,7 +505,7 @@ export async function deployContract(
       deploymentOptions,
       tronWeb.defaultAddress.hex as string,
     );
-    const signedTx = await tronWeb.trx.sign(transaction, privateKey);
+    const signedTx = await signTransactionWithWallet(transaction);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result && result.result) {

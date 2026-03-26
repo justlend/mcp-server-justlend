@@ -9,9 +9,11 @@
  * - Return/cancel energy rental (with order existence checks)
  */
 
-import { getTronWeb, getWallet } from "./clients.js";
+import { getTronWeb } from "./clients.js";
+import { getSigningClient } from "./wallet.js";
 import { getJustLendAddresses, getApiHost, getNetworkConfig } from "../chains.js";
 import { ENERGY_MARKET_ABI } from "../abis.js";
+import { safeSend } from "./contracts.js";
 import { waitForTransaction } from "./transactions.js";
 import { checkResourceSufficiency } from "./lending.js";
 
@@ -762,7 +764,6 @@ export async function getReturnRentalInfo(
  * Automatically handles backend API failures for remaining duration via on-chain calculation fallback.
  */
 export async function rentEnergy(
-  privateKey: string,
   receiverAddress: string,
   energyAmount: number,
   durationSeconds: number | undefined,
@@ -770,7 +771,7 @@ export async function rentEnergy(
 ) {
   validateTronAddress(receiverAddress, "receiver address");
 
-  const tronWebForCheck = getWallet(privateKey, network);
+  const tronWebForCheck = await getSigningClient(network);
   const walletAddress = tronWebForCheck.defaultAddress.base58 as string;
   const existingRental = await getRentInfo(walletAddress, receiverAddress, network);
   const isRenewal = existingRental.hasActiveRental;
@@ -853,10 +854,14 @@ export async function rentEnergy(
   const stakeAmountSun = BigInt(Math.floor(priceEstimate.trxAmount * TRX_PRECISION));
   const prepaymentSun = BigInt(Math.ceil(priceEstimate.totalPrepayment * TRX_PRECISION));
 
-  const rentContract = tronWebForCheck.contract(ENERGY_MARKET_ABI, addrs.strx.market);
-  const txId = await rentContract.methods
-    .rentResource(receiverAddress, stakeAmountSun.toString(), 1)
-    .send({ callValue: prepaymentSun.toString(), feeLimit: DEFAULT_FEE_LIMIT });
+  const { txID: txId } = await safeSend({
+    address: addrs.strx.market,
+    abi: ENERGY_MARKET_ABI,
+    functionName: "rentResource",
+    args: [receiverAddress, stakeAmountSun.toString(), 1],
+    callValue: prepaymentSun.toString(),
+    feeLimit: DEFAULT_FEE_LIMIT,
+  }, network);
 
   return {
     txId,
@@ -873,7 +878,6 @@ export async function rentEnergy(
  * Return/cancel energy rental.
  */
 export async function returnEnergyRental(
-  privateKey: string,
   counterpartyAddress: string,
   endOrderType: "renter" | "receiver" = "renter",
   network = "mainnet",
@@ -882,7 +886,7 @@ export async function returnEnergyRental(
   if (endOrderType !== "renter" && endOrderType !== "receiver") {
     throw new Error("endOrderType must be 'renter' or 'receiver'");
   }
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
@@ -899,16 +903,17 @@ export async function returnEnergyRental(
   }
 
   const stakeAmountSun = BigInt(Math.floor(rentInfo.rentBalance * TRX_PRECISION));
-  const contract = tronWeb.contract(ENERGY_MARKET_ABI, addrs.strx.market);
 
   const methodName = endOrderType === "receiver" ? "returnResourceByReceiver" : "returnResource";
   const targetAddress = counterpartyAddress;
 
-  const txId = await contract.methods[methodName](
-    targetAddress,
-    stakeAmountSun.toString(),
-    1,
-  ).send({ feeLimit: DEFAULT_FEE_LIMIT });
+  const { txID: txId } = await safeSend({
+    address: addrs.strx.market,
+    abi: ENERGY_MARKET_ABI,
+    functionName: methodName,
+    args: [targetAddress, stakeAmountSun.toString(), 1],
+    feeLimit: DEFAULT_FEE_LIMIT,
+  }, network);
 
   let actualSubedAmount = rentInfo.rentBalance;
   let actualSubedSecurityDeposit = rentInfo.securityDeposit;

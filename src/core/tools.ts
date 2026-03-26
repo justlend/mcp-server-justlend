@@ -21,8 +21,8 @@ function sanitizeError(error: any): string {
 /**
  * Register all JustLend MCP tools.
  *
- * SECURITY: Private keys are read from environment variables, never passed as tool arguments.
- * Write operations require TRON_PRIVATE_KEY or TRON_MNEMONIC to be set.
+ * SECURITY: Private keys are managed by @bankofai/agent-wallet, never stored in environment
+ * variables or passed as tool arguments. Run `agent-wallet start` to set up the encrypted wallet.
  */
 export function registerJustLendTools(server: McpServer) {
 
@@ -33,14 +33,103 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_wallet_address",
     {
-      description: "Get the configured wallet address. This wallet is used for all lending operations.",
+      description: "Get the configured wallet address. Auto-generates a new encrypted wallet if none exists.",
       inputSchema: {},
       annotations: { title: "Get Wallet Address", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async () => {
       try {
-        const address = services.getWalletAddress();
-        return { content: [{ type: "text", text: JSON.stringify({ address, message: "This wallet will be used for all JustLend operations" }, null, 2) }] };
+        const { address, walletId, created } = await services.autoInitWallet();
+        if (created) {
+          return { content: [{ type: "text", text: JSON.stringify({
+            address,
+            walletId,
+            newlyCreated: true,
+            message: "New wallet auto-generated. Encrypted private key stored in ~/.agent-wallet/. Fund this address with TRX before performing write operations.",
+          }, null, 2) }] };
+        }
+        const status = await services.checkWalletStatus();
+        return { content: [{ type: "text", text: JSON.stringify({
+          address,
+          walletId,
+          totalWallets: status.wallets.length,
+          message: "This wallet will be used for all JustLend operations",
+        }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_wallets",
+    {
+      description: "List all wallets configured in agent-wallet. Shows wallet IDs, types, active status, and addresses.",
+      inputSchema: {},
+      annotations: { title: "List Wallets", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async () => {
+      try {
+        const status = await services.checkWalletStatus();
+        return { content: [{ type: "text", text: JSON.stringify({
+          initialized: status.initialized,
+          activeWalletId: status.activeWalletId,
+          wallets: status.wallets,
+          message: status.message,
+        }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_active_wallet",
+    {
+      description: "Set the active wallet by wallet ID. Use list_wallets to see available wallet IDs.",
+      inputSchema: {
+        walletId: z.string().describe("The wallet ID to set as active"),
+      },
+      annotations: { title: "Set Active Wallet", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ walletId }: { walletId: string }) => {
+      const result = services.setActiveWallet(walletId);
+      if (!result.success) {
+        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: true };
+      }
+      // Return new status after switching
+      const status = await services.checkWalletStatus();
+      return { content: [{ type: "text", text: JSON.stringify({
+        ...result,
+        activeAddress: status.activeAddress,
+        wallets: status.wallets,
+      }, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "import_wallet",
+    {
+      description:
+        "Import an existing wallet from a private key. The key is stored encrypted in ~/.agent-wallet/. " +
+        "Use this to import an existing funded wallet instead of the auto-generated one. " +
+        "WARNING: The private key will be transmitted through the MCP protocol and may appear in AI conversation logs. " +
+        "For maximum security, use the agent-wallet CLI directly: `npx agent-wallet import`.",
+      inputSchema: {
+        privateKey: z.string().describe("Private key hex string (64 characters, with or without 0x prefix)"),
+        walletId: z.string().optional().describe("Wallet identifier. Default: 'imported'"),
+      },
+      annotations: { title: "Import Wallet", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
+    async ({ privateKey, walletId }: { privateKey: string; walletId?: string }) => {
+      try {
+        const result = await services.importWallet(privateKey, walletId);
+        return { content: [{ type: "text", text: JSON.stringify({
+          address: result.address,
+          walletId: result.walletId,
+          message: "Wallet imported and encrypted. Set as active if it was the first wallet.",
+          securityNote: "For future imports, prefer using the CLI: `npx agent-wallet import` to avoid exposing keys in conversation logs.",
+        }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
@@ -272,7 +361,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const summary = await services.getAccountSummary(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
@@ -299,7 +388,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount, address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const result = await services.checkAllowance(userAddress, market, network);
 
         let sufficiency = {};
@@ -338,7 +427,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const balance = await services.getTRXBalance(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, balance: `${balance.formatted} TRX` }, null, 2) }] };
       } catch (error: any) {
@@ -370,7 +459,7 @@ export function registerJustLendTools(server: McpServer) {
         if (!tokenInput) {
           return { content: [{ type: "text", text: "Error: Either 'token' (symbol) or 'tokenAddress' (contract address) is required." }], isError: true };
         }
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
 
         // Resolve token symbol to contract address from JustLend markets
         let resolvedAddress = tokenInput;
@@ -415,7 +504,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const data = await services.getAccountDataFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
@@ -471,10 +560,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
+
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
-        const walletAddr = services.getWalletAddress();
+        const walletAddr = await services.getWalletAddress();
 
         // For TRC20 markets, check allowance first and inform user
         if (!isTRX) {
@@ -501,7 +590,7 @@ export function registerJustLendTools(server: McpServer) {
         }
 
         const resourceWarning = await getResourceWarning(walletAddr, "supply", isTRX, network, market, amount);
-        const result = await services.supply(privateKey, market, amount, network);
+        const result = await services.supply(market, amount, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -532,10 +621,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "withdraw", false, network, market, amount);
-        const result = await services.withdraw(privateKey, market, amount, network);
+        const result = await services.withdraw(market, amount, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -564,10 +653,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "withdraw_all", false, network, market);
-        const result = await services.withdrawAll(privateKey, market, network);
+        const result = await services.withdrawAll(market, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -599,10 +688,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "borrow", false, network, market, amount);
-        const result = await services.borrow(privateKey, market, amount, network);
+        const result = await services.borrow(market, amount, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -634,10 +723,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
+
         const info = getJTokenInfo(market, network);
         const isTRX = info ? (info.underlyingSymbol === "TRX" || !info.underlying) : false;
-        const walletAddr = services.getWalletAddress();
+        const walletAddr = await services.getWalletAddress();
 
         // For TRC20 markets, check allowance first and inform user (skip for 'max' repay)
         if (!isTRX && amount !== "max") {
@@ -664,7 +753,7 @@ export function registerJustLendTools(server: McpServer) {
         }
 
         const resourceWarning = await getResourceWarning(walletAddr, "repay", isTRX, network, market, amount);
-        const result = await services.repay(privateKey, market, amount, network);
+        const result = await services.repay(market, amount, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -694,10 +783,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "enter_market", false, network, market);
-        const result = await services.enterMarket(privateKey, market, network);
+        const result = await services.enterMarket(market, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -727,10 +816,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "exit_market", false, network, market);
-        const result = await services.exitMarket(privateKey, market, network);
+        const result = await services.exitMarket(market, network);
 
         // Check if transaction events contain a Failure
         const failureEvent = result.events?.find((e: any) => e.name === "Failure");
@@ -777,10 +866,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ market, amount = "max", network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "approve", false, network, market, amount);
-        const result = await services.approveUnderlying(privateKey, market, amount, network);
+        const result = await services.approveUnderlying(market, amount, network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -808,10 +897,10 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const walletAddr = services.getWalletAddress();
+
+        const walletAddr = await services.getWalletAddress();
         const resourceWarning = await getResourceWarning(walletAddr, "claim_rewards", false, network);
-        const result = await services.claimRewards(privateKey, network);
+        const result = await services.claimRewards(network);
         return {
           content: [{
             type: "text", text: JSON.stringify({
@@ -854,7 +943,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ operation, market, amount = "1", spender, address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const result = await services.estimateLendingEnergy(operation, market, amount, userAddress, network, spender);
         // Also check resource sufficiency
         const resourceCheck = await services.checkResourceSufficiency(userAddress, result.totalEnergy, result.totalBandwidth, network);
@@ -888,7 +977,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const rewards = await services.getMiningRewardsFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(rewards, null, 2) }] };
       } catch (error: any) {
@@ -970,7 +1059,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const data = await services.getUserVoteStatus(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
@@ -993,7 +1082,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const data = await services.getVoteInfo(userAddress, network);
         return {
           content: [{
@@ -1028,7 +1117,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ proposalId, address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const data = await services.getLockedVotes(userAddress, proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
@@ -1049,7 +1138,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const userAddress = address || services.getWalletAddress();
+        const userAddress = address || await services.getWalletAddress();
         const data = await services.checkJSTAllowanceForVoting(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
@@ -1072,8 +1161,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ amount = "max", network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.approveJSTForVoting(privateKey, amount, network);
+
+        const result = await services.approveJSTForVoting(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1096,8 +1185,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.depositJSTForVotes(privateKey, amount, network);
+
+        const result = await services.depositJSTForVotes(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1119,8 +1208,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.withdrawVotesToJST(privateKey, amount, network);
+
+        const result = await services.withdrawVotesToJST(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1145,8 +1234,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ proposalId, support, votes, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.castVote(privateKey, proposalId, support, votes, network);
+
+        const result = await services.castVote(proposalId, support, votes, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1169,8 +1258,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ proposalId, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.withdrawVotesFromProposal(privateKey, proposalId, network);
+
+        const result = await services.withdrawVotesFromProposal(proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1246,9 +1335,7 @@ export function registerJustLendTools(server: McpServer) {
       try {
         // Check if this is a renewal by looking for existing rental
         if (receiverAddress) {
-          const privateKey = services.getConfiguredPrivateKey();
-          const tronWeb = services.getWallet(privateKey, network);
-          const walletAddress = tronWeb.defaultAddress.base58 as string;
+          const walletAddress = await services.getWalletAddress();
           const existingRental = await services.getRentInfo(walletAddress, receiverAddress, network);
 
           if (existingRental.hasActiveRental) {
@@ -1346,7 +1433,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, type = "all", page = 0, pageSize = 10, network = services.getGlobalNetwork() }) => {
       try {
-        const addr = address || services.getWalletAddress();
+        const addr = address || await services.getWalletAddress();
         const orders = await services.getUserRentalOrders(addr, type, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify(orders, null, 2) }] };
       } catch (error: any) {
@@ -1370,7 +1457,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
       try {
-        const renter = renterAddress || services.getWalletAddress();
+        const renter = renterAddress || await services.getWalletAddress();
         const info = await services.getRentInfo(renter, receiverAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       } catch (error: any) {
@@ -1395,7 +1482,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ renterAddress, receiverAddress, network = services.getGlobalNetwork() }) => {
       try {
-        const renter = renterAddress || services.getWalletAddress();
+        const renter = renterAddress || await services.getWalletAddress();
         const info = await services.getReturnRentalInfo(renter, receiverAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       } catch (error: any) {
@@ -1428,9 +1515,9 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ receiverAddress, energyAmount, durationHours, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
+
         const durationSeconds = durationHours ? durationHours * 3600 : undefined;
-        const result = await services.rentEnergy(privateKey, receiverAddress, energyAmount, durationSeconds, network);
+        const result = await services.rentEnergy(receiverAddress, energyAmount, durationSeconds, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1454,8 +1541,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ counterpartyAddress, endOrderType = "renter", network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.returnEnergyRental(privateKey, counterpartyAddress, endOrderType, network);
+
+        const result = await services.returnEnergyRental(counterpartyAddress, endOrderType, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1502,7 +1589,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const addr = address || services.getWalletAddress();
+        const addr = address || await services.getWalletAddress();
         const account = await services.getStrxStakeAccount(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
       } catch (error: any) {
@@ -1523,7 +1610,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const addr = address || services.getWalletAddress();
+        const addr = address || await services.getWalletAddress();
         const balance = await services.getStrxBalance(addr, network);
         return {
           content: [{
@@ -1553,7 +1640,7 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ address, network = services.getGlobalNetwork() }) => {
       try {
-        const addr = address || services.getWalletAddress();
+        const addr = address || await services.getWalletAddress();
         const eligibility = await services.checkWithdrawalEligibility(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(eligibility, null, 2) }] };
       } catch (error: any) {
@@ -1581,8 +1668,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.stakeTrxToStrx(privateKey, amount, network);
+
+        const result = await services.stakeTrxToStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1605,8 +1692,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.unstakeStrx(privateKey, amount, network);
+
+        const result = await services.unstakeStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1627,8 +1714,8 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ network = services.getGlobalNetwork() }) => {
       try {
-        const privateKey = services.getConfiguredPrivateKey();
-        const result = await services.claimStrxRewards(privateKey, network);
+
+        const result = await services.claimStrxRewards(network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -1668,6 +1755,96 @@ export function registerJustLendTools(server: McpServer) {
     },
     async () => {
       return { content: [{ type: "text", text: `Current global default network: ${services.getGlobalNetwork()}` }] };
+    },
+  );
+
+  // ============================================================================
+  // TRANSFER
+  // ============================================================================
+
+  server.registerTool(
+    "transfer_trx",
+    {
+      description:
+        "Transfer TRX to another TRON address. " +
+        "Checks balance sufficiency (including gas) before sending. " +
+        "Typical cost: ~0 energy + ~270 bandwidth.",
+      inputSchema: {
+        to: z.string().describe("Recipient TRON address (Base58 T... format)"),
+        amount: z.string().describe("Amount of TRX to transfer (e.g. '1', '10.5')"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Transfer TRX", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ to, amount, network = services.getGlobalNetwork() }) => {
+      try {
+        const txId = await services.transferTRX(to, amount, network);
+        return { content: [{ type: "text", text: JSON.stringify({
+          success: true,
+          txId,
+          from: await services.getWalletAddress(),
+          to,
+          amount: `${amount} TRX`,
+          network,
+        }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "transfer_trc20",
+    {
+      description:
+        "Transfer TRC20 tokens to another TRON address. " +
+        "You can pass a token symbol (e.g. 'USDT', 'JST') or a contract address. " +
+        "Amount is in human-readable units (e.g. '100' for 100 USDT). " +
+        "Checks balance sufficiency before sending.",
+      inputSchema: {
+        to: z.string().describe("Recipient TRON address (Base58 T... format)"),
+        amount: z.string().describe("Amount to transfer in human-readable units (e.g. '100' for 100 USDT)"),
+        token: z.string().optional().describe("Token symbol (e.g. 'USDT', 'JST', 'SUN'). Preferred over tokenAddress."),
+        tokenAddress: z.string().optional().describe("TRC20 token contract address. Use 'token' parameter instead when possible."),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Transfer TRC20", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ to, amount, token, tokenAddress, network = services.getGlobalNetwork() }) => {
+      try {
+        // Resolve token address from symbol if needed
+        let resolvedAddress = tokenAddress;
+        if (token && !resolvedAddress) {
+          const info = getJTokenInfo(`j${token}`, network);
+          if (!info) {
+            throw new Error(`Unknown token symbol: ${token}. Please provide the token contract address directly.`);
+          }
+          resolvedAddress = info.underlying;
+        }
+        if (!resolvedAddress) {
+          throw new Error("Either 'token' or 'tokenAddress' must be provided.");
+        }
+
+        // Convert human-readable amount to raw amount
+        let decimals = 18;
+        if (token) {
+          const info = getJTokenInfo(`j${token}`, network);
+          if (info) decimals = info.underlyingDecimals;
+        }
+        const rawAmount = utils.parseUnits(amount, decimals).toString();
+
+        const result = await services.transferTRC20(resolvedAddress, to, rawAmount, network);
+        return { content: [{ type: "text", text: JSON.stringify({
+          success: true,
+          txId: result.txHash,
+          from: await services.getWalletAddress(),
+          to,
+          amount: `${amount} ${result.token.symbol}`,
+          network,
+        }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
     },
   );
 }

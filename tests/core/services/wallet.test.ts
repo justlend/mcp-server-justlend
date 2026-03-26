@@ -1,53 +1,72 @@
 /**
- * Unit tests for wallet.ts — pure logic tested without real keys.
- * Write-operation tests (signMessage, signTypedData) are skipped unless
- * TRON_PRIVATE_KEY is set in the environment.
+ * Unit tests for wallet.ts — agent-wallet integration.
+ * Tests module exports and function signatures.
+ * Actual wallet operations require agent-wallet to be configured.
  */
 import { describe, it, expect } from "vitest";
 import {
-  getConfiguredWallet,
-  getConfiguredPrivateKey,
+  autoInitWallet,
+  importWallet,
+  getAgentWallet,
   getWalletAddress,
   getWalletAddressFromKey,
+  getSigningClient,
+  signTransactionWithWallet,
+  signMessage,
+  signTypedData,
+  checkWalletStatus,
+  listWallets,
+  setActiveWallet,
 } from "../../../src/core/services/wallet.js";
 
-const HAS_KEY = Boolean(process.env.TRON_PRIVATE_KEY || process.env.TRON_MNEMONIC);
+describe("wallet module exports", () => {
+  it("autoInitWallet is a function", () => {
+    expect(typeof autoInitWallet).toBe("function");
+  });
+
+  it("importWallet is a function", () => {
+    expect(typeof importWallet).toBe("function");
+  });
+
+  it("getAgentWallet is a function", () => {
+    expect(typeof getAgentWallet).toBe("function");
+  });
+
+  it("getWalletAddress is a function", () => {
+    expect(typeof getWalletAddress).toBe("function");
+  });
+
+  it("getSigningClient is a function", () => {
+    expect(typeof getSigningClient).toBe("function");
+  });
+
+  it("signTransactionWithWallet is a function", () => {
+    expect(typeof signTransactionWithWallet).toBe("function");
+  });
+
+  it("signMessage is a function", () => {
+    expect(typeof signMessage).toBe("function");
+  });
+
+  it("signTypedData is a function", () => {
+    expect(typeof signTypedData).toBe("function");
+  });
+
+  it("checkWalletStatus is a function", () => {
+    expect(typeof checkWalletStatus).toBe("function");
+  });
+
+  it("listWallets is a function", () => {
+    expect(typeof listWallets).toBe("function");
+  });
+
+  it("setActiveWallet is a function", () => {
+    expect(typeof setActiveWallet).toBe("function");
+  });
+});
 
 describe("getWalletAddressFromKey alias", () => {
   it("should be the same function as getWalletAddress", () => {
     expect(getWalletAddressFromKey).toBe(getWalletAddress);
-  });
-});
-
-describe("getConfiguredWallet (no env)", () => {
-  it("throws when neither TRON_PRIVATE_KEY nor TRON_MNEMONIC is set", () => {
-    if (HAS_KEY) {
-      console.error("Skipping — env key is set");
-      return;
-    }
-    expect(() => getConfiguredWallet()).toThrow();
-  });
-});
-
-describe("getConfiguredWallet (with env)", () => {
-  it.skipIf(!HAS_KEY)("returns a wallet with privateKey and address", () => {
-    const wallet = getConfiguredWallet();
-    expect(wallet.privateKey).toBeTruthy();
-    expect(wallet.address).toBeTruthy();
-    expect(wallet.address).toMatch(/^T/); // TRON addresses start with T
-  });
-
-  it.skipIf(!HAS_KEY)("getConfiguredPrivateKey returns a non-empty string", () => {
-    const key = getConfiguredPrivateKey();
-    expect(typeof key).toBe("string");
-    expect(key.length).toBeGreaterThan(0);
-    // Should not have 0x prefix
-    expect(key.startsWith("0x")).toBe(false);
-  });
-
-  it.skipIf(!HAS_KEY)("getWalletAddress returns a valid TRON address", () => {
-    const address = getWalletAddress();
-    expect(address).toMatch(/^T/);
-    expect(address.length).toBeGreaterThanOrEqual(34);
   });
 });

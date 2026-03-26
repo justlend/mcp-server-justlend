@@ -2,7 +2,7 @@
  * Tests for energy-rental.ts.
  *
  * Read-only tests make real API/RPC calls to mainnet (rate-limited without TRONGRID_API_KEY).
- * Write tests are skipped unless TRON_PRIVATE_KEY is set AND TEST_ENERGY_RENTAL=1.
+ * Write tests are skipped unless agent-wallet is configured AND TEST_ENERGY_RENTAL=1.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -23,9 +23,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // A known address with rental activity (JustLend contract itself is fine for reads)
 const TEST_ADDRESS = "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5";
 
-const ALLOW_WRITE = Boolean(
-  process.env.TRON_PRIVATE_KEY && process.env.TEST_ENERGY_RENTAL === "1",
-);
+const ALLOW_WRITE = process.env.TEST_ENERGY_RENTAL === "1";
 
 // ============================================================================
 // Module Exports
@@ -184,10 +182,8 @@ describe("rentEnergy (write — skipped by default)", () => {
   it.skipIf(!ALLOW_WRITE)(
     "should rent energy and return tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
       // Rent minimal energy for 1 day on nile testnet
       const result = await rentEnergy(
-        privateKey,
         process.env.TEST_RECEIVER_ADDRESS || TEST_ADDRESS,
         100000,
         86400,
@@ -205,9 +201,7 @@ describe("returnEnergyRental (write — skipped by default)", () => {
   it.skipIf(!ALLOW_WRITE)(
     "should return energy rental and return tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
       const result = await returnEnergyRental(
-        privateKey,
         process.env.TEST_RECEIVER_ADDRESS || TEST_ADDRESS,
         "renter",
         "nile",

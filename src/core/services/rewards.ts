@@ -272,7 +272,7 @@ export async function claimMiningRewards(
   const userAddress = tronWeb.defaultAddress.base58;
 
   if (!userAddress) {
-    throw new Error("No wallet address configured. Set TRON_PRIVATE_KEY or TRON_MNEMONIC.");
+    throw new Error("No wallet address configured. Run `npx agent-wallet init` or use the get_wallet_address tool.");
   }
 
   const distributorAddress = addresses.merkleDistributors[distributorType];

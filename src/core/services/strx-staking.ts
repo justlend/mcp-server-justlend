@@ -10,7 +10,8 @@
  * - Check withdrawal eligibility
  */
 
-import { getTronWeb, getWallet } from "./clients.js";
+import { getTronWeb } from "./clients.js";
+import { getSigningClient } from "./wallet.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { STRX_ABI } from "../abis.js";
 import { checkResourceSufficiency } from "./lending.js";
@@ -120,11 +121,10 @@ export async function getStrxBalance(address: string, network = "mainnet") {
  * 1. Check TRX balance is sufficient (amount + gas)
  */
 export async function stakeTrxToStrx(
-  privateKey: string,
   amountTrx: number,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
@@ -147,7 +147,7 @@ export async function stakeTrxToStrx(
   const amountSun = BigInt(Math.floor(amountTrx * TRX_PRECISION));
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
-  const { txID: txId } = await safeSend(privateKey, {
+  const { txID: txId } = await safeSend({
     address: addrs.strx.proxy,
     abi: STRX_ABI,
     functionName: "deposit",
@@ -183,11 +183,10 @@ export async function stakeTrxToStrx(
  * Note: Unstaked TRX has an unbonding period before it can be withdrawn
  */
 export async function unstakeStrx(
-  privateKey: string,
   amountStrx: number | string,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
@@ -205,7 +204,7 @@ export async function unstakeStrx(
   const amountWei = BigInt(amountWeiStr);
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
-  const { txID: txId } = await safeSend(privateKey, {
+  const { txID: txId } = await safeSend({
     address: addrs.strx.proxy,
     abi: STRX_ABI,
     functionName: "withdraw",
@@ -246,10 +245,9 @@ export async function unstakeStrx(
  * 1. Check if there are claimable rewards
  */
 export async function claimStrxRewards(
-  privateKey: string,
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
@@ -260,7 +258,7 @@ export async function claimStrxRewards(
   }
 
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
-  const { txID: txId } = await safeSend(privateKey, {
+  const { txID: txId } = await safeSend({
     address: addrs.strx.proxy,
     abi: STRX_ABI,
     functionName: "claimAll",

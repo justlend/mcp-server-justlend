@@ -34,23 +34,3 @@ export function getTronWeb(network = "mainnet"): TronWeb {
   clientCache.set(key, client);
   return client;
 }
-
-/**
- * Create a TronWeb instance with private key for signing transactions.
- * NOT cached because each wallet is unique.
- */
-export function getWallet(privateKey: string, network = "mainnet"): TronWeb {
-  const config = getNetworkConfig(network);
-  const n = network.toLowerCase();
-  const isMainnet = ["mainnet", "tron", "trx"].includes(n);
-  const apiKey = isMainnet ? process.env.TRONGRID_API_KEY : undefined;
-  const cleanKey = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-
-  return new TronWeb({
-    fullHost: config.fullNode,
-    solidityNode: config.solidityNode,
-    eventServer: config.eventServer,
-    privateKey: cleanKey,
-    headers: apiKey ? { "TRON-PRO-API-KEY": apiKey } : undefined,
-  });
-}

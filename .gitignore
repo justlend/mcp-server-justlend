@@ -111,6 +111,10 @@ dist
 
 build
 **/.DS_Store
+
+# Generated docs
+*.docx
+scripts/generate-security-doc.mjs
 /test-results/
 /blob-report/
 /tests/**-snapshots/**-darwin.png

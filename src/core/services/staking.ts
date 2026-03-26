@@ -1,4 +1,4 @@
-import { getWallet } from "./clients.js";
+import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
 
 /**
  * Freeze TRX to obtain BANDWIDTH or ENERGY resources (Stake 2.0).
@@ -7,12 +7,11 @@ import { getWallet } from "./clients.js";
  * @returns Transaction hash.
  */
 export async function freezeBalanceV2(
-  privateKey: string,
   amount: string,
   resource: "BANDWIDTH" | "ENERGY" = "BANDWIDTH",
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   try {
     const transaction = await tronWeb.transactionBuilder.freezeBalanceV2(
@@ -20,7 +19,7 @@ export async function freezeBalanceV2(
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await tronWeb.trx.sign(transaction, privateKey);
+    const signedTx = await signTransactionWithWallet(transaction);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;
@@ -37,12 +36,11 @@ export async function freezeBalanceV2(
  * @returns Transaction hash.
  */
 export async function unfreezeBalanceV2(
-  privateKey: string,
   amount: string,
   resource: "BANDWIDTH" | "ENERGY" = "BANDWIDTH",
   network = "mainnet",
 ) {
-  const tronWeb = getWallet(privateKey, network);
+  const tronWeb = await getSigningClient(network);
 
   try {
     const transaction = await tronWeb.transactionBuilder.unfreezeBalanceV2(
@@ -50,7 +48,7 @@ export async function unfreezeBalanceV2(
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await tronWeb.trx.sign(transaction, privateKey);
+    const signedTx = await signTransactionWithWallet(transaction);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;
@@ -64,14 +62,14 @@ export async function unfreezeBalanceV2(
  * Withdraw expired unfrozen balance after the unbonding period ends (Stake 2.0).
  * @returns Transaction hash.
  */
-export async function withdrawExpireUnfreeze(privateKey: string, network = "mainnet") {
-  const tronWeb = getWallet(privateKey, network);
+export async function withdrawExpireUnfreeze(network = "mainnet") {
+  const tronWeb = await getSigningClient(network);
 
   try {
     const transaction = await tronWeb.transactionBuilder.withdrawExpireUnfreeze(
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await tronWeb.trx.sign(transaction, privateKey);
+    const signedTx = await signTransactionWithWallet(transaction);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;

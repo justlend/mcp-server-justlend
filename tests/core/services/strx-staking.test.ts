@@ -2,7 +2,7 @@
  * Tests for strx-staking.ts.
  *
  * Read-only tests make real API/RPC calls to mainnet (rate-limited without TRONGRID_API_KEY).
- * Write tests are skipped unless TRON_PRIVATE_KEY is set AND TEST_STRX_STAKING=1.
+ * Write tests are skipped unless agent-wallet is configured AND TEST_STRX_STAKING=1.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -23,9 +23,7 @@ const STRX_PROXY = "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5";
 // A known address (zero balance is fine for structure tests)
 const TEST_ADDRESS = "T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb";
 
-const ALLOW_WRITE = Boolean(
-  process.env.TRON_PRIVATE_KEY && process.env.TEST_STRX_STAKING === "1",
-);
+const ALLOW_WRITE = process.env.TEST_STRX_STAKING === "1";
 
 // ============================================================================
 // Module Exports
@@ -150,9 +148,8 @@ describe("stakeTrxToStrx (write — skipped by default)", () => {
   it.skipIf(!ALLOW_WRITE)(
     "should stake TRX and return tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
       // Stake minimum 1 TRX on nile testnet
-      const result = await stakeTrxToStrx(privateKey, 1, "nile");
+      const result = await stakeTrxToStrx(1, "nile");
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
       expect(result.stakedTrx).toBe(1);
@@ -166,8 +163,7 @@ describe("unstakeStrx (write — skipped by default)", () => {
   it.skipIf(!ALLOW_WRITE)(
     "should unstake sTRX and return tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
-      const result = await unstakeStrx(privateKey, 0.5, "nile");
+      const result = await unstakeStrx(0.5, "nile");
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
       expect(result.unstakedStrx).toBe(0.5);
@@ -182,8 +178,7 @@ describe("claimStrxRewards (write — skipped by default)", () => {
   it.skipIf(!ALLOW_WRITE)(
     "should claim rewards and return tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
-      const result = await claimStrxRewards(privateKey, "nile");
+      const result = await claimStrxRewards("nile");
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
       console.error(`Claim TX: ${result.txId}`);

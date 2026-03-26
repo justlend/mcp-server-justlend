@@ -6,13 +6,29 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 // ============================================================================
 
 vi.mock("../../src/core/services/index.js", () => ({
-  // Wallet
-  getWalletAddress: vi.fn(() => "TTestWalletAddress123456789012345"),
-  getConfiguredPrivateKey: vi.fn(() => "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
-  getConfiguredWallet: vi.fn(() => ({
-    privateKey: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+  // Wallet (agent-wallet based — getWalletAddress is now async)
+  getWalletAddress: vi.fn(async () => "TTestWalletAddress123456789012345"),
+  autoInitWallet: vi.fn(async () => ({
     address: "TTestWalletAddress123456789012345",
+    walletId: "default",
+    created: false,
   })),
+  importWallet: vi.fn(async () => ({
+    address: "TTestWalletAddress123456789012345",
+    walletId: "imported",
+  })),
+  checkWalletStatus: vi.fn(async () => ({
+    initialized: true,
+    hasWallets: true,
+    activeWalletId: "default",
+    activeAddress: "TTestWalletAddress123456789012345",
+    wallets: [{ id: "default", type: "local_secure", isActive: true, address: "TTestWalletAddress123456789012345" }],
+    message: "Active wallet: TTestWalletAddress123456789012345",
+  })),
+  listWallets: vi.fn(async () => [
+    { id: "default", type: "local_secure", isActive: true, address: "TTestWalletAddress123456789012345" },
+  ]),
+  setActiveWallet: vi.fn(() => ({ success: true, message: 'Active wallet set to "default".' })),
 
   // Global Config
   getGlobalNetwork: vi.fn(() => "mainnet"),
@@ -95,6 +111,7 @@ vi.mock("../../src/core/services/index.js", () => ({
 
   checkAllowance: vi.fn(async () => ({
     allowance: "1000000.000000",
+    allowanceRaw: "1000000000000",
     hasApproval: true,
     underlyingAddress: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
     jTokenAddress: "TXJgMdjVX5dKiQaUi9QobR2d1pTdip5xG3",
@@ -504,7 +521,7 @@ describe("Wallet & Network Tools", () => {
     const result = await callTool("get_wallet_address");
     const output = getToolOutput(result);
     expect(output.address).toBe("TTestWalletAddress123456789012345");
-    expect(services.getWalletAddress).toHaveBeenCalled();
+    expect(services.autoInitWallet).toHaveBeenCalled();
   });
 
   it("get_supported_networks should list networks", async () => {
@@ -635,7 +652,6 @@ describe("Lending Operation Tools", () => {
     expect(output.txID).toBe("mock_supply_tx_id_123");
     expect(output.message).toContain("Supplied");
     expect(services.supply).toHaveBeenCalledWith(
-      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
       "jUSDT",
       "100",
       "mainnet",
@@ -647,7 +663,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_withdraw_tx_id_123");
     expect(services.withdraw).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "50",
       "mainnet",
@@ -659,7 +674,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_withdraw_all_tx_id_123");
     expect(services.withdrawAll).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "mainnet",
     );
@@ -670,7 +684,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_borrow_tx_id_123");
     expect(services.borrow).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "200",
       "mainnet",
@@ -682,7 +695,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_repay_tx_id_123");
     expect(services.repay).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "100",
       "mainnet",
@@ -694,7 +706,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_enter_market_tx_id_123");
     expect(services.enterMarket).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "mainnet",
     );
@@ -705,7 +716,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_exit_market_tx_id_123");
     expect(services.exitMarket).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "mainnet",
     );
@@ -716,7 +726,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_approve_tx_id_123");
     expect(services.approveUnderlying).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "max",
       "mainnet",
@@ -726,7 +735,6 @@ describe("Lending Operation Tools", () => {
   it("approve_underlying should pass custom amount", async () => {
     await callTool("approve_underlying", { market: "jUSDT", amount: "1000" });
     expect(services.approveUnderlying).toHaveBeenCalledWith(
-      expect.any(String),
       "jUSDT",
       "1000",
       "mainnet",
@@ -738,7 +746,6 @@ describe("Lending Operation Tools", () => {
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_claim_tx_id_123");
     expect(services.claimRewards).toHaveBeenCalledWith(
-      expect.any(String),
       "mainnet",
     );
   });
@@ -750,12 +757,12 @@ describe("Lending Operation Tools", () => {
 
 describe("Error Handling", () => {
   it("should return isError: true when wallet not configured", async () => {
-    vi.mocked(services.getWalletAddress).mockImplementationOnce(() => {
-      throw new Error("Neither TRON_PRIVATE_KEY nor TRON_MNEMONIC environment variable is set.");
-    });
+    vi.mocked(services.autoInitWallet).mockRejectedValueOnce(
+      new Error("No wallet configured. Run `agent-wallet start` to create one."),
+    );
     const result = await callTool("get_wallet_address");
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("TRON_PRIVATE_KEY");
+    expect(result.content[0].text).toContain("wallet");
   });
 
   it("should return isError: true when service throws", async () => {
@@ -765,13 +772,13 @@ describe("Error Handling", () => {
     expect(result.content[0].text).toContain("Network timeout");
   });
 
-  it("should return isError: true for supply with no private key", async () => {
-    vi.mocked(services.getConfiguredPrivateKey).mockImplementationOnce(() => {
-      throw new Error("Neither TRON_PRIVATE_KEY nor TRON_MNEMONIC environment variable is set.");
-    });
+  it("should return isError: true for supply with no wallet configured", async () => {
+    vi.mocked(services.getWalletAddress).mockRejectedValueOnce(
+      new Error("No wallet configured. Run `agent-wallet start` to create one."),
+    );
     const result = await callTool("supply", { market: "jUSDT", amount: "100" });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("TRON_PRIVATE_KEY");
+    expect(result.content[0].text).toContain("wallet");
   });
 
   it("tools should pass network parameter correctly", async () => {
@@ -813,13 +820,13 @@ describe("Energy Rental Tools", () => {
   it("calculate_energy_rental_price should return cost estimate", async () => {
     const result = await callTool("calculate_energy_rental_price", {
       energyAmount: 300000,
-      durationDays: 7,
+      durationHours: 168,
     });
     const output = getToolOutput(result);
     expect(output.energyAmount).toBe(300000);
     expect(output.totalPrepayment).toBe(850);
     expect(output.securityDeposit).toBe(200);
-    expect(output.durationDays).toBe(7);
+    expect(output.durationHours).toBe(168);
     expect(output.summary).toContain("300000 energy");
     expect(services.calculateRentalPrice).toHaveBeenCalledWith(300000, 604800, "mainnet");
   });
@@ -863,14 +870,13 @@ describe("Energy Rental Tools", () => {
     const result = await callTool("rent_energy", {
       receiverAddress: "TReceiver123",
       energyAmount: 300000,
-      durationDays: 7,
+      durationHours: 168,
     });
     const output = getToolOutput(result);
     expect(output.txId).toBe("mock_rent_energy_tx_id_123");
     expect(output.receiver).toBe("TReceiver123");
     expect(output.energyAmount).toBe(300000);
     expect(services.rentEnergy).toHaveBeenCalledWith(
-      expect.any(String),
       "TReceiver123",
       300000,
       604800,
@@ -886,7 +892,6 @@ describe("Energy Rental Tools", () => {
     expect(output.txId).toBe("mock_return_rental_tx_id_123");
     expect(output.receiver).toBe("TReceiver123");
     expect(services.returnEnergyRental).toHaveBeenCalledWith(
-      expect.any(String),
       "TReceiver123",
       "renter",
       "mainnet",
@@ -899,7 +904,6 @@ describe("Energy Rental Tools", () => {
       endOrderType: "receiver",
     });
     expect(services.returnEnergyRental).toHaveBeenCalledWith(
-      expect.any(String),
       "TRenter123",
       "receiver",
       "mainnet",
@@ -955,7 +959,6 @@ describe("sTRX Staking Tools", () => {
     expect(output.stakedTrx).toBe(100);
     expect(output.estimatedStrx).toBe("95.238095");
     expect(services.stakeTrxToStrx).toHaveBeenCalledWith(
-      expect.any(String),
       100,
       "mainnet",
     );
@@ -968,7 +971,6 @@ describe("sTRX Staking Tools", () => {
     expect(output.unstakedStrx).toBe(50);
     expect(output.note).toContain("14 days");
     expect(services.unstakeStrx).toHaveBeenCalledWith(
-      expect.any(String),
       50,
       "mainnet",
     );
@@ -980,27 +982,26 @@ describe("sTRX Staking Tools", () => {
     expect(output.txId).toBe("mock_claim_strx_rewards_tx_id_123");
     expect(output.claimedAmount).toBe(10);
     expect(services.claimStrxRewards).toHaveBeenCalledWith(
-      expect.any(String),
       "mainnet",
     );
   });
 
-  it("stake_trx_to_strx should error without private key", async () => {
-    vi.mocked(services.getConfiguredPrivateKey).mockImplementationOnce(() => {
-      throw new Error("Neither TRON_PRIVATE_KEY nor TRON_MNEMONIC environment variable is set.");
-    });
+  it("stake_trx_to_strx should error without wallet configured", async () => {
+    vi.mocked(services.stakeTrxToStrx).mockRejectedValueOnce(
+      new Error("No wallet configured. Run `agent-wallet start` to create one."),
+    );
     const result = await callTool("stake_trx_to_strx", { amount: 100 });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("TRON_PRIVATE_KEY");
+    expect(result.content[0].text).toContain("wallet");
   });
 });
 
 describe("Network Parameter Forwarding", () => {
   it("supply should forward network parameter", async () => {
     await callTool("supply", { market: "jUSDT", amount: "100", network: "nile" });
-    // getConfiguredPrivateKey is called first, then supply would be called
+    // getWalletAddress is called, then supply would be called
     // Since we mock it, verify the mock was called
-    expect(services.getConfiguredPrivateKey).toHaveBeenCalled();
+    expect(services.getWalletAddress).toHaveBeenCalled();
   });
 
   it("get_all_markets should default to mainnet", async () => {

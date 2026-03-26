@@ -2,7 +2,8 @@
  * JustLend DAO JST Voting (Governance) Service
  */
 
-import { getTronWeb, getWallet } from "./clients.js";
+import { getTronWeb } from "./clients.js";
+import { getSigningClient } from "./wallet.js";
 import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { GOVERNOR_ALPHA_ABI, WJST_ABI, POLY_ABI, TRC20_ABI } from "../abis.js";
@@ -319,19 +320,19 @@ export async function checkJSTAllowanceForVoting(address: string, network = "mai
   };
 }
 
-export async function approveJSTForVoting(privateKey: string, amount: string = "max", network = "mainnet"): Promise<{ txID: string; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+export async function approveJSTForVoting(amount: string = "max", network = "mainnet"): Promise<{ txID: string; message: string }> {
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const approveAmount = amount.toLowerCase() === "max" ? MAX_UINT256 : utils.parseUnits(amount, JST_DECIMALS).toString();
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.jst, abi: TRC20_ABI, functionName: "approve", args: [addresses.wjst, approveAmount]
   }, network);
   return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} JST for WJST voting contract` };
 }
 
-export async function depositJSTForVotes(privateKey: string, amount: string, network = "mainnet"): Promise<{ txID: string; amount: string; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+export async function depositJSTForVotes(amount: string, network = "mainnet"): Promise<{ txID: string; amount: string; message: string }> {
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountRaw = utils.parseUnits(amount, JST_DECIMALS);
@@ -342,14 +343,14 @@ export async function depositJSTForVotes(privateKey: string, amount: string, net
   const allowance = BigInt(await token.methods.allowance(walletAddress, addresses.wjst).call());
   if (allowance < amountRaw) throw new Error(`Insufficient JST allowance.`);
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.wjst, abi: WJST_ABI, functionName: "deposit", args: [amountRaw.toString()]
   }, network);
   return { txID, amount, message: `Deposited ${amount} JST to get voting power (WJST)` };
 }
 
-export async function withdrawVotesToJST(privateKey: string, amount: string, network = "mainnet"): Promise<{ txID: string; amount: string; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+export async function withdrawVotesToJST(amount: string, network = "mainnet"): Promise<{ txID: string; amount: string; message: string }> {
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountRaw = utils.parseUnits(amount, JST_DECIMALS);
@@ -358,14 +359,14 @@ export async function withdrawVotesToJST(privateKey: string, amount: string, net
   const surplusVotes = BigInt(voteInfo.surplusVotesRaw);
   if (surplusVotes < amountRaw) throw new Error(`Insufficient available votes.`);
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.wjst, abi: WJST_ABI, functionName: "withdraw", args: [amountRaw.toString()]
   }, network);
   return { txID, amount, message: `Withdrew ${amount} WJST back to JST` };
 }
 
-export async function castVote(privateKey: string, proposalId: number, support: boolean, votes: string, network = "mainnet"): Promise<{ txID: string; proposalId: number; support: string; votes: string; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+export async function castVote(proposalId: number, support: boolean, votes: string, network = "mainnet"): Promise<{ txID: string; proposalId: number; support: string; votes: string; message: string }> {
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const votesRaw = utils.parseUnits(votes, JST_DECIMALS);
@@ -375,21 +376,21 @@ export async function castVote(privateKey: string, proposalId: number, support: 
   if (surplusVotes < votesRaw) throw new Error(`Insufficient available votes.`);
 
   const supportValue = support ? 1 : 0;
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.governorAlpha, abi: GOVERNOR_ALPHA_ABI, functionName: "castVote", args: [proposalId, votesRaw.toString(), supportValue]
   }, network);
   return { txID, proposalId, support: support ? "For" : "Against", votes, message: `Cast ${votes} votes ${support ? "for" : "against"} proposal #${proposalId}` };
 }
 
-export async function withdrawVotesFromProposal(privateKey: string, proposalId: number, network = "mainnet"): Promise<{ txID: string; proposalId: number; message: string }> {
-  const tronWeb = getWallet(privateKey, network);
+export async function withdrawVotesFromProposal(proposalId: number, network = "mainnet"): Promise<{ txID: string; proposalId: number; message: string }> {
+  const tronWeb = await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
 
   const locked = await getLockedVotes(walletAddress, proposalId, network);
   if (BigInt(locked.lockedVotesRaw) === 0n) throw new Error(`No locked votes found for proposal #${proposalId}.`);
 
-  const { txID } = await safeSend(privateKey, {
+  const { txID } = await safeSend({
     address: addresses.governorAlpha, abi: GOVERNOR_ALPHA_ABI, functionName: "withdrawVotes", args: [proposalId]
   }, network);
   return { txID, proposalId, message: `Withdrew votes from proposal #${proposalId}` };

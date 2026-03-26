@@ -53,7 +53,7 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 - **Transfers**: Send TRX, transfer TRC20 tokens, approve spenders
 - **Staking (Stake 2.0)**: Freeze/unfreeze TRX for BANDWIDTH or ENERGY, withdraw expired unfreeze
 - **Address Utilities**: Hex ↔ Base58 conversion, address validation, resolution
-- **Wallet**: Sign messages, sign typed data (EIP-712), HD wallet derivation from mnemonic
+- **Wallet**: Sign messages, sign typed data (EIP-712), secure key management via agent-wallet
 
 ## Supported Markets
 
@@ -76,23 +76,51 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/mcp-server-justlend.git
+git clone https://github.com/justlend/mcp-server-justlend.git
 cd mcp-server-justlend
 npm install
 ```
 
 ## Configuration
 
-### Environment Variables
+### Wallet Setup (Automatic)
 
-> **SECURITY**: Never save private keys in config files. Use environment variables.
+The server **automatically generates** an encrypted wallet on first startup — no manual setup required. Private keys are **never** stored in environment variables; they are encrypted and stored in `~/.agent-wallet/`.
+
+On startup, the server will:
+1. Check for existing wallets in `~/.agent-wallet/`
+2. If none found, auto-generate a new encrypted wallet (random password + encrypted private key)
+3. Display the wallet address in the console
+
+You can also manage wallets via **CLI** or **MCP tools**:
+
+#### CLI (agent-wallet)
+```bash
+# Import an existing private key or mnemonic
+npx agent-wallet add
+
+# Generate a new wallet
+npx agent-wallet generate
+
+# List all wallets
+npx agent-wallet list
+
+# Switch active wallet
+npx agent-wallet activate <wallet-id>
+```
+
+#### MCP Tools (runtime)
+
+| Tool | Description |
+|------|-------------|
+| `get_wallet_address` | Shows current address (auto-generates wallet if needed) |
+| `import_wallet` | Import an existing private key (stored encrypted) |
+| `list_wallets` | List all wallets with IDs, types, addresses |
+| `set_active_wallet` | Switch active wallet by ID |
 
 ```bash
-# Required for write operations (supply, borrow, transfer, stake, etc.)
-export TRON_PRIVATE_KEY="your_private_key_hex"
-# OR use a mnemonic phrase
-export TRON_MNEMONIC="word1 word2 ... word12"
-export TRON_ACCOUNT_INDEX="0"   # Optional HD wallet account index, default: 0
+# (Optional) For automated/CI setups, set the wallet password
+export AGENT_WALLET_PASSWORD="your_wallet_password"
 
 # Strongly recommended — avoids TronGrid 429 rate limiting on mainnet
 export TRONGRID_API_KEY="your_trongrid_api_key"
@@ -112,8 +140,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "npx",
       "args": ["tsx", "@justlend/mcp-server-justlend"],
       "env": {
-        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV",
-        "TRON_PRIVATE_KEY": "SET_VIA_SYSTEM_ENV"
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
     }
   }
@@ -130,12 +157,10 @@ Add to `.cursor/mcp.json`:
     "mcp-server-justlend": {
       "type": "stdio",
       "command": "npx",
-      "args": ["tsx", "@justlend/mcp-server-justlend"]
+      "args": ["tsx", "@justlend/mcp-server-justlend"],
       "env": {
-        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV",
-        "TRON_PRIVATE_KEY": "SET_VIA_SYSTEM_ENV"
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
-
     }
   }
 }
@@ -143,15 +168,56 @@ Add to `.cursor/mcp.json`:
 
 ## Usage
 
+The server supports two transport modes. Both share the same Tools, Resources, and wallet initialization — the difference is how clients connect.
+
+### Stdio Mode (Local AI Clients)
+
 ```bash
-# Stdio mode (for MCP clients)
 npm start
+```
 
-# HTTP/SSE mode (for remote clients)
+The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Cursor**, and **Claude Code**, which launch the server as a child process. Single client, no extra configuration needed.
+
+### HTTP/SSE Mode (Remote / Multi-Client)
+
+```bash
 npm run start:http
+```
 
-# Development with auto-reload
-npm run dev
+The server starts an Express HTTP service with Server-Sent Events (SSE) transport. Suitable for **web applications**, **remote clients**, or scenarios where **multiple clients** need to connect concurrently.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sse` | GET | SSE connection endpoint — returns a `sessionId` |
+| `/messages?sessionId=xxx` | POST | Send MCP messages for a session |
+| `/health` | GET | Health check (no auth required) |
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3001` | HTTP listen port |
+| `MCP_API_KEY` | _(none)_ | Bearer token for authentication. If not set, the server runs **without auth** (not recommended for production) |
+| `MCP_CORS_ORIGIN` | `*` | Allowed CORS origins |
+| `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
+| `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
+
+Example with authentication:
+
+```bash
+MCP_API_KEY=my-secret-key PORT=8080 npm run start:http
+```
+
+```bash
+# Connect from client
+curl -H "Authorization: Bearer my-secret-key" http://localhost:8080/sse
+```
+
+### Development
+
+```bash
+npm run dev          # Stdio with auto-reload
+npm run dev:http     # HTTP/SSE with auto-reload
 ```
 
 ## API Reference
@@ -161,7 +227,10 @@ npm run dev
 #### Wallet & Network
 | Tool | Description | Write? |
 |------|-------------|--------|
-| `get_wallet_address` | Show configured wallet address | No |
+| `get_wallet_address` | Show wallet address (auto-generates if needed) | No |
+| `list_wallets` | List all wallets (IDs, types, addresses) | No |
+| `set_active_wallet` | Switch active wallet by wallet ID | No |
+| `import_wallet` | Import existing private key (stored encrypted) | No |
 | `get_supported_networks` | List available networks | No |
 | `get_supported_markets` | List all jToken markets with addresses | No |
 
@@ -261,7 +330,7 @@ mcp-server-justlend/
 │   │   └── services/
 │   │       ├── # — JustLend-specific —
 │   │       ├── clients.ts     # TronWeb client factory (cached)
-│   │       ├── wallet.ts      # Key/mnemonic management, signMessage, signTypedData
+│   │       ├── wallet.ts      # agent-wallet integration, signing, address management
 │   │       ├── markets.ts     # APY, TVL, utilization, prices
 │   │       ├── account.ts     # User positions, liquidity, allowances
 │   │       ├── lending.ts     # supply, borrow, repay, withdraw, collateral
@@ -300,7 +369,7 @@ mcp-server-justlend/
             ├── staking.test.ts     # Write: skipped by default (TEST_STAKING=1)
             ├── energy-rental.test.ts # Integration: energy rental queries; Write: skipped (TEST_ENERGY_RENTAL=1)
             ├── strx-staking.test.ts  # Integration: sTRX queries; Write: skipped (TEST_STRX_STAKING=1)
-            └── wallet.test.ts      # Unit: skipped without TRON_PRIVATE_KEY
+            └── wallet.test.ts      # Unit: agent-wallet integration tests
 ```
 
 ## Testing
@@ -323,22 +392,23 @@ npx vitest run tests/core/services/energy-rental.test.ts
 npx vitest run tests/core/services/strx-staking.test.ts
 
 # Enable write/staking tests (uses real funds — use Nile testnet!)
-TRON_PRIVATE_KEY=xxx TEST_TRANSFER=1 npx vitest run tests/core/services/transfer.test.ts
-TRON_PRIVATE_KEY=xxx TEST_STAKING=1 npx vitest run tests/core/services/staking.test.ts
-TRON_PRIVATE_KEY=xxx TEST_ENERGY_RENTAL=1 npx vitest run tests/core/services/energy-rental.test.ts
-TRON_PRIVATE_KEY=xxx TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
+# Requires agent-wallet to be configured: npx agent-wallet start
+TEST_TRANSFER=1 npx vitest run tests/core/services/transfer.test.ts
+TEST_STAKING=1 npx vitest run tests/core/services/staking.test.ts
+TEST_ENERGY_RENTAL=1 npx vitest run tests/core/services/energy-rental.test.ts
+TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 ```
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
 
 ## Security Considerations
 
-- **Private keys** are read from environment variables only, never exposed via MCP tools
+- **Private keys** are managed by [@bankofai/agent-wallet](https://github.com/BofAI/agent-wallet) — never stored in environment variables or exposed via MCP tools
+- **Wallet encryption**: Keys are stored in `~/.agent-wallet/` with password-based encryption
 - **Write operations** are clearly marked with `destructiveHint: true` in MCP annotations
 - **Health factor checks** in prompts prevent dangerous borrowing
 - Always **test on Nile testnet** before mainnet operations
 - Be cautious with **unlimited approvals** (`approve_underlying` with `max`)
-- **Never share** your `claude_desktop_config.json` if it contains keys
 
 ## Example Conversations
 

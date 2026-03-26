@@ -190,9 +190,13 @@ describe("getAllJTokens", () => {
     }
   });
 
-  it("should return empty for nile (no markets configured)", () => {
+  it("should return jTokens for nile testnet", () => {
     const tokens = getAllJTokens("nile");
-    expect(tokens).toHaveLength(0);
+    expect(tokens.length).toBeGreaterThan(0);
+    for (const token of tokens) {
+      expect(token.address).toMatch(/^T/);
+      expect(token.symbol).toMatch(/^j/);
+    }
   });
 });
 

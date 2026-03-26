@@ -1,8 +1,8 @@
 /**
  * Tests for staking.ts (Stake 2.0).
  *
- * All staking functions are state-changing and require a private key.
- * They are skipped unless TRON_PRIVATE_KEY is set AND TEST_STAKING=1.
+ * All staking functions are state-changing and require agent-wallet to be configured.
+ * They are skipped unless TEST_STAKING=1.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -11,9 +11,7 @@ import {
   withdrawExpireUnfreeze,
 } from "../../../src/core/services/staking.js";
 
-const ALLOW_STAKING = Boolean(
-  process.env.TRON_PRIVATE_KEY && process.env.TEST_STAKING === "1",
-);
+const ALLOW_STAKING = process.env.TEST_STAKING === "1";
 
 describe("staking module exports", () => {
   it("freezeBalanceV2 is a function", () => {
@@ -33,9 +31,8 @@ describe("freezeBalanceV2 (write — skipped by default)", () => {
   it.skipIf(!ALLOW_STAKING)(
     "should freeze TRX for BANDWIDTH and return a tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
       // Freeze minimum 1 TRX (1,000,000 Sun)
-      const txHash = await freezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
+      const txHash = await freezeBalanceV2("1000000", "BANDWIDTH", "nile");
       expect(typeof txHash).toBe("string");
       expect(txHash.length).toBeGreaterThan(0);
       console.error(`Freeze TX: ${txHash}`);
@@ -46,8 +43,7 @@ describe("freezeBalanceV2 (write — skipped by default)", () => {
   it.skipIf(!ALLOW_STAKING)(
     "should freeze TRX for ENERGY and return a tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
-      const txHash = await freezeBalanceV2(privateKey, "1000000", "ENERGY", "nile");
+      const txHash = await freezeBalanceV2("1000000", "ENERGY", "nile");
       expect(typeof txHash).toBe("string");
       console.error(`Freeze ENERGY TX: ${txHash}`);
     },
@@ -59,8 +55,7 @@ describe("unfreezeBalanceV2 (write — skipped by default)", () => {
   it.skipIf(!ALLOW_STAKING)(
     "should unfreeze TRX and return a tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
-      const txHash = await unfreezeBalanceV2(privateKey, "1000000", "BANDWIDTH", "nile");
+      const txHash = await unfreezeBalanceV2("1000000", "BANDWIDTH", "nile");
       expect(typeof txHash).toBe("string");
       console.error(`Unfreeze TX: ${txHash}`);
     },
@@ -72,8 +67,7 @@ describe("withdrawExpireUnfreeze (write — skipped by default)", () => {
   it.skipIf(!ALLOW_STAKING)(
     "should withdraw expired unfreeze and return a tx hash",
     async () => {
-      const privateKey = process.env.TRON_PRIVATE_KEY!;
-      const txHash = await withdrawExpireUnfreeze(privateKey, "nile");
+      const txHash = await withdrawExpireUnfreeze("nile");
       expect(typeof txHash).toBe("string");
       console.error(`Withdraw TX: ${txHash}`);
     },
