@@ -86,6 +86,23 @@ vi.mock("../../src/core/services/index.js", () => ({
     },
   ]),
 
+  getAllMarketsWithFallback: vi.fn(async () => ({
+    markets: [
+      {
+        symbol: "jUSDT",
+        underlyingSymbol: "USDT",
+        supplyAPY: "3.25%",
+        borrowAPY: "5.50%",
+        miningAPY: "0.00%",
+        totalSupplyAPY: "3.25%",
+        depositedUSD: "100000000.00",
+        borrowedUSD: "50000000.00",
+      },
+    ],
+    source: "api",
+    note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY.",
+  })),
+
   getProtocolSummary: vi.fn(async () => ({
     comptroller: "TGjYzgCyPobsNS9n6WcbdLVR9dH7mWqFx7",
     oracle: "TXjzHPaDeR2KYXQ3Gfwj82PQ2qHaGThFhi",
@@ -584,7 +601,7 @@ describe("Market Data Tools", () => {
     expect(output.markets).toBeInstanceOf(Array);
     expect(output.markets[0].symbol).toBe("jUSDT");
     expect(output.markets[0].supplyAPY).toBe("3.25%");
-    expect(services.getAllMarketOverview).toHaveBeenCalled();
+    expect(services.getAllMarketsWithFallback).toHaveBeenCalled();
   });
 
   it("get_protocol_summary should return protocol info", async () => {
@@ -1006,7 +1023,7 @@ describe("Network Parameter Forwarding", () => {
 
   it("get_all_markets should default to mainnet", async () => {
     await callTool("get_all_markets");
-    expect(services.getAllMarketOverview).toHaveBeenCalledWith("mainnet");
+    expect(services.getAllMarketsWithFallback).toHaveBeenCalledWith("mainnet");
   });
 
   it("get_protocol_summary should default to mainnet", async () => {

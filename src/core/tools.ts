@@ -228,35 +228,20 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ network = services.getGlobalNetwork() }) => {
       try {
-        const markets = await services.getAllMarketOverview(network);
+        const result = await services.getAllMarketsWithFallback(network);
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
-              totalMarkets: markets.length,
-              markets,
-              note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY. miningAPY is calculated from daily mining rewards and TVL. underlyingIncrementAPY is the staking yield for wrapped/staked assets (e.g. sTRX ~5.88%, wstUSDT ~1.63%).",
+              totalMarkets: result.markets.length,
+              markets: result.markets,
+              note: result.note,
+              ...(result.source === "contract" ? { source: "contract" } : {}),
             }, null, 2),
           }],
         };
-      } catch {
-        // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
-        try {
-          const markets = await services.getAllMarketData(network);
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                totalMarkets: markets.length,
-                markets,
-                note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
-                source: "contract",
-              }, null, 2),
-            }],
-          };
-        } catch (error: any) {
-          return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-        }
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
