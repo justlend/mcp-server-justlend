@@ -422,6 +422,63 @@ export function registerJustLendTools(server: McpServer) {
     },
   );
 
+  server.registerTool(
+    "get_wallet_balances",
+    {
+      description:
+        "Batch-fetch TRC20 token balances for a wallet across multiple JustLend markets in a single RPC call " +
+        "using the Multicall3 walletTokensBalance method. " +
+        "Returns human-readable balances (decimals already applied) for all specified tokens at once. " +
+        "Use this instead of calling get_token_balance repeatedly when you need balances for several tokens.",
+      inputSchema: {
+        tokens: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "List of token symbols to check (e.g. ['USDT', 'USDD', 'ETH', 'BTC']). " +
+            "Defaults to all TRC20 underlying tokens across all JustLend markets.",
+          ),
+        address: z.string().optional().describe("TRON wallet address. Default: configured wallet"),
+        network: z.string().optional().describe("Network. Default: mainnet"),
+      },
+      annotations: { title: "Get Wallet Token Balances (Batch)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ tokens, address, network = services.getGlobalNetwork() }) => {
+      try {
+        const userAddress = address || await services.getWalletAddress();
+        const allJTokens = getAllJTokens(network);
+
+        // Collect TRC20 tokens to query (skip native TRX — no contract address)
+        const candidates = allJTokens.filter((t) => t.underlying);
+        const filtered = tokens && tokens.length > 0
+          ? candidates.filter((t) => tokens.some((s) => s.toLowerCase() === t.underlyingSymbol.toLowerCase()))
+          : candidates;
+
+        // Deduplicate by underlying address
+        const seen = new Set<string>();
+        const tokenList = filtered.filter((t) => {
+          if (seen.has(t.underlying)) return false;
+          seen.add(t.underlying);
+          return true;
+        }).map((t) => ({ address: t.underlying, symbol: t.underlyingSymbol, decimals: t.underlyingDecimals }));
+
+        const balances = await services.getWalletTokensBalance(userAddress, tokenList, network);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              wallet: userAddress,
+              note: "Balances are in human-readable token units (decimals already applied).",
+              balances,
+            }, null, 2),
+          }],
+        };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
   // ============================================================================
   // LENDING OPERATIONS (Write — require private key)
   // Typical resource costs are included in descriptions and responses.

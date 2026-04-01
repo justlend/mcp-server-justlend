@@ -3,6 +3,7 @@ import { getJustLendAddresses, getAllJTokens, getJTokenInfo, getApiHost, type JT
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { multicall } from "./contracts.js";
+import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
 
 const MANTISSA = 1e18;
 
@@ -264,6 +265,74 @@ export async function getTokenBalance(address: string, tokenAddress: string, net
     symbol: String(symbol),
     decimals: dec,
   };
+}
+
+export interface TokenBalance {
+  symbol: string;
+  tokenAddress: string;
+  balance: string;
+  decimals: number;
+  error?: boolean;
+}
+
+/**
+ * Batch-fetch TRC20 token balances for a single wallet using Multicall3's
+ * walletTokensBalance method (one RPC call for all tokens).
+ * Falls back to parallel balanceOf calls when no multicall3 address is configured.
+ */
+export async function getWalletTokensBalance(
+  walletAddress: string,
+  tokens: Array<{ address: string; symbol: string; decimals: number }>,
+  network = "mainnet",
+): Promise<TokenBalance[]> {
+  if (tokens.length === 0) return [];
+
+  const addresses = getJustLendAddresses(network);
+  const multicall3Address = addresses.multicall3;
+
+  const tronWeb = getTronWeb(network);
+
+  if (multicall3Address) {
+    try {
+      const contract = tronWeb.contract(MULTICALL3_BALANCE_ABI, multicall3Address);
+      const tokenAddresses = tokens.map((t) => t.address);
+      const result = await (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call();
+
+      // Result is [balances: uint256[], errors: bool[]]
+      const rawBalances: bigint[] = Array.isArray(result[0]) ? result[0] : result.balances;
+      const errors: boolean[] = Array.isArray(result[1]) ? result[1] : result.errors;
+
+      return tokens.map((token, i) => ({
+        symbol: token.symbol,
+        tokenAddress: token.address,
+        balance: errors[i] ? "0" : formatUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
+        decimals: token.decimals,
+        error: errors[i] ? true : undefined,
+      }));
+    } catch {
+      // fall through to sequential fallback
+    }
+  }
+
+  // Fallback: parallel balanceOf calls
+  const results = await Promise.allSettled(
+    tokens.map((token) => {
+      const contract = tronWeb.contract(TRC20_ABI, token.address);
+      return contract.methods.balanceOf(walletAddress).call();
+    }),
+  );
+
+  return tokens.map((token, i) => {
+    const r = results[i];
+    const raw = r.status === "fulfilled" ? BigInt(r.value ?? 0) : 0n;
+    return {
+      symbol: token.symbol,
+      tokenAddress: token.address,
+      balance: formatUnits(raw, token.decimals),
+      decimals: token.decimals,
+      error: r.status === "rejected" || undefined,
+    };
+  });
 }
 
 /**

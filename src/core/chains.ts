@@ -115,6 +115,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       market: "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",
     },
     energyRateModel: "TXA2WjFc5f86deJcZZCdbdpkpUTKTA3VDM",
+    multicall3: "TX56WKxtja91Dybf2FdN4hZbDLyKVxxhAu",
     jTokens: {
       jTRX: {
         address: "TE2RzoSV3wFK99w6J9UnnZ4vLfXYoxvRwP",
