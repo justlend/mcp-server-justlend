@@ -17,9 +17,10 @@ export function setGlobalNetwork(network: string): void {
 
 // --- Wallet Mode ---
 
-export type WalletMode = "browser" | "agent";
+export type WalletMode = "browser" | "agent" | "unset";
+export type SelectableWalletMode = Exclude<WalletMode, "unset">;
 
-let walletMode: WalletMode = "agent";
+let walletMode: WalletMode = "unset";
 
 export function getWalletMode(): WalletMode {
   return walletMode;

@@ -416,6 +416,7 @@ vi.mock("../../src/core/services/index.js", () => ({
 
 import { registerJustLendTools } from "../../src/core/tools.js";
 import * as services from "../../src/core/services/index.js";
+import { setWalletMode } from "../../src/core/services/global.js";
 
 // ============================================================================
 // Helper: create server & extract tool handler
@@ -426,6 +427,8 @@ const registeredTools = new Map<string, { handler: Function; config: any }>();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  registeredTools.clear();
+  setWalletMode("unset");
 
   server = new McpServer(
     { name: "test-server", version: "1.0.0" },
@@ -566,11 +569,30 @@ describe("Tool Registration", () => {
 // ============================================================================
 
 describe("Wallet & Network Tools", () => {
-  it("get_wallet_address should return wallet address", async () => {
+  it("get_wallet_address should return first-use wallet choice when mode is unset", async () => {
+    const result = await callTool("get_wallet_address");
+    const output = getToolOutput(result);
+    expect(output.walletMode).toBe("unset");
+    expect(output.address).toBeNull();
+    expect(output.options.recommended.action).toBe("connect_browser_wallet");
+    expect(output.options.alternative.params.mode).toBe("agent");
+    expect(services.autoInitWallet).not.toHaveBeenCalled();
+  });
+
+  it("set_wallet_mode(agent) should create or use the agent wallet", async () => {
+    const result = await callTool("set_wallet_mode", { mode: "agent" });
+    const output = getToolOutput(result);
+    expect(output.mode).toBe("agent");
+    expect(output.address).toBe("TTestWalletAddress123456789012345");
+    expect(services.autoInitWallet).toHaveBeenCalled();
+  });
+
+  it("get_wallet_address should return agent wallet after agent mode is selected", async () => {
+    await callTool("set_wallet_mode", { mode: "agent" });
     const result = await callTool("get_wallet_address");
     const output = getToolOutput(result);
     expect(output.address).toBe("TTestWalletAddress123456789012345");
-    expect(services.autoInitWallet).toHaveBeenCalled();
+    expect(output.walletMode).toBe("agent");
   });
 
   it("get_supported_networks should list networks", async () => {
@@ -806,6 +828,7 @@ describe("Lending Operation Tools", () => {
 
 describe("Error Handling", () => {
   it("should return isError: true when wallet not configured", async () => {
+    setWalletMode("agent");
     vi.mocked(services.autoInitWallet).mockRejectedValueOnce(
       new Error("No wallet configured. Run `agent-wallet start` to create one."),
     );

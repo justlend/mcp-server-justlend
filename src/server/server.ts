@@ -3,7 +3,7 @@ import { registerJustLendResources } from "../core/resources.js";
 import { registerJustLendTools } from "../core/tools.js";
 import { registerJustLendPrompts } from "../core/prompts.js";
 import { getSupportedNetworks } from "../core/chains.js";
-import { autoInitWallet } from "../core/services/wallet.js";
+import { checkWalletStatus } from "../core/services/wallet.js";
 
 async function startServer() {
   try {
@@ -29,20 +29,20 @@ async function startServer() {
     console.error("@justlend/mcp-server-justlend v1.0.2 initialized");
     console.error(`Supported networks: ${getSupportedNetworks().join(", ")}`);
 
-    // Auto-initialize wallet on startup — generates a new encrypted wallet if none exists
+    // Do not auto-create an agent wallet on startup.
+    // Let the user explicitly choose between browser wallet and agent-wallet.
     try {
-      const { address, walletId, created } = await autoInitWallet();
-      if (created) {
-        console.error(`Wallet: auto-generated new wallet "${walletId}"`);
-        console.error(`  Address: ${address}`);
-        console.error("  Encrypted private key stored in ~/.agent-wallet/");
-        console.error("  Fund this address with TRX before performing write operations.");
+      const status = await checkWalletStatus();
+      if (status.hasWallets && status.activeAddress) {
+        console.error(`Agent wallet available: ${status.activeAddress} (id: ${status.activeWalletId})`);
       } else {
-        console.error(`Wallet: ${address} (id: ${walletId})`);
+        console.error("Wallet mode: no selection yet");
+        console.error("  Recommended: connect_browser_wallet to use TronLink");
+        console.error("  Alternative: set_wallet_mode with mode='agent' to create/use agent-wallet");
       }
     } catch (error: any) {
-      console.error(`Wallet: initialization failed — ${error.message}`);
-      console.error("  Write operations will fail. Use the import_wallet tool or set AGENT_WALLET_PASSWORD.");
+      console.error(`Wallet status check failed — ${error.message}`);
+      console.error("  Users can still choose connect_browser_wallet or set_wallet_mode later.");
     }
 
     console.error("Server is ready to handle requests");

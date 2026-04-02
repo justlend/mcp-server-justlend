@@ -83,14 +83,14 @@ npm install
 
 ## Configuration
 
-### Wallet Setup (Automatic)
+### Wallet Setup (First-Use Choice)
 
-The server **automatically generates** an encrypted wallet on first startup — no manual setup required. Private keys are **never** stored in environment variables; they are encrypted and stored in `~/.agent-wallet/`.
+On first use, the server does **not** force a wallet choice. Users can explicitly choose between:
 
-On startup, the server will:
-1. Check for existing wallets in `~/.agent-wallet/`
-2. If none found, auto-generate a new encrypted wallet (random password + encrypted private key)
-3. Display the wallet address in the console
+1. `browser` mode via TronLink using `connect_browser_wallet`
+2. `agent` mode via encrypted local wallet using `set_wallet_mode` with `mode="agent"`
+
+Private keys are **never** stored in environment variables by default. If the user selects `agent` mode, the encrypted wallet is stored in `~/.agent-wallet/`.
 
 You can also manage wallets via **CLI** or **MCP tools**:
 
@@ -113,7 +113,10 @@ npx agent-wallet activate <wallet-id>
 
 | Tool | Description |
 |------|-------------|
-| `get_wallet_address` | Shows current address (auto-generates wallet if needed) |
+| `get_wallet_address` | Shows current address, or returns first-use wallet selection guidance |
+| `connect_browser_wallet` | Connect TronLink / browser wallet for signing |
+| `set_wallet_mode` | Switch between `browser` and `agent` signing |
+| `get_wallet_mode` | Show current signing mode and addresses |
 | `import_wallet` | Import an existing private key (stored encrypted) |
 | `list_wallets` | List all wallets with IDs, types, addresses |
 | `set_active_wallet` | Switch active wallet by ID |
@@ -227,7 +230,10 @@ npm run dev:http     # HTTP/SSE with auto-reload
 #### Wallet & Network
 | Tool | Description | Write? |
 |------|-------------|--------|
-| `get_wallet_address` | Show wallet address (auto-generates if needed) | No |
+| `get_wallet_address` | Show wallet address or first-use wallet selection guidance | No |
+| `connect_browser_wallet` | Connect TronLink / browser wallet for signing | Yes |
+| `set_wallet_mode` | Switch between `browser` and `agent` signing | Yes |
+| `get_wallet_mode` | Show current signing mode and addresses | No |
 | `list_wallets` | List all wallets (IDs, types, addresses) | No |
 | `set_active_wallet` | Switch active wallet by wallet ID | No |
 | `import_wallet` | Import existing private key (stored encrypted) | No |

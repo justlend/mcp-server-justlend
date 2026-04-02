@@ -37,13 +37,38 @@ export function registerJustLendTools(server: McpServer) {
     {
       description:
         "Get the active wallet address. Returns browser wallet address if in browser mode, " +
-        "or agent-wallet address otherwise. Auto-generates a new encrypted agent wallet if none exists.",
+        "agent-wallet address if agent mode is selected, or a first-use wallet selection guide if no wallet mode has been chosen yet.",
       inputSchema: {},
       annotations: { title: "Get Wallet Address", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async () => {
       try {
         const mode = getWalletMode();
+        if (mode === "unset") {
+          const status = await services.checkWalletStatus().catch(() => null);
+          return { content: [{ type: "text", text: JSON.stringify({
+            walletMode: "unset",
+            address: null,
+            agentWalletAvailable: !!status?.activeAddress,
+            agentAddress: status?.activeAddress ?? null,
+            message: "No wallet mode selected yet. Choose how you want to sign transactions before your first write operation.",
+            options: {
+              recommended: {
+                mode: "browser",
+                action: "connect_browser_wallet",
+                reason: "Use TronLink in your browser. Private keys never leave the browser.",
+              },
+              alternative: {
+                mode: "agent",
+                action: "set_wallet_mode",
+                params: { mode: "agent" },
+                reason: status?.activeAddress
+                  ? "Use the existing encrypted agent-wallet."
+                  : "Create or use an encrypted agent-wallet stored in ~/.agent-wallet/.",
+              },
+            },
+          }, null, 2) }] };
+        }
         if (mode === "browser") {
           const address = getBrowserSigner().getConnectedAddress();
           if (address) {
@@ -209,6 +234,7 @@ export function registerJustLendTools(server: McpServer) {
         "Switch wallet signing mode. " +
         "'browser' (recommended, more secure): uses TronLink in your browser — private keys never leave the browser. " +
         "'agent': uses encrypted key stored in ~/.agent-wallet/. " +
+        "Selecting agent mode for the first time will create an encrypted agent-wallet if needed. " +
         "Browser mode requires connect_browser_wallet first.",
       inputSchema: {
         mode: z.enum(["browser", "agent"]).describe("Wallet mode: 'browser' or 'agent'"),
@@ -233,13 +259,17 @@ export function registerJustLendTools(server: McpServer) {
           }, null, 2) }] };
         }
         setWalletMode("agent");
-        const address = await services.getWalletAddress().catch(() => null);
+        const { address, walletId, created } = await services.autoInitWallet();
         return { content: [{ type: "text", text: JSON.stringify({
           mode: "agent",
           address,
+          walletId,
+          ...(created ? { newlyCreated: true } : {}),
           message: address
-            ? `Switched to agent wallet mode. Active address: ${address}`
-            : "Switched to agent wallet mode (no agent wallet configured yet).",
+            ? created
+              ? `Switched to agent wallet mode. New encrypted wallet created: ${address}`
+              : `Switched to agent wallet mode. Active address: ${address}`
+            : "Switched to agent wallet mode.",
         }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -250,7 +280,7 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_wallet_mode",
     {
-      description: "Get the current wallet signing mode (browser or agent), connected address, and connection status.",
+      description: "Get the current wallet signing mode (browser, agent, or unset), connected address, and connection status.",
       inputSchema: {},
       annotations: { title: "Get Wallet Mode", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -258,14 +288,20 @@ export function registerJustLendTools(server: McpServer) {
       const mode = getWalletMode();
       const browserAddress = getBrowserSigner().getConnectedAddress();
       let agentAddress: string | null = null;
-      try { agentAddress = await services.getWalletAddress(); } catch {}
+      let agentWalletAvailable = false;
+      try {
+        const status = await services.checkWalletStatus();
+        agentAddress = status.activeAddress;
+        agentWalletAvailable = !!status.activeAddress;
+      } catch {}
 
       return { content: [{ type: "text", text: JSON.stringify({
         mode,
-        address: mode === "browser" ? browserAddress : agentAddress,
+        address: mode === "browser" ? browserAddress : mode === "agent" ? agentAddress : null,
         browserConnected: browserAddress !== null,
         browserAddress,
         agentAddress,
+        agentWalletAvailable,
         recommendation: "Browser wallet mode is recommended for better security — private keys never leave your browser.",
       }, null, 2) }] };
     },

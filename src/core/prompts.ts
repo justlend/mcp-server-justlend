@@ -31,7 +31,7 @@ export function registerJustLendPrompts(server: McpServer) {
 **Objective**: Supply ${amount} into the ${market} market on ${network} to earn interest.
 
 ## Pre-flight Checks
-1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet, or choose browser/agent signing if this is the first use.
 2. **Balance Check**:
    - If ${market} is jTRX: Call the \`get_trx_balance\` tool to verify sufficient TRX.
    - If TRC20 (jUSDT, jSUN, etc.): Call the \`get_token_balance\` tool with the underlying token address to verify balance.
@@ -267,7 +267,7 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Rent ${energyAmount} energy for ${durationDays} days to ${receiverAddress} on ${network}.
 
 ## Pre-flight Checks
-1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet, or choose browser/agent signing if this is the first use.
 2. **Rental Status**: Call the \`get_energy_rental_params\` tool to check:
    - Is \`rentPaused\` false? (rental must be enabled)
    - What is the max rentable amount?
@@ -322,7 +322,7 @@ Present as a structured portfolio report with clear sections, numbers, and actio
 **Objective**: Stake ${amount} TRX on ${network} to receive sTRX and earn staking rewards.
 
 ## Pre-flight Checks
-1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet, or choose browser/agent signing if this is the first use.
 2. **Dashboard**: Call the \`get_strx_dashboard\` tool to check:
    - Current sTRX/TRX exchange rate
    - Total APY (vote APY + rental income)
@@ -428,7 +428,7 @@ Provide a top-3 recommendation with reasoning.`,
 1. Call the \`get_proposal_list\` tool to fetch recent proposals. Filter for those with state "Active" (state: 1).
 2. The tool now returns both \`title\` and \`content\` for most proposals (including summaries for historically hardcoded ones). Use this information to explain the active proposals clearly to the user.
 3. Note: If a very early proposal (e.g., ID 1-6) specifically returns "Details maintained in frontend." in its content, gently explain to the user that the exact text is unavailable via API, but they can still vote on it using its Proposal ID.
-4. Call the \`get_wallet_address\` tool to get the active wallet.
+4. Call the \`get_wallet_address\` tool to get the active wallet, or choose browser/agent signing if this is the first use.
 5. Call the \`get_vote_info\` tool to check the user's available voting power (surplusVotes).
 
 ## Report
@@ -462,7 +462,7 @@ Provide a summary:
 **Objective**: Cast ${amount} votes ${support.toUpperCase()} proposal #${proposalId} on ${network}.
 
 ## Pre-flight Checks
-1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet.
+1. **Wallet**: Call the \`get_wallet_address\` tool to confirm the active wallet, or choose browser/agent signing if this is the first use.
 2. **Voting Power Check**: Call the \`get_vote_info\` tool to verify the user has enough \`surplusVotes\` (>= ${amount}).
    - If \`surplusVotes\` is insufficient, inform the user they need to deposit JST first using the \`deposit_jst_for_votes\` tool.
 3. **Proposal Status**: Call the \`get_proposal_list\` tool to verify that proposal #${proposalId} is currently "Active".
