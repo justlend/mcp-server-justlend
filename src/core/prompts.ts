@@ -9,6 +9,67 @@ import { z } from "zod";
 export function registerJustLendPrompts(server: McpServer) {
 
   // ============================================================================
+  // GETTING STARTED (Onboarding)
+  // ============================================================================
+  server.registerPrompt(
+    "getting_started",
+    {
+      description: "First-time onboarding: choose wallet mode, connect wallet, and explore JustLend features",
+      argsSchema: {},
+    },
+    () => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# Welcome to JustLend MCP Server
+
+**Objective**: Help the user set up their wallet and get familiar with available features.
+
+## Step 1 — Wallet Setup
+Call the \`get_wallet_address\` tool. If the wallet mode is "unset", present the two options clearly:
+
+### Option A: Browser Wallet (Recommended)
+- Use TronLink or other browser wallets to sign transactions
+- **Private keys never leave the browser** — most secure option
+- Action: Call \`connect_browser_wallet\` to open TronLink in the browser
+
+### Option B: Agent Wallet
+- Encrypted private key stored locally in ~/.agent-wallet/
+- Convenient for automated/headless usage
+- Action: Call \`set_wallet_mode\` with mode="agent"
+
+Ask the user which mode they prefer, then execute the corresponding action.
+
+## Step 2 — Verify Connection
+After wallet is connected:
+- Show the connected address
+- Call the \`get_trx_balance\` tool to display TRX balance
+- Call the \`get_wallet_balances\` tool to show all token balances
+
+## Step 3 — Quick Tour
+Briefly introduce what the user can do:
+
+📊 **Query** (read-only, no wallet needed):
+- "JustLend 有哪些市场？" → market overview & APYs
+- "帮我查地址 Txxx 的仓位" → account positions & health factor
+- "sTRX 质押年化多少？" → staking APY & exchange rate
+
+💰 **Operate** (requires wallet):
+- "帮我存 100 USDT 到 JustLend" → supply assets
+- "帮我借 500 USDT" → borrow against collateral
+- "质押 1000 TRX" → stake TRX for sTRX
+
+🏛️ **Governance**:
+- "最新的治理提案有哪些？" → proposals & voting
+
+Ask the user what they'd like to do first.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
   // SUPPLY WORKFLOW
   // ============================================================================
   server.registerPrompt(

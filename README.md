@@ -338,6 +338,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 | Prompt | Description |
 |--------|-------------|
+| `getting_started` | First-time onboarding: wallet setup, connection, feature tour |
 | `supply_assets` | Step-by-step supply with balance checks and approval |
 | `borrow_assets` | Safe borrowing with risk assessment and health factor checks |
 | `repay_borrow` | Guided repayment with verification |
