@@ -53,7 +53,23 @@ echo "✅ 构建完成"
 
 echo ""
 TRONGRID_KEY="${TRONGRID_API_KEY:-}"
-if [ -z "$TRONGRID_KEY" ]; then
+
+# Try to reuse key from existing .mcp.json
+if [ -z "$TRONGRID_KEY" ] && [ -f "$PROJECT_DIR/.mcp.json" ]; then
+    TRONGRID_KEY=$(grep -o '"TRONGRID_API_KEY"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_DIR/.mcp.json" 2>/dev/null | head -1 | sed 's/.*"TRONGRID_API_KEY"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+fi
+
+if [ -n "$TRONGRID_KEY" ]; then
+    MASKED="${TRONGRID_KEY:0:8}...${TRONGRID_KEY: -4}"
+    echo "已检测到 TRONGRID_API_KEY: $MASKED"
+    echo "  回车保留，或输入新 key 替换，输入 'none' 清除:"
+    read -r NEW_KEY
+    if [ "$NEW_KEY" = "none" ]; then
+        TRONGRID_KEY=""
+    elif [ -n "$NEW_KEY" ]; then
+        TRONGRID_KEY="$NEW_KEY"
+    fi
+else
     echo "请输入 TRONGRID_API_KEY (可选，直接回车跳过):"
     echo "  免费申请: https://www.trongrid.io/"
     read -r TRONGRID_KEY
