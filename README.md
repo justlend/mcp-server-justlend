@@ -23,26 +23,26 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 
 #### JustLend Protocol
 - **Market Data**: Real-time APYs, TVL, utilization rates, prices for all markets
-  - Direct contract queries for on-chain accuracy
-  - API-based queries for comprehensive market data (more stable, includes historical data and mining rewards)
-- **Account Data**: Full position analysis with API support
-  - Contract-based: Health factor, collateral, borrow positions
-  - API-based: Enhanced data with mining rewards, historical trends, risk metrics
+  - Smart fallback: contract queries first, API fallback for reliability
+  - TTL caching (30–60s) to reduce RPC calls
+- **Account Data**: Full position analysis via Multicall3 batch queries (~2.5s vs ~8s legacy)
+  - Health factor, collateral, borrow positions
+  - On-chain Oracle prices with API fallback
+- **Batch Wallet Balances**: Query all TRC20 token balances in a single Multicall3 RPC call
 - **Mining Rewards**: Advanced mining reward calculation (based on justlend-app logic)
   - Detailed breakdown by market and reward token (USDD, TRX, WBTC, etc.)
-  - Separates new period vs. last period rewards
   - USD value calculation with live token prices
-  - Mining status tracking (ongoing/paused/ended) and period end times
-- **Supply**: Deposit TRX or TRC20 tokens to earn interest (mint jTokens)
-- **Borrow**: Borrow assets against your collateral with health factor monitoring
-- **Repay**: Repay outstanding borrows with full or partial amounts
-- **Withdraw**: Redeem jTokens back to underlying assets
+- **Supply / Borrow / Repay / Withdraw**: Full lending operations with pre-flight checks
 - **Collateral Management**: Enter/exit markets, manage what counts as collateral
 - **Portfolio Analysis**: AI-guided risk assessment, health factor monitoring, optimization
-- **Token Approvals**: Manage TRC20 approvals for jToken contracts
 - **JST Voting / Governance**: View proposals, cast votes, deposit/withdraw JST for voting power, reclaim votes
 - **Energy Rental**: Rent energy from JustLend, calculate rental prices, query rental orders, return/cancel rentals
 - **sTRX Staking**: Stake TRX to receive sTRX, unstake sTRX, claim staking rewards, check withdrawal eligibility
+
+#### Browser Wallet Signing (New in v1.0.3)
+- **TronLink Integration**: Connect TronLink or other browser wallets via localhost HTTP bridge
+- **Sign-only mode**: Server builds transactions, browser only signs — private keys never leave the wallet
+- **Dual wallet mode**: Users choose between `browser` (recommended) or `agent` (encrypted local storage)
 
 #### General TRON Chain
 - **Balances**: TRX balance (with Sun/TRX conversion), TRC20/TRC1155 token balances
@@ -53,7 +53,7 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 - **Transfers**: Send TRX, transfer TRC20 tokens, approve spenders
 - **Staking (Stake 2.0)**: Freeze/unfreeze TRX for BANDWIDTH or ENERGY, withdraw expired unfreeze
 - **Address Utilities**: Hex ↔ Base58 conversion, address validation, resolution
-- **Wallet**: Sign messages, sign typed data (EIP-712), secure key management via agent-wallet
+- **Wallet**: Sign messages, secure key management via agent-wallet or browser wallet
 
 ## Supported Markets
 
@@ -80,6 +80,17 @@ git clone https://github.com/justlend/mcp-server-justlend.git
 cd mcp-server-justlend
 npm install
 ```
+
+## Quick Setup
+
+For a guided setup experience (build, configure, generate `.mcp.json`):
+
+```bash
+bash scripts/setup-mcp-test.sh
+# Add --claude-desktop to also output Claude Desktop config
+```
+
+The script checks Node.js 20+, installs dependencies, builds the project, and generates the MCP client configuration.
 
 ## Configuration
 
@@ -225,7 +236,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
-### Tools (50 total)
+### Tools (60 total)
 
 #### Wallet & Network
 | Tool | Description | Write? |
@@ -239,25 +250,24 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `import_wallet` | Import existing private key (stored encrypted) | No |
 | `get_supported_networks` | List available networks | No |
 | `get_supported_markets` | List all jToken markets with addresses | No |
+| `set_network` | Set global default network (mainnet, nile) | Yes |
+| `get_network` | Get current global default network | No |
 
 #### Market Data
 | Tool | Description | Write? |
 |------|-------------|--------|
-| `get_market_data` | Detailed data for one market (APY, TVL, rates) - Contract query | No |
-| `get_all_markets` | Overview of all markets - Contract query | No |
-| `get_protocol_summary` | Comptroller config & protocol parameters - Contract query | No |
-| `get_markets_from_api` | **[API]** All market data with mining rewards & trends | No |
-| `get_dashboard_from_api` | **[API]** Protocol-level statistics (TVL, users, etc.) | No |
-| `get_jtoken_details_from_api` | **[API]** Detailed jToken info with interest rate model | No |
+| `get_market_data` | Detailed data for one market (APY, TVL, rates) — contract + API fallback | No |
+| `get_all_markets` | Overview of all markets — contract + API fallback | No |
+| `get_protocol_summary` | Comptroller config & protocol parameters — contract query | No |
 
 #### Account & Balances
 | Tool | Description | Write? |
 |------|-------------|--------|
-| `get_account_summary` | Full position: supplies, borrows, health factor - Contract query | No |
-| `get_account_data_from_api` | **[API]** Enhanced account data with mining rewards & trends | No |
+| `get_account_summary` | Full position: supplies, borrows, health factor — Multicall3 batch | No |
 | `check_allowance` | Check TRC20 approval for jToken | No |
 | `get_trx_balance` | TRX balance | No |
 | `get_token_balance` | TRC20 token balance | No |
+| `get_wallet_balances` | Batch-fetch TRC20 balances across multiple markets via Multicall3 | No |
 
 #### Lending Operations
 | Tool | Description | Write? |
@@ -271,6 +281,14 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `exit_market` | Disable market as collateral | **Yes** |
 | `approve_underlying` | Approve TRC20 for jToken | **Yes** |
 | `claim_rewards` | Claim mining rewards | **Yes** |
+| `estimate_lending_energy` | Estimate energy/bandwidth/TRX cost for any lending operation | No |
+
+#### Mining & Rewards
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `get_mining_rewards` | Unclaimed mining rewards, APY, and reward breakdown | No |
+| `get_usdd_mining_config` | USDD mining periods, reward tokens, and schedule | No |
+| `get_wbtc_mining_config` | WBTC supply mining configuration and activity details | No |
 
 #### JST Voting / Governance
 | Tool | Description | Write? |
@@ -310,6 +328,12 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `unstake_strx` | Unstake sTRX to receive TRX back (with balance check) | **Yes** |
 | `claim_strx_rewards` | Claim all staking rewards (with rewards existence check) | **Yes** |
 
+#### Transfers
+| Tool | Description | Write? |
+|------|-------------|--------|
+| `transfer_trx` | Transfer TRX to another address (with balance check) | **Yes** |
+| `transfer_trc20` | Transfer TRC20 tokens by symbol or contract address | **Yes** |
+
 ### Prompts (AI-Guided Workflows)
 
 | Prompt | Description |
@@ -330,17 +354,30 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + JustLend contract addresses
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 ABIs
-│   │   ├── tools.ts           # MCP tool registrations
+│   │   ├── tools.ts           # MCP tool registrations (60 tools)
 │   │   ├── prompts.ts         # AI-guided workflow prompts
 │   │   ├── resources.ts       # Static protocol info resource
+│   │   ├── browser-signer/    # Browser wallet signing via localhost HTTP bridge
+│   │   │   ├── types.ts           # Request/response type definitions
+│   │   │   ├── pending-store.ts   # UUID-Promise queue for pending sign requests
+│   │   │   ├── http-server.ts     # Localhost HTTP server (node:http)
+│   │   │   ├── browser.ts         # Open browser + URL construction
+│   │   │   ├── tron-wallet-signer.ts # Core orchestration class
+│   │   │   ├── web-ui.ts          # Inlined HTML (generated from index.html)
+│   │   │   ├── index.html         # Browser SPA (wallet discovery + approval UI)
+│   │   │   └── index.ts           # Barrel export
 │   │   └── services/
 │   │       ├── # — JustLend-specific —
-│   │       ├── clients.ts     # TronWeb client factory (cached)
-│   │       ├── wallet.ts      # agent-wallet integration, signing, address management
-│   │       ├── markets.ts     # APY, TVL, utilization, prices
-│   │       ├── account.ts     # User positions, liquidity, allowances
-│   │       ├── lending.ts     # supply, borrow, repay, withdraw, collateral
-│   │       ├── voting.ts      # JST governance: proposals, cast vote, deposit/withdraw WJST
+│   │       ├── global.ts     # Global state: network, wallet mode
+│   │       ├── clients.ts    # TronWeb client factory (cached)
+│   │       ├── wallet.ts     # Wallet routing: browser / agent-wallet signing
+│   │       ├── cache.ts      # TTL cache layer (30–60s) for prices, markets, sTRX
+│   │       ├── price.ts      # On-chain Oracle prices with API fallback
+│   │       ├── markets.ts    # APY, TVL, utilization — contract + API fallback
+│   │       ├── account.ts    # User positions via Multicall3 batch queries
+│   │       ├── lending.ts    # supply, borrow, repay, withdraw, collateral
+│   │       ├── rewards.ts    # Mining reward calculation (USDD, TRX, WBTC)
+│   │       ├── voting.ts     # JST governance: proposals, cast vote, deposit/withdraw WJST
 │   │       ├── energy-rental.ts # Energy rental: query, calculate, rent, return
 │   │       ├── strx-staking.ts  # sTRX staking: stake, unstake, rewards, withdrawal check
 │   │       ├── # — General TRON chain —
@@ -359,23 +396,31 @@ mcp-server-justlend/
 │   │   └── http-server.ts     # Express HTTP/SSE transport
 │   └── index.ts               # Stdio entry point
 ├── bin/cli.js                 # CLI entry for npx
+├── scripts/
+│   ├── setup-mcp-test.sh      # Quick setup: build + generate .mcp.json config
+│   └── gen-web-ui.ts          # Build: index.html → web-ui.ts
 └── tests/
     └── core/
         ├── chains.test.ts
         └── services/
-            ├── services.test.ts    # Client cache, legacy balance tests
-            ├── address.test.ts     # Pure: address format conversion (16 tests)
-            ├── utils.test.ts       # Pure: unit conversions, formatters (26 tests)
-            ├── balance.test.ts     # Integration: TRX & TRC20 balances
-            ├── blocks.test.ts      # Integration: block queries
-            ├── contracts.test.ts   # Mixed: pure ABI helpers + integration reads
-            ├── tokens.test.ts      # Integration: TRC20 token metadata
-            ├── transactions.test.ts# Integration: transaction fetch
-            ├── transfer.test.ts    # Write: skipped by default (TEST_TRANSFER=1)
-            ├── staking.test.ts     # Write: skipped by default (TEST_STAKING=1)
-            ├── energy-rental.test.ts # Integration: energy rental queries; Write: skipped (TEST_ENERGY_RENTAL=1)
-            ├── strx-staking.test.ts  # Integration: sTRX queries; Write: skipped (TEST_STRX_STAKING=1)
-            └── wallet.test.ts      # Unit: agent-wallet integration tests
+            ├── services.test.ts        # Client cache, legacy balance tests
+            ├── address.test.ts         # Pure: address format conversion (16 tests)
+            ├── utils.test.ts           # Pure: unit conversions, formatters (26 tests)
+            ├── cache.test.ts           # Unit: TTL cache behavior
+            ├── price.test.ts           # Unit: price service fallback logic
+            ├── markets-fallback.test.ts # Unit: market data fallback chain
+            ├── strx-fallback.test.ts   # Unit: sTRX dashboard fallback
+            ├── account-multicall.test.ts # Unit: Multicall3 account queries
+            ├── balance.test.ts         # Integration: TRX & TRC20 balances
+            ├── blocks.test.ts          # Integration: block queries
+            ├── contracts.test.ts       # Mixed: pure ABI helpers + integration reads
+            ├── tokens.test.ts          # Integration: TRC20 token metadata
+            ├── transactions.test.ts    # Integration: transaction fetch
+            ├── transfer.test.ts        # Write: skipped by default (TEST_TRANSFER=1)
+            ├── staking.test.ts         # Write: skipped by default (TEST_STAKING=1)
+            ├── energy-rental.test.ts   # Integration: energy rental queries; Write: skipped (TEST_ENERGY_RENTAL=1)
+            ├── strx-staking.test.ts    # Integration: sTRX queries; Write: skipped (TEST_STRX_STAKING=1)
+            └── wallet.test.ts          # Unit: agent-wallet integration tests
 ```
 
 ## Testing
