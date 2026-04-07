@@ -10,9 +10,17 @@ async function startServer() {
     const server = new McpServer(
       {
         name: "mcp-server-justlend",
-        version: "1.0.2",
+        version: "1.0.3",
       },
       {
+        instructions:
+          "JustLend DAO MCP Server — TRON lending protocol + general chain utilities.\n\n" +
+          "IMPORTANT: On the FIRST user interaction, call `get_wallet_address` to check wallet status. " +
+          "If walletMode is \"unset\", you MUST present the wallet choice BEFORE doing anything else:\n" +
+          "  • Option A (Recommended): Browser wallet — call `connect_browser_wallet` to use TronLink. Private keys never leave the browser.\n" +
+          "  • Option B: Agent wallet — call `set_wallet_mode` with mode=\"agent\". Encrypted key stored in ~/.agent-wallet/.\n" +
+          "Read-only queries (market data, account lookups) work without a wallet, but always present the choice first so users understand their options.\n\n" +
+          "After wallet is set up, show a brief feature overview and ask what the user wants to do.",
         capabilities: {
           tools: { listChanged: true },
           resources: { subscribe: false, listChanged: true },
@@ -26,7 +34,7 @@ async function startServer() {
     registerJustLendTools(server);
     registerJustLendPrompts(server);
 
-    console.error("@justlend/mcp-server-justlend v1.0.2 initialized");
+    console.error("@justlend/mcp-server-justlend v1.0.3 initialized");
     console.error(`Supported networks: ${getSupportedNetworks().join(", ")}`);
 
     // Do not auto-create an agent wallet on startup.
