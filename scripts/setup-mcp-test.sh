@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# JustLend MCP Server — 快速搭建测试环境
+# JustLend MCP Server — Quick Test Environment Setup
 #
-# 用法:
-#   bash scripts/setup-mcp-test.sh            # 在项目目录内运行
-#   bash scripts/setup-mcp-test.sh --claude-desktop  # 同时输出 Claude Desktop 配置
+# Usage:
+#   bash scripts/setup-mcp-test.sh            # Run inside the project directory
+#   bash scripts/setup-mcp-test.sh --claude-desktop  # Also output Claude Desktop config
 #
 
 set -e
@@ -13,43 +13,43 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 
 echo "====================================="
-echo " JustLend MCP Server 测试环境搭建"
+echo " JustLend MCP Server Test Setup"
 echo "====================================="
 echo ""
 
-# ── 1. 检查 Node.js ──────────────────────
+# ── 1. Check Node.js ──────────────────────
 
 if ! command -v node &> /dev/null; then
-    echo "❌ 未检测到 Node.js，请先安装 Node.js 20+"
+    echo "❌ Node.js not found. Please install Node.js 20+ first."
     echo "   macOS:   brew install node"
-    echo "   其他:    https://nodejs.org/"
+    echo "   Other:   https://nodejs.org/"
     exit 1
 fi
 
 NODE_MAJOR=$(node -v | cut -d'.' -f1 | tr -d 'v')
 if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo "❌ Node.js 版本过低 ($(node -v))，需要 v20+"
+    echo "❌ Node.js version too old ($(node -v)), v20+ required."
     exit 1
 fi
 echo "✅ Node.js $(node -v)"
 
-# ── 2. 安装依赖 ──────────────────────────
+# ── 2. Install dependencies ──────────────────────────
 
 if [ ! -d "$PROJECT_DIR/node_modules" ]; then
     echo ""
-    echo "📦 安装依赖..."
+    echo "📦 Installing dependencies..."
     cd "$PROJECT_DIR" && npm install
 fi
-echo "✅ 依赖已就绪"
+echo "✅ Dependencies ready"
 
-# ── 3. 构建 ──────────────────────────────
+# ── 3. Build ──────────────────────────────
 
 echo ""
-echo "🔨 构建项目..."
+echo "🔨 Building project..."
 cd "$PROJECT_DIR" && npm run build
-echo "✅ 构建完成"
+echo "✅ Build complete"
 
-# ── 4. TRONGRID_API_KEY (可选) ───────────
+# ── 4. TRONGRID_API_KEY (optional) ───────────
 
 echo ""
 TRONGRID_KEY="${TRONGRID_API_KEY:-}"
@@ -61,8 +61,8 @@ fi
 
 if [ -n "$TRONGRID_KEY" ]; then
     MASKED="${TRONGRID_KEY:0:8}...${TRONGRID_KEY: -4}"
-    echo "已检测到 TRONGRID_API_KEY: $MASKED"
-    echo "  回车保留，或输入新 key 替换，输入 'none' 清除:"
+    echo "TRONGRID_API_KEY detected: $MASKED"
+    echo "  Press Enter to keep, or enter a new key to replace, type 'none' to clear:"
     read -r NEW_KEY
     if [ "$NEW_KEY" = "none" ]; then
         TRONGRID_KEY=""
@@ -70,8 +70,8 @@ if [ -n "$TRONGRID_KEY" ]; then
         TRONGRID_KEY="$NEW_KEY"
     fi
 else
-    echo "请输入 TRONGRID_API_KEY (可选，直接回车跳过):"
-    echo "  免费申请: https://www.trongrid.io/"
+    echo "Enter TRONGRID_API_KEY (optional, press Enter to skip):"
+    echo "  Get one for free: https://www.trongrid.io/"
     read -r TRONGRID_KEY
 fi
 
@@ -81,12 +81,12 @@ if [ -n "$TRONGRID_KEY" ]; then
       \"env\": {
         \"TRONGRID_API_KEY\": \"$TRONGRID_KEY\"
       }"
-    echo "✅ TRONGRID_API_KEY 已配置"
+    echo "✅ TRONGRID_API_KEY configured"
 else
-    echo "⚠️  未设置 TRONGRID_API_KEY，免费额度可能遇到限流"
+    echo "⚠️  TRONGRID_API_KEY not set. Free tier may be rate-limited."
 fi
 
-# ── 5. 生成 Claude Code 配置 (.mcp.json) ─
+# ── 5. Generate Claude Code config (.mcp.json) ─
 
 cat > "$PROJECT_DIR/.mcp.json" << EOF
 {
@@ -99,13 +99,13 @@ cat > "$PROJECT_DIR/.mcp.json" << EOF
 }
 EOF
 
-echo "✅ Claude Code 配置: $PROJECT_DIR/.mcp.json"
+echo "✅ Claude Code config: $PROJECT_DIR/.mcp.json"
 
-# ── 6. Claude Desktop 配置 (可选输出) ────
+# ── 6. Claude Desktop config (optional output) ────
 
 if [ "$1" = "--claude-desktop" ]; then
     echo ""
-    echo "📋 Claude Desktop 配置 (复制到 Settings → Developer → MCP Servers):"
+    echo "📋 Claude Desktop config (copy to Settings → Developer → MCP Servers):"
     echo ""
     cat << EOF
 {
@@ -120,30 +120,30 @@ EOF
     echo ""
 fi
 
-# ── 完成 ─────────────────────────────────
+# ── Done ─────────────────────────────────
 
 echo ""
 echo "====================================="
-echo " ✅ 搭建完成！"
+echo " ✅ Setup complete!"
 echo "====================================="
 echo ""
-echo "▶ 启动 Claude Code:"
+echo "▶ Start Claude Code:"
 echo "  cd $PROJECT_DIR"
 echo "  claude"
 echo ""
-echo "▶ 或启动 HTTP 模式 (供其他 MCP 客户端接入):"
+echo "▶ Or start in HTTP mode (for other MCP clients):"
 echo "  npm run start:http"
 echo ""
-echo "── 试试这些对话 ──────────────────────"
+echo "── Try these prompts ─────────────────"
 echo ""
-echo "  1. JustLend 有哪些市场？USDT 存款年化多少？"
-echo "  2. 帮我查这个地址的仓位: TCrDi83pUoK17GbwxN1SckM3YNXzahWvoN"
-echo "  3. sTRX 质押年化收益是多少？"
-echo "  4. 连接我的 TronLink 钱包"
-echo "  5. 帮我存 10 TRX 到 JustLend"
+echo "  1. What markets does JustLend have? What's the USDT supply APY?"
+echo "  2. Check the positions for this address: TCrDi83pUoK17GbwxN1SckM3YNXzahWvoN"
+echo "  3. What's the sTRX staking APY?"
+echo "  4. Connect my TronLink wallet"
+echo "  5. Supply 10 TRX to JustLend"
 echo ""
-echo "── 钱包模式 ──────────────────────────"
+echo "── Wallet Modes ─────────────────────"
 echo ""
-echo "  browser 模式: 私钥留在 TronLink 插件内 (推荐)"
-echo "  agent 模式:   加密存储在 ~/.agent-wallet/"
+echo "  browser mode: Private keys stay in TronLink extension (recommended)"
+echo "  agent mode:   Encrypted storage in ~/.agent-wallet/"
 echo ""
