@@ -6,6 +6,8 @@ import {
 } from "./chains.js";
 import * as services from "./services/index.js";
 import { utils } from "./services/utils.js";
+import { getWalletMode, setWalletMode } from "./services/global.js";
+import { getBrowserSigner } from "./services/wallet.js";
 
 /**
  * Sanitize error messages for MCP client responses.
@@ -33,27 +35,75 @@ export function registerJustLendTools(server: McpServer) {
   server.registerTool(
     "get_wallet_address",
     {
-      description: "Get the configured wallet address. Auto-generates a new encrypted wallet if none exists.",
+      description:
+        "Get the active wallet address. Returns browser wallet address if in browser mode, " +
+        "agent-wallet address if agent mode is selected, or a first-use wallet selection guide if no wallet mode has been chosen yet.",
       inputSchema: {},
       annotations: { title: "Get Wallet Address", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     async () => {
       try {
+        const mode = getWalletMode();
+        if (mode === "unset") {
+          const status = await services.checkWalletStatus().catch(() => null);
+          return { content: [{ type: "text", text: JSON.stringify({
+            walletMode: "unset",
+            address: null,
+            agentWalletAvailable: !!status?.activeAddress,
+            agentAddress: status?.activeAddress ?? null,
+            message: "No wallet mode selected yet. Choose how you want to sign transactions before your first write operation.",
+            options: {
+              recommended: {
+                mode: "browser",
+                action: "connect_browser_wallet",
+                reason: "Use TronLink in your browser. Private keys never leave the browser.",
+              },
+              alternative: {
+                mode: "agent",
+                action: "set_wallet_mode",
+                params: { mode: "agent" },
+                reason: status?.activeAddress
+                  ? "Use the existing encrypted agent-wallet."
+                  : "Create or use an encrypted agent-wallet stored in ~/.agent-wallet/.",
+              },
+            },
+          }, null, 2) }] };
+        }
+        if (mode === "browser") {
+          const address = getBrowserSigner().getConnectedAddress();
+          if (address) {
+            return { content: [{ type: "text", text: JSON.stringify({
+              address,
+              walletMode: "browser",
+              message: "Using browser wallet (TronLink). Private keys stay in your browser.",
+            }, null, 2) }] };
+          }
+          return { content: [{ type: "text", text: JSON.stringify({
+            walletMode: "browser",
+            connected: false,
+            message: "Browser wallet mode active but not connected. Use connect_browser_wallet first, or switch to agent mode with set_wallet_mode.",
+          }, null, 2) }] };
+        }
+
         const { address, walletId, created } = await services.autoInitWallet();
         if (created) {
           return { content: [{ type: "text", text: JSON.stringify({
             address,
             walletId,
+            walletMode: "agent",
             newlyCreated: true,
             message: "New wallet auto-generated. Encrypted private key stored in ~/.agent-wallet/. Fund this address with TRX before performing write operations.",
+            tip: "For better security, consider using connect_browser_wallet to sign with TronLink instead.",
           }, null, 2) }] };
         }
         const status = await services.checkWalletStatus();
         return { content: [{ type: "text", text: JSON.stringify({
           address,
           walletId,
+          walletMode: "agent",
           totalWallets: status.wallets.length,
           message: "This wallet will be used for all JustLend operations",
+          tip: "For better security, consider using connect_browser_wallet to sign with TronLink instead.",
         }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
@@ -136,6 +186,127 @@ export function registerJustLendTools(server: McpServer) {
     },
   );
 
+  // ============================================================================
+  // BROWSER WALLET (connect TronLink / TokenPocket — recommended, more secure)
+  // ============================================================================
+
+  server.registerTool(
+    "connect_browser_wallet",
+    {
+      description:
+        "Connect to a browser wallet (TronLink, TokenPocket) for signing transactions. " +
+        "RECOMMENDED: More secure than agent-wallet because private keys never leave your browser. " +
+        "This opens a browser window where the user must approve the connection. " +
+        "Tell the user to switch to their browser to approve. " +
+        "Blocks until the user acts or the request times out (5 min). " +
+        "After connecting, all write operations will use the browser wallet for signing.",
+      inputSchema: {
+        address: z.string().optional().describe("Required TRON address (T...). If set, the user must connect this exact address."),
+      },
+      annotations: { title: "Connect Browser Wallet", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ address }: { address?: string }) => {
+      try {
+        setWalletMode("browser");
+        const signer = getBrowserSigner();
+        const { address: connectedAddress, approvalUrl } = await signer.connectWallet({
+          address,
+          network: services.getGlobalNetwork(),
+        });
+        return { content: [{ type: "text", text: JSON.stringify({
+          address: connectedAddress,
+          approvalUrl,
+          walletMode: "browser",
+          message: "Browser wallet connected. All write operations will now use browser signing (private keys stay in your browser).",
+        }, null, 2) }] };
+      } catch (error: any) {
+        // Revert to agent mode on failure
+        setWalletMode("agent");
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_wallet_mode",
+    {
+      description:
+        "Switch wallet signing mode. " +
+        "'browser' (recommended, more secure): uses TronLink in your browser — private keys never leave the browser. " +
+        "'agent': uses encrypted key stored in ~/.agent-wallet/. " +
+        "Selecting agent mode for the first time will create an encrypted agent-wallet if needed. " +
+        "Browser mode requires connect_browser_wallet first.",
+      inputSchema: {
+        mode: z.enum(["browser", "agent"]).describe("Wallet mode: 'browser' or 'agent'"),
+      },
+      annotations: { title: "Set Wallet Mode", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ mode }: { mode: "browser" | "agent" }) => {
+      try {
+        if (mode === "browser") {
+          const address = getBrowserSigner().getConnectedAddress();
+          if (!address) {
+            return { content: [{ type: "text", text: JSON.stringify({
+              success: false,
+              message: "Cannot switch to browser mode: no browser wallet connected. Use connect_browser_wallet first.",
+            }, null, 2) }], isError: true };
+          }
+          setWalletMode("browser");
+          return { content: [{ type: "text", text: JSON.stringify({
+            mode: "browser",
+            address,
+            message: "Switched to browser wallet mode. All write operations will use TronLink signing.",
+          }, null, 2) }] };
+        }
+        setWalletMode("agent");
+        const { address, walletId, created } = await services.autoInitWallet();
+        return { content: [{ type: "text", text: JSON.stringify({
+          mode: "agent",
+          address,
+          walletId,
+          ...(created ? { newlyCreated: true } : {}),
+          message: address
+            ? created
+              ? `Switched to agent wallet mode. New encrypted wallet created: ${address}`
+              : `Switched to agent wallet mode. Active address: ${address}`
+            : "Switched to agent wallet mode.",
+        }, null, 2) }] };
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_wallet_mode",
+    {
+      description: "Get the current wallet signing mode (browser, agent, or unset), connected address, and connection status.",
+      inputSchema: {},
+      annotations: { title: "Get Wallet Mode", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async () => {
+      const mode = getWalletMode();
+      const browserAddress = getBrowserSigner().getConnectedAddress();
+      let agentAddress: string | null = null;
+      let agentWalletAvailable = false;
+      try {
+        const status = await services.checkWalletStatus();
+        agentAddress = status.activeAddress;
+        agentWalletAvailable = !!status.activeAddress;
+      } catch {}
+
+      return { content: [{ type: "text", text: JSON.stringify({
+        mode,
+        address: mode === "browser" ? browserAddress : mode === "agent" ? agentAddress : null,
+        browserConnected: browserAddress !== null,
+        browserAddress,
+        agentAddress,
+        agentWalletAvailable,
+        recommendation: "Browser wallet mode is recommended for better security — private keys never leave your browser.",
+      }, null, 2) }] };
+    },
+  );
+
   server.registerTool(
     "get_supported_networks",
     {
@@ -205,8 +376,16 @@ export function registerJustLendTools(server: McpServer) {
       try {
         const info = getJTokenInfo(market, network);
         if (!info) throw new Error(`Unknown market: ${market}. Use get_supported_markets to see available markets.`);
-        const data = await services.getMarketData(info, network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+        const result = await services.getMarketDataWithFallback(info, network);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              ...result.data,
+              ...(result.source === "api" ? { source: "api" } : {}),
+            }, null, 2),
+          }],
+        };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
@@ -228,35 +407,20 @@ export function registerJustLendTools(server: McpServer) {
     },
     async ({ network = services.getGlobalNetwork() }) => {
       try {
-        const markets = await services.getAllMarketOverview(network);
+        const result = await services.getAllMarketsWithFallback(network);
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
-              totalMarkets: markets.length,
-              markets,
-              note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY. miningAPY is calculated from daily mining rewards and TVL. underlyingIncrementAPY is the staking yield for wrapped/staked assets (e.g. sTRX ~5.88%, wstUSDT ~1.63%).",
+              totalMarkets: result.markets.length,
+              markets: result.markets,
+              note: result.note,
+              ...(result.source === "contract" ? { source: "contract" } : {}),
             }, null, 2),
           }],
         };
-      } catch {
-        // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
-        try {
-          const markets = await services.getAllMarketData(network);
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                totalMarkets: markets.length,
-                markets,
-                note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
-                source: "contract",
-              }, null, 2),
-            }],
-          };
-        } catch (error: any) {
-          return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-        }
+      } catch (error: any) {
+        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
     },
   );
@@ -274,68 +438,6 @@ export function registerJustLendTools(server: McpServer) {
       try {
         const summary = await services.getProtocolSummary(network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-      }
-    },
-  );
-
-  // ============================================================================
-  // API-BASED QUERIES (More stable and comprehensive)
-  // ============================================================================
-
-  server.registerTool(
-    "get_markets_from_api",
-    {
-      description: "Get all market data from JustLend API. More stable than contract queries. Returns comprehensive market data including APY, TVL, utilization, prices, mining rewards, etc.",
-      inputSchema: {
-        network: z.string().optional().describe("Network. Default: mainnet"),
-      },
-      annotations: { title: "Get Markets from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async ({ network = services.getGlobalNetwork() }) => {
-      try {
-        const data = await services.getMarketDataFromAPI(network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-      }
-    },
-  );
-
-  server.registerTool(
-    "get_dashboard_from_api",
-    {
-      description: "Get JustLend protocol dashboard from API. Returns protocol-level statistics: total supply, total borrow, TVL, number of suppliers/borrowers, etc.",
-      inputSchema: {
-        network: z.string().optional().describe("Network. Default: mainnet"),
-      },
-      annotations: { title: "Get Dashboard from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async ({ network = services.getGlobalNetwork() }) => {
-      try {
-        const data = await services.getMarketDashboardFromAPI(network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-      }
-    },
-  );
-
-  server.registerTool(
-    "get_jtoken_details_from_api",
-    {
-      description: "Get detailed jToken information from API. Returns comprehensive market details including interest rate model, reserve info, etc.",
-      inputSchema: {
-        jtokenAddr: z.string().describe("jToken contract address"),
-        network: z.string().optional().describe("Network. Default: mainnet"),
-      },
-      annotations: { title: "Get jToken Details from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    },
-    async ({ jtokenAddr, network = services.getGlobalNetwork() }) => {
-      try {
-        const data = await services.getJTokenDetailsFromAPI(jtokenAddr, network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
@@ -492,21 +594,56 @@ export function registerJustLendTools(server: McpServer) {
   );
 
   server.registerTool(
-    "get_account_data_from_api",
+    "get_wallet_balances",
     {
-      description: "Get user account data from JustLend API. Returns lending positions, balances, mining rewards, health factor, etc. " +
-        "Note: API data may have a slight delay compared to contract queries. Refresh after transactions for accuracy.",
+      description:
+        "Batch-fetch TRC20 token balances for a wallet across multiple JustLend markets in a single RPC call " +
+        "using the Multicall3 walletTokensBalance method. " +
+        "Returns human-readable balances (decimals already applied) for all specified tokens at once. " +
+        "Use this instead of calling get_token_balance repeatedly when you need balances for several tokens.",
       inputSchema: {
-        address: z.string().describe("TRON address to check. Leave empty to use configured wallet.").optional(),
+        tokens: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "List of token symbols to check (e.g. ['USDT', 'USDD', 'ETH', 'BTC']). " +
+            "Defaults to all TRC20 underlying tokens across all JustLend markets.",
+          ),
+        address: z.string().optional().describe("TRON wallet address. Default: configured wallet"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
-      annotations: { title: "Get Account Data from API", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      annotations: { title: "Get Wallet Token Balances (Batch)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ address, network = services.getGlobalNetwork() }) => {
+    async ({ tokens, address, network = services.getGlobalNetwork() }) => {
       try {
         const userAddress = address || await services.getWalletAddress();
-        const data = await services.getAccountDataFromAPI(userAddress, network);
-        return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+        const allJTokens = getAllJTokens(network);
+
+        // Collect TRC20 tokens to query (skip native TRX — no contract address)
+        const candidates = allJTokens.filter((t) => t.underlying);
+        const filtered = tokens && tokens.length > 0
+          ? candidates.filter((t) => tokens.some((s) => s.toLowerCase() === t.underlyingSymbol.toLowerCase()))
+          : candidates;
+
+        // Deduplicate by underlying address
+        const seen = new Set<string>();
+        const tokenList = filtered.filter((t) => {
+          if (seen.has(t.underlying)) return false;
+          seen.add(t.underlying);
+          return true;
+        }).map((t) => ({ address: t.underlying, symbol: t.underlyingSymbol, decimals: t.underlyingDecimals }));
+
+        const balances = await services.getWalletTokensBalance(userAddress, tokenList, network);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              wallet: userAddress,
+              note: "Balances are in human-readable token units (decimals already applied).",
+              balances,
+            }, null, 2),
+          }],
+        };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }

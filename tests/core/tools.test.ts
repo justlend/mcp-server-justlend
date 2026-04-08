@@ -56,6 +56,30 @@ vi.mock("../../src/core/services/index.js", () => ({
     utilizationRate: 50.51,
   })),
 
+  getMarketDataWithFallback: vi.fn(async () => ({
+    data: {
+      symbol: "jUSDT",
+      underlyingSymbol: "USDT",
+      jTokenAddress: "TXJgMdjVX5dKiQaUi9QobR2d1pTdip5xG3",
+      underlyingAddress: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      supplyAPY: 3.25,
+      borrowAPY: 5.50,
+      totalSupply: "100000000.00",
+      totalBorrows: "50000000.00",
+      totalReserves: "1000000.00",
+      availableLiquidity: "49000000.00",
+      exchangeRate: "0.0200000000",
+      collateralFactor: 75,
+      reserveFactor: 10,
+      isListed: true,
+      mintPaused: false,
+      borrowPaused: false,
+      underlyingPriceUSD: "1.000000",
+      utilizationRate: 50.51,
+    },
+    source: "contract",
+  })),
+
   getAllMarketData: vi.fn(async () => [
     {
       symbol: "jUSDT",
@@ -85,6 +109,23 @@ vi.mock("../../src/core/services/index.js", () => ({
       borrowedUSD: "50000000.00",
     },
   ]),
+
+  getAllMarketsWithFallback: vi.fn(async () => ({
+    markets: [
+      {
+        symbol: "jUSDT",
+        underlyingSymbol: "USDT",
+        supplyAPY: "3.25%",
+        borrowAPY: "5.50%",
+        miningAPY: "0.00%",
+        totalSupplyAPY: "3.25%",
+        depositedUSD: "100000000.00",
+        borrowedUSD: "50000000.00",
+      },
+    ],
+    source: "api",
+    note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY.",
+  })),
 
   getProtocolSummary: vi.fn(async () => ({
     comptroller: "TGjYzgCyPobsNS9n6WcbdLVR9dH7mWqFx7",
@@ -375,6 +416,7 @@ vi.mock("../../src/core/services/index.js", () => ({
 
 import { registerJustLendTools } from "../../src/core/tools.js";
 import * as services from "../../src/core/services/index.js";
+import { setWalletMode } from "../../src/core/services/global.js";
 
 // ============================================================================
 // Helper: create server & extract tool handler
@@ -385,6 +427,8 @@ const registeredTools = new Map<string, { handler: Function; config: any }>();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  registeredTools.clear();
+  setWalletMode("unset");
 
   server = new McpServer(
     { name: "test-server", version: "1.0.0" },
@@ -431,14 +475,10 @@ describe("Tool Registration", () => {
       "get_market_data",
       "get_all_markets",
       "get_protocol_summary",
-      "get_markets_from_api",
-      "get_dashboard_from_api",
-      "get_jtoken_details_from_api",
       "get_account_summary",
       "check_allowance",
       "get_trx_balance",
       "get_token_balance",
-      "get_account_data_from_api",
       "supply",
       "withdraw",
       "withdraw_all",
@@ -474,6 +514,18 @@ describe("Tool Registration", () => {
 
     for (const name of expectedTools) {
       expect(registeredTools.has(name), `Tool "${name}" should be registered`).toBe(true);
+    }
+  });
+
+  it("should NOT register removed _from_api tools (v1.0.3)", () => {
+    const removedTools = [
+      "get_markets_from_api",
+      "get_dashboard_from_api",
+      "get_jtoken_details_from_api",
+      "get_account_data_from_api",
+    ];
+    for (const name of removedTools) {
+      expect(registeredTools.has(name), `Removed tool "${name}" should NOT be registered`).toBe(false);
     }
   });
 
@@ -517,11 +569,30 @@ describe("Tool Registration", () => {
 // ============================================================================
 
 describe("Wallet & Network Tools", () => {
-  it("get_wallet_address should return wallet address", async () => {
+  it("get_wallet_address should return first-use wallet choice when mode is unset", async () => {
+    const result = await callTool("get_wallet_address");
+    const output = getToolOutput(result);
+    expect(output.walletMode).toBe("unset");
+    expect(output.address).toBeNull();
+    expect(output.options.recommended.action).toBe("connect_browser_wallet");
+    expect(output.options.alternative.params.mode).toBe("agent");
+    expect(services.autoInitWallet).not.toHaveBeenCalled();
+  });
+
+  it("set_wallet_mode(agent) should create or use the agent wallet", async () => {
+    const result = await callTool("set_wallet_mode", { mode: "agent" });
+    const output = getToolOutput(result);
+    expect(output.mode).toBe("agent");
+    expect(output.address).toBe("TTestWalletAddress123456789012345");
+    expect(services.autoInitWallet).toHaveBeenCalled();
+  });
+
+  it("get_wallet_address should return agent wallet after agent mode is selected", async () => {
+    await callTool("set_wallet_mode", { mode: "agent" });
     const result = await callTool("get_wallet_address");
     const output = getToolOutput(result);
     expect(output.address).toBe("TTestWalletAddress123456789012345");
-    expect(services.autoInitWallet).toHaveBeenCalled();
+    expect(output.walletMode).toBe("agent");
   });
 
   it("get_supported_networks should list networks", async () => {
@@ -567,7 +638,7 @@ describe("Market Data Tools", () => {
     expect(output.symbol).toBe("jUSDT");
     expect(output.supplyAPY).toBe(3.25);
     expect(output.borrowAPY).toBe(5.50);
-    expect(services.getMarketData).toHaveBeenCalled();
+    expect(services.getMarketDataWithFallback).toHaveBeenCalled();
   });
 
   it("get_market_data should error for unknown market", async () => {
@@ -584,7 +655,7 @@ describe("Market Data Tools", () => {
     expect(output.markets).toBeInstanceOf(Array);
     expect(output.markets[0].symbol).toBe("jUSDT");
     expect(output.markets[0].supplyAPY).toBe("3.25%");
-    expect(services.getAllMarketOverview).toHaveBeenCalled();
+    expect(services.getAllMarketsWithFallback).toHaveBeenCalled();
   });
 
   it("get_protocol_summary should return protocol info", async () => {
@@ -757,6 +828,7 @@ describe("Lending Operation Tools", () => {
 
 describe("Error Handling", () => {
   it("should return isError: true when wallet not configured", async () => {
+    setWalletMode("agent");
     vi.mocked(services.autoInitWallet).mockRejectedValueOnce(
       new Error("No wallet configured. Run `agent-wallet start` to create one."),
     );
@@ -766,7 +838,7 @@ describe("Error Handling", () => {
   });
 
   it("should return isError: true when service throws", async () => {
-    vi.mocked(services.getMarketData).mockRejectedValueOnce(new Error("Network timeout"));
+    vi.mocked(services.getMarketDataWithFallback).mockRejectedValueOnce(new Error("Network timeout"));
     const result = await callTool("get_market_data", { market: "jUSDT" });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Network timeout");
@@ -1006,7 +1078,7 @@ describe("Network Parameter Forwarding", () => {
 
   it("get_all_markets should default to mainnet", async () => {
     await callTool("get_all_markets");
-    expect(services.getAllMarketOverview).toHaveBeenCalledWith("mainnet");
+    expect(services.getAllMarketsWithFallback).toHaveBeenCalledWith("mainnet");
   });
 
   it("get_protocol_summary should default to mainnet", async () => {

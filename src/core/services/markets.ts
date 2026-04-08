@@ -5,8 +5,11 @@
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
+import { fetchPriceFromAPI } from "./price.js";
+import { cacheGet, cacheSet } from "./cache.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
+const MARKETS_TTL_MS = 60_000; // 60s
 const MANTISSA = 1e18;
 
 export interface MarketData {
@@ -44,56 +47,6 @@ function formatUnits(raw: bigint, decimals: number): string {
   return value.toFixed(decimals);
 }
 
-/**
- * Fetch asset USD price from API using foolproof math: depositedUSD / underlyingAmount
- */
-async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
-  const tryFetch = async (targetNetwork: string) => {
-    const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    const resp = await fetch(`${host}/justlend/markets`);
-    const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) {
-      throw new Error(`Invalid API response from ${host}`);
-    }
-
-    // 💡 核心修复：使用 Symbol 匹配，而不是地址。这样跨网兜底时才不会找不到！
-    const market = data.data.jtokenList.find((m: any) =>
-      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
-    );
-
-    if (!market) {
-      throw new Error(`Market for symbol ${underlyingSymbol} not found on ${targetNetwork} API`);
-    }
-
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
-
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
-
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-
-    return depositedUSD / underlyingAmount;
-  };
-
-  try {
-    const price = await tryFetch(network);
-    if (price > 0) return price;
-    throw new Error(`Current network (${network}) API returned price 0`);
-  } catch (err: any) {
-    if (network === "nile") {
-      try {
-        // 💡 跨网终极兜底：去主网捞数据
-        const mainnetPrice = await tryFetch("mainnet");
-        if (mainnetPrice > 0) return mainnetPrice;
-      } catch (mainnetErr: any) {
-        throw new Error(`[Price Exception] Nile API failed (${err.message}) AND Mainnet fallback failed (${mainnetErr.message}).`);
-      }
-    }
-    throw new Error(`[Price Exception] API fetch failed: ${err.message}`);
-  }
-}
 
 /**
  * Get full market data for a single jToken market (V1).
@@ -150,7 +103,11 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     priceUSD = Number(underlyingPriceRaw) / priceScale;
   } else {
     // 传入 UnderlyingSymbol 进行跨网查找
-    priceUSD = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+    const apiPrice = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
+    if (apiPrice === null) {
+      throw new Error(`[Price Exception] Failed to fetch price for ${jTokenInfo.underlyingSymbol} from API`);
+    }
+    priceUSD = apiPrice;
   }
 
   // 💡 价格为 0 时强制抛出异常！
@@ -190,6 +147,66 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     underlyingPriceUSD: priceUSD.toFixed(6),
     utilizationRate,
   };
+}
+
+/**
+ * Fetch single market data from API by jToken address, mapped to MarketData interface.
+ */
+async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
+  const host = getApiHost(network);
+  const resp = await fetch(`${host}/justlend/markets`);
+  if (!resp.ok) throw new Error(`Markets API failed: ${resp.status}`);
+  const json = await resp.json();
+  if (json.code !== 0 || !json.data?.jtokenList) throw new Error("Invalid API response");
+
+  const m = json.data.jtokenList.find(
+    (item: any) => item.jtokenAddress?.toLowerCase() === jTokenInfo.address.toLowerCase(),
+  );
+  if (!m) throw new Error(`Market ${jTokenInfo.symbol} not found in API`);
+
+  const depositedUSD = parseFloat(m.depositedUSD || "0");
+  const borrowedUSD = parseFloat(m.borrowedUSD || "0");
+  const totalSupplyRaw = parseFloat(m.totalSupply || "0");
+  const exchangeRate = parseFloat(m.exchangeRate || "0");
+  const underlyingAmount = totalSupplyRaw > 0 && exchangeRate > 0
+    ? (totalSupplyRaw * exchangeRate) / 1e18 / (10 ** jTokenInfo.underlyingDecimals)
+    : 0;
+  const priceUSD = underlyingAmount > 0 ? depositedUSD / underlyingAmount : 0;
+  const utilizationRate = depositedUSD > 0 ? Math.round(borrowedUSD / depositedUSD * 10000) / 100 : 0;
+
+  return {
+    symbol: jTokenInfo.symbol,
+    underlyingSymbol: jTokenInfo.underlyingSymbol,
+    jTokenAddress: jTokenInfo.address,
+    underlyingAddress: jTokenInfo.underlying,
+    supplyAPY: Math.round(parseFloat(m.depositedAPY || "0") * 100 * 100) / 100,
+    borrowAPY: Math.round(parseFloat(m.borrowedAPY || "0") * 100 * 100) / 100,
+    totalSupply: totalSupplyRaw.toString(),
+    totalBorrows: m.totalBorrow || "0",
+    totalReserves: m.totalReserves || "0",
+    availableLiquidity: m.availableLiquidity || "0",
+    exchangeRate: exchangeRate.toFixed(10),
+    collateralFactor: Math.round(parseFloat(m.collateralFactor || "0") / 1e16 * 100) / 100,
+    reserveFactor: Math.round(parseFloat(m.reserveFactor || "0") / 1e16 * 100) / 100,
+    isListed: true,
+    mintPaused: m.mintPaused === "1" || m.mintPaused === 1,
+    borrowPaused: m.borrowPaused === "1" || m.borrowPaused === 1,
+    underlyingPriceUSD: priceUSD.toFixed(6),
+    utilizationRate,
+  };
+}
+
+/**
+ * Get single market data with automatic fallback: on-chain first, API as fallback.
+ */
+export async function getMarketDataWithFallback(jTokenInfo: JTokenInfo, network = "mainnet") {
+  try {
+    const data = await getMarketData(jTokenInfo, network);
+    return { data, source: "contract" as const };
+  } catch {
+    const data = await getMarketDataFromAPIByToken(jTokenInfo, network);
+    return { data, source: "api" as const };
+  }
 }
 
 /**
@@ -390,6 +407,36 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
       totalSupplyAPY: `${totalAPY.toFixed(4)}%`,
     };
   });
+}
+
+/**
+ * Get all markets with automatic fallback: API first, on-chain contract queries as fallback.
+ * This is the recommended entry point for getting market overview data.
+ */
+export async function getAllMarketsWithFallback(network = "mainnet") {
+  const cacheKey = `markets:all:${network}`;
+  const cached = cacheGet<{ markets: any[]; source: string; note: string }>(cacheKey);
+  if (cached) return cached;
+
+  let result: { markets: any[]; source: string; note: string };
+  try {
+    const markets = await getAllMarketOverview(network);
+    result = {
+      markets,
+      source: "api" as const,
+      note: "totalSupplyAPY = supplyAPY + underlyingIncrementAPY + miningAPY. miningAPY is calculated from daily mining rewards and TVL. underlyingIncrementAPY is the staking yield for wrapped/staked assets (e.g. sTRX ~5.88%, wstUSDT ~1.63%).",
+    };
+  } catch {
+    // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
+    const markets = await getAllMarketData(network);
+    result = {
+      markets,
+      source: "contract" as const,
+      note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
+    };
+  }
+  cacheSet(cacheKey, result, MARKETS_TTL_MS);
+  return result;
 }
 
 /**

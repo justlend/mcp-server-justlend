@@ -16,11 +16,13 @@ import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { STRX_ABI } from "../abis.js";
 import { checkResourceSufficiency } from "./lending.js";
 import { safeSend } from "./contracts.js";
+import { cacheGet, cacheSet } from "./cache.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
 const FETCH_TIMEOUT_MS = 15_000;
+const STRX_DASHBOARD_TTL_MS = 60_000; // 60s
 
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
@@ -40,29 +42,77 @@ function fetchWithTimeout(url: string): Promise<Response> {
 // ============================================================================
 
 /**
- * Get sTRX staking dashboard data from the API.
+ * Get sTRX staking dashboard data from the API, with on-chain fallback.
+ * On-chain fallback provides exchange rate, total supply, unfreeze delay, etc.
+ * but cannot provide APY, price, or JST reward data.
  */
 export async function getStrxDashboard(network = "mainnet") {
-  const apiHost = getApiHost(network);
-  const resp = await fetchWithTimeout(`${apiHost}/strx/dashboard`);
-  const json = await resp.json();
-  if (json.code !== 0) throw new Error(`sTRX Dashboard API error: ${json.message || "unknown"}`);
+  const cacheKey = `strx:dashboard:${network}`;
+  const cached = cacheGet<Record<string, any>>(cacheKey);
+  if (cached) return cached;
 
-  const data = json.data;
-  return {
-    trxPrice: data.trxPrice,
-    exchangeRate: data.exchangeRate,
-    totalApy: data.totalApy,
-    voteApy: data.voteApy,
-    totalSupply: data.totalSupply,
-    totalUnfreezable: data.totalUnfreezable,
-    unfreezeDelayDays: data.unfreezeDelayDays,
-    energyStakePerTrx: data.energyStakePerTrx,
-    jstAmountRewardRentPerTrx: data.jstAmountRewardRentPerTrx,
-    jstPrice: data.jstPrice,
-    sTrx1Trx: (1e18 / Number(data.exchangeRate)).toFixed(6),
-    trx1sTrx: (Number(data.exchangeRate) / 1e18).toFixed(6),
+  // Try API first
+  try {
+    const apiHost = getApiHost(network);
+    const resp = await fetchWithTimeout(`${apiHost}/strx/dashboard`);
+    const json = await resp.json();
+    if (json.code !== 0) throw new Error(`API error: ${json.message || "unknown"}`);
+
+    const data = json.data;
+    const result = {
+      trxPrice: data.trxPrice,
+      exchangeRate: data.exchangeRate,
+      totalApy: data.totalApy,
+      voteApy: data.voteApy,
+      totalSupply: data.totalSupply,
+      totalUnfreezable: data.totalUnfreezable,
+      unfreezeDelayDays: data.unfreezeDelayDays,
+      energyStakePerTrx: data.energyStakePerTrx,
+      jstAmountRewardRentPerTrx: data.jstAmountRewardRentPerTrx,
+      jstPrice: data.jstPrice,
+      sTrx1Trx: (1e18 / Number(data.exchangeRate)).toFixed(6),
+      trx1sTrx: (Number(data.exchangeRate) / 1e18).toFixed(6),
+    };
+    cacheSet(cacheKey, result, STRX_DASHBOARD_TTL_MS);
+    return result;
+  } catch {
+    // API unavailable, fallback to on-chain
+  }
+
+  // On-chain fallback
+  const tronWeb = getTronWeb(network);
+  const addrs = getJustLendAddresses(network);
+  const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
+
+  const [exchangeRateRaw, totalSupplyRaw, totalUnfreezableRaw, unfreezeDelayDays] = await Promise.all([
+    contract.methods.exchangeRate().call(),
+    contract.methods.totalSupply().call(),
+    contract.methods.totalUnfreezable().call(),
+    contract.methods.getUnfreezeDelayDays().call(),
+  ]);
+
+  const exchangeRate = BigInt(exchangeRateRaw).toString();
+  const totalSupply = (Number(totalSupplyRaw) / TOKEN_PRECISION).toString();
+  const totalUnfreezable = (Number(totalUnfreezableRaw) / TRX_PRECISION).toString();
+
+  const result = {
+    trxPrice: null,
+    exchangeRate,
+    totalApy: null,
+    voteApy: null,
+    totalSupply,
+    totalUnfreezable,
+    unfreezeDelayDays: Number(unfreezeDelayDays),
+    energyStakePerTrx: null,
+    jstAmountRewardRentPerTrx: null,
+    jstPrice: null,
+    sTrx1Trx: (1e18 / Number(exchangeRate)).toFixed(6),
+    trx1sTrx: (Number(exchangeRate) / 1e18).toFixed(6),
+    source: "contract",
+    note: "APY, price, and reward data unavailable (API down). Exchange rate and supply data from on-chain.",
   };
+  cacheSet(cacheKey, result, STRX_DASHBOARD_TTL_MS);
+  return result;
 }
 
 // ============================================================================
@@ -70,27 +120,50 @@ export async function getStrxDashboard(network = "mainnet") {
 // ============================================================================
 
 /**
- * Get user's sTRX staking account info from the API.
+ * Get user's sTRX staking account info from the API, with on-chain fallback.
+ * On-chain fallback reads balanceOf and viewBalanceOfUnderlying instead of returning silent zeros.
  */
 export async function getStrxStakeAccount(address: string, network = "mainnet") {
   validateTronAddress(address);
-  const apiHost = getApiHost(network);
-  const resp = await fetchWithTimeout(`${apiHost}/strx/stake/account?addr=${address}`);
-  const json = await resp.json();
 
-  if (json.code !== 0) {
-    return {
-      accountSupply: 0,
-      accountIncome: 0,
-      accountCanClaimAmount: 0,
-      accountWithDrawAmount: 0,
-      accountRentEnergyAmount: 0,
-      roundDetails: [],
-      rewardMap: {},
-    };
+  // Try API first
+  try {
+    const apiHost = getApiHost(network);
+    const resp = await fetchWithTimeout(`${apiHost}/strx/stake/account?addr=${address}`);
+    const json = await resp.json();
+
+    if (json.code === 0 && json.data) {
+      return json.data;
+    }
+  } catch {
+    // API unavailable, fallback to on-chain
   }
 
-  return json.data;
+  // On-chain fallback: read balance and underlying value from contract
+  const tronWeb = getTronWeb(network);
+  const addrs = getJustLendAddresses(network);
+  const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
+
+  const [balanceRaw, underlyingRaw] = await Promise.all([
+    contract.methods.balanceOf(address).call(),
+    contract.methods.viewBalanceOfUnderlying(address).call(),
+  ]);
+
+  const strxBalance = Number(balanceRaw) / TOKEN_PRECISION;
+  const underlyingTrx = Number(underlyingRaw) / TRX_PRECISION;
+
+  return {
+    accountSupply: underlyingTrx,
+    accountIncome: null,
+    accountCanClaimAmount: null,
+    accountWithDrawAmount: null,
+    accountRentEnergyAmount: null,
+    strxBalance,
+    roundDetails: [],
+    rewardMap: {},
+    source: "contract",
+    note: "Income and reward data unavailable (API down). Supply data from on-chain balanceOf/viewBalanceOfUnderlying.",
+  };
 }
 
 /**

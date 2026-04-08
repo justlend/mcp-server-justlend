@@ -1,6 +1,9 @@
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getAllJTokens, getJTokenInfo, getApiHost, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abis.js";
+import { fetchPriceFromAPI } from "./price.js";
+import { multicall } from "./contracts.js";
+import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
 
 const MANTISSA = 1e18;
 
@@ -66,65 +69,6 @@ function formatUnits(raw: bigint, decimals: number): string {
 }
 
 // ============================================================================
-// PRICE ORACLE FALLBACK HELPERS (Injected to fix Nile testnet $0 collateral bug)
-// ============================================================================
-
-async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
-  const tryFetch = async (targetNetwork: string) => {
-    const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    const resp = await fetch(`${host}/justlend/markets`);
-    const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) return 0;
-
-    const market = data.data.jtokenList.find((m: any) =>
-      m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
-    );
-    if (!market) return 0;
-
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
-
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-    return depositedUSD / underlyingAmount;
-  };
-
-  try {
-    const price = await tryFetch(network);
-    if (price > 0) return price;
-  } catch (err) { }
-
-  if (network === "nile") {
-    try {
-      const mainnetPrice = await tryFetch("mainnet");
-      if (mainnetPrice > 0) return mainnetPrice;
-    } catch (err) { }
-  }
-  return 0;
-}
-
-async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddress: string, assetInfo: JTokenInfo, network: string): Promise<number> {
-  let priceRaw = 0n;
-  let priceUSD = 0;
-
-  try {
-    const oracle = tronWeb.contract(PRICE_ORACLE_ABI, oracleAddress);
-    priceRaw = BigInt(await oracle.methods.getUnderlyingPrice(assetAddress).call());
-  } catch (err) { }
-
-  // 💡 Nile 测试网或者是0，强制走 API 兜底
-  if (priceRaw > 0n && network === "mainnet") {
-    const decimals = assetInfo.underlyingDecimals;
-    priceUSD = Number(priceRaw) / (10 ** (36 - decimals));
-  } else {
-    priceUSD = await fetchPriceFromAPI(assetInfo.underlyingSymbol, assetInfo.underlyingDecimals, network);
-  }
-  return priceUSD;
-}
-
-// ============================================================================
 // ACCOUNT SUMMARY
 // ============================================================================
 
@@ -153,62 +97,80 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
   } catch (e) { }
 
-  // Fetch position for each market in batches to avoid TronGrid rate limiting (429).
-  const BATCH_SIZE = 3;
-  const BATCH_DELAY_MS = 1000;
+  // Batch-fetch all snapshots + prices via Multicall3 (single RPC call).
+  // Falls back to sequential calls if multicall address is not configured (e.g. Nile testnet).
+  const multicallAddress = addresses.multicall3;
 
-  async function fetchPosition(info: JTokenInfo): Promise<AccountPosition | null> {
-    try {
-      const jToken = tronWeb.contract(JTOKEN_ABI, info.address);
-      const snapshot = await jToken.methods.getAccountSnapshot(userAddress).call();
+  // Build call array: snapshot calls first, then price calls
+  const snapshotCalls = jTokens.map((info) => ({
+    address: info.address,
+    functionName: "getAccountSnapshot",
+    args: [userAddress],
+    abi: JTOKEN_ABI,
+    allowFailure: true,
+  }));
 
-      const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
-      const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
-      const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
+  const priceCalls = jTokens.map((info) => ({
+    address: realOracleAddress,
+    functionName: "getUnderlyingPrice",
+    args: [info.address],
+    abi: PRICE_ORACLE_ABI,
+    allowFailure: true,
+  }));
 
-      // If no position, skip
-      if (jTokenBalance === 0n && borrowBalance === 0n) return null;
+  const allCalls = [...snapshotCalls, ...priceCalls];
+  const results = await multicall({ calls: allCalls, multicallAddress }, network);
 
-      // Supply balance = jTokenBalance * exchangeRate / 1e18
-      const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
+  const snapshotResults = results.slice(0, jTokens.length);
+  const priceResults = results.slice(jTokens.length);
 
-      // 💡 核心修复 3：使用兜底函数精准获取美元单价
-      const priceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, info.address, info, network);
+  // Process results into positions
+  const positions: AccountPosition[] = [];
+  for (let i = 0; i < jTokens.length; i++) {
+    const info = jTokens[i];
+    const snapshotRes = snapshotResults[i];
 
-      const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
-      const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+    if (!snapshotRes.success) continue;
 
-      const supplyValueUSD = supplyBalanceHuman * priceUSD;
-      const borrowValueUSD = borrowBalanceHuman * priceUSD;
+    const snapshot = snapshotRes.result;
+    const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
+    const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
+    const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
 
-      return {
-        jTokenAddress: info.address,
-        symbol: info.symbol,
-        underlyingSymbol: info.underlyingSymbol,
-        jTokenBalance: formatUnits(jTokenBalance, info.decimals),
-        supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
-        borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
-        isCollateral: collateralSet.has(info.address.toLowerCase()),
-        exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
-        underlyingPriceUSD: priceUSD.toFixed(6),
-        supplyValueUSD: supplyValueUSD.toFixed(2),
-        borrowValueUSD: borrowValueUSD.toFixed(2),
-      };
-    } catch {
-      return null;
+    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
+
+    const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
+
+    // Get price: try multicall result first, then API fallback
+    let priceUSD = 0;
+    const priceRes = priceResults[i];
+    if (priceRes.success) {
+      const priceRaw = BigInt(priceRes.result?.toString() ?? "0");
+      if (priceRaw > 0n && network === "mainnet") {
+        priceUSD = Number(priceRaw) / (10 ** (36 - info.underlyingDecimals));
+      }
     }
-  }
-
-  const allResults: (AccountPosition | null)[] = [];
-  for (let i = 0; i < jTokens.length; i += BATCH_SIZE) {
-    const batch = jTokens.slice(i, i + BATCH_SIZE);
-    const batchResults = await Promise.all(batch.map(fetchPosition));
-    allResults.push(...batchResults);
-    if (i + BATCH_SIZE < jTokens.length) {
-      await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+    if (priceUSD === 0) {
+      priceUSD = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
     }
+
+    const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
+    const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+
+    positions.push({
+      jTokenAddress: info.address,
+      symbol: info.symbol,
+      underlyingSymbol: info.underlyingSymbol,
+      jTokenBalance: formatUnits(jTokenBalance, info.decimals),
+      supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
+      borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
+      isCollateral: collateralSet.has(info.address.toLowerCase()),
+      exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
+      underlyingPriceUSD: priceUSD.toFixed(6),
+      supplyValueUSD: (supplyBalanceHuman * priceUSD).toFixed(2),
+      borrowValueUSD: (borrowBalanceHuman * priceUSD).toFixed(2),
+    });
   }
-  const positions = allResults.filter((p): p is AccountPosition => p !== null);
 
   const totalSupplyUSD = positions.reduce((sum, p) => sum + parseFloat(p.supplyValueUSD), 0);
   const totalBorrowUSD = positions.reduce((sum, p) => sum + parseFloat(p.borrowValueUSD), 0);
@@ -303,6 +265,74 @@ export async function getTokenBalance(address: string, tokenAddress: string, net
     symbol: String(symbol),
     decimals: dec,
   };
+}
+
+export interface TokenBalance {
+  symbol: string;
+  tokenAddress: string;
+  balance: string;
+  decimals: number;
+  error?: boolean;
+}
+
+/**
+ * Batch-fetch TRC20 token balances for a single wallet using Multicall3's
+ * walletTokensBalance method (one RPC call for all tokens).
+ * Falls back to parallel balanceOf calls when no multicall3 address is configured.
+ */
+export async function getWalletTokensBalance(
+  walletAddress: string,
+  tokens: Array<{ address: string; symbol: string; decimals: number }>,
+  network = "mainnet",
+): Promise<TokenBalance[]> {
+  if (tokens.length === 0) return [];
+
+  const addresses = getJustLendAddresses(network);
+  const multicall3Address = addresses.multicall3;
+
+  const tronWeb = getTronWeb(network);
+
+  if (multicall3Address) {
+    try {
+      const contract = tronWeb.contract(MULTICALL3_BALANCE_ABI, multicall3Address);
+      const tokenAddresses = tokens.map((t) => t.address);
+      const result = await (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call();
+
+      // Result is [balances: uint256[], errors: bool[]]
+      const rawBalances: bigint[] = Array.isArray(result[0]) ? result[0] : result.balances;
+      const errors: boolean[] = Array.isArray(result[1]) ? result[1] : result.errors;
+
+      return tokens.map((token, i) => ({
+        symbol: token.symbol,
+        tokenAddress: token.address,
+        balance: errors[i] ? "0" : formatUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
+        decimals: token.decimals,
+        error: errors[i] ? true : undefined,
+      }));
+    } catch {
+      // fall through to sequential fallback
+    }
+  }
+
+  // Fallback: parallel balanceOf calls
+  const results = await Promise.allSettled(
+    tokens.map((token) => {
+      const contract = tronWeb.contract(TRC20_ABI, token.address);
+      return contract.methods.balanceOf(walletAddress).call();
+    }),
+  );
+
+  return tokens.map((token, i) => {
+    const r = results[i];
+    const raw = r.status === "fulfilled" ? BigInt(r.value ?? 0) : 0n;
+    return {
+      symbol: token.symbol,
+      tokenAddress: token.address,
+      balance: formatUnits(raw, token.decimals),
+      decimals: token.decimals,
+      error: r.status === "rejected" || undefined,
+    };
+  });
 }
 
 /**

@@ -12,6 +12,8 @@ import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
+import { getWalletMode } from "./global.js";
+import { TronWalletSigner } from "../browser-signer/index.js";
 
 export interface ConfiguredWallet {
   address: string;
@@ -36,6 +38,16 @@ export interface WalletStatus {
 // Cached wallet instance from agent-wallet
 let _walletPromise: Promise<Wallet> | null = null;
 let _addressPromise: Promise<string> | null = null;
+
+// Browser wallet signer singleton (lazy-initialized)
+let _browserSigner: TronWalletSigner | null = null;
+
+export function getBrowserSigner(): TronWalletSigner {
+  if (!_browserSigner) {
+    _browserSigner = new TronWalletSigner();
+  }
+  return _browserSigner;
+}
 
 /** Resolve the agent-wallet config directory. */
 function getConfigDir(): string {
@@ -192,23 +204,62 @@ export async function importWallet(
 }
 
 /**
+ * Read the current agent-wallet address without creating a new wallet.
+ * Returns null if no agent wallet is configured yet.
+ */
+export async function getExistingAgentWalletAddress(): Promise<string | null> {
+  try {
+    const provider = resolveWalletProvider({ network: "tron" });
+    if (provider instanceof ConfigWalletProvider) {
+      const wallets = provider.listWallets();
+      if (wallets.length === 0) return null;
+      const wallet = await provider.getActiveWallet("tron");
+      return wallet.getAddress();
+    }
+
+    const wallet = await provider.getActiveWallet("tron");
+    return wallet.getAddress();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the agent-wallet Wallet instance for signing.
  * Uses @bankofai/agent-wallet for secure key storage — private keys never
  * appear in environment variables or application memory.
  */
 export function getAgentWallet(): Promise<Wallet> {
   if (!_walletPromise) {
-    _walletPromise = resolveWallet({ network: "tron" });
+    _walletPromise = autoInitWallet().then(() => resolveWallet({ network: "tron" }));
   }
   return _walletPromise;
 }
 
 /**
- * Get the configured wallet address from agent-wallet.
+ * Get the configured wallet address.
+ * In browser mode, returns the browser-connected address.
+ * In agent mode, returns the agent-wallet address.
  */
 export async function getWalletAddress(): Promise<string> {
+  const mode = getWalletMode();
+
+  if (mode === "browser") {
+    const address = getBrowserSigner().getConnectedAddress();
+    if (!address) {
+      throw new Error("Browser wallet not connected. Use the connect_browser_wallet tool first.");
+    }
+    return address;
+  }
+
+  if (mode === "unset") {
+    throw new Error(
+      "Wallet mode not selected. Use connect_browser_wallet for TronLink, or set_wallet_mode with mode='agent' to use agent-wallet.",
+    );
+  }
+
   if (!_addressPromise) {
-    _addressPromise = getAgentWallet().then((w) => w.getAddress());
+    _addressPromise = autoInitWallet().then((result) => result.address);
   }
   return _addressPromise;
 }
@@ -239,10 +290,20 @@ export async function getSigningClient(network = "mainnet"): Promise<TronWeb> {
 }
 
 /**
- * Sign a transaction using agent-wallet and return the signed transaction
- * object ready for broadcasting.
+ * Sign a transaction and return the signed transaction object ready for broadcasting.
+ * Routes to browser wallet or agent-wallet based on the current wallet mode.
  */
-export async function signTransactionWithWallet(unsignedTx: any): Promise<any> {
+export async function signTransactionWithWallet(unsignedTx: any, description?: string): Promise<any> {
+  if (getWalletMode() === "browser") {
+    const signer = getBrowserSigner();
+    const { signedTransaction } = await signer.signTransaction(unsignedTx, description);
+    // Ensure the signature array is on the original tx structure
+    if (signedTransaction && signedTransaction.signature) {
+      return { ...unsignedTx, signature: signedTransaction.signature };
+    }
+    return signedTransaction;
+  }
+
   const wallet = await getAgentWallet();
   const signed = await wallet.signTransaction(unsignedTx);
 
@@ -266,10 +327,17 @@ export async function signTransactionWithWallet(unsignedTx: any): Promise<any> {
 }
 
 /**
- * Sign an arbitrary message using the agent-wallet.
+ * Sign an arbitrary message.
+ * Routes to browser wallet (signMessageV2) or agent-wallet based on mode.
  * @returns Signature as a hex string.
  */
 export async function signMessage(message: string): Promise<string> {
+  if (getWalletMode() === "browser") {
+    const signer = getBrowserSigner();
+    const { signature } = await signer.signMessage({ message });
+    return signature;
+  }
+
   const wallet = await getAgentWallet();
   const msgBytes = new TextEncoder().encode(message);
   return wallet.signMessage(msgBytes);

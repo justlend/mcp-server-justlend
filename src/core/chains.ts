@@ -53,6 +53,8 @@ export interface JustLendAddresses {
   };
   /** Energy rate model contract for rental rate calculations */
   energyRateModel: string;
+  /** Multicall3 contract address (optional — absent on testnets triggers sequential fallback) */
+  multicall3?: string;
   /** Map of symbol → jToken address */
   jTokens: Record<string, JTokenInfo>;
 }
@@ -113,6 +115,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       market: "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",
     },
     energyRateModel: "TXA2WjFc5f86deJcZZCdbdpkpUTKTA3VDM",
+    multicall3: "TX56WKxtja91Dybf2FdN4hZbDLyKVxxhAu",
     jTokens: {
       jTRX: {
         address: "TE2RzoSV3wFK99w6J9UnnZ4vLfXYoxvRwP",
