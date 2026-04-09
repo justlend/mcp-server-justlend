@@ -114,7 +114,6 @@ build
 
 # Generated docs
 *.docx
-scripts/generate-security-doc.mjs
 /test-results/
 /blob-report/
 /tests/**-snapshots/**-darwin.png

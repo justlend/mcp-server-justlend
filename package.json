@@ -23,8 +23,6 @@
     "start:http": "tsx src/server/http-server.ts",
     "dev:http": "tsx watch src/server/http-server.ts",
     "test": "vitest run",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
