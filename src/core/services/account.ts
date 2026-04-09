@@ -6,74 +6,11 @@ import { multicall } from "./contracts.js";
 import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
 import { fetchWithTimeout } from "./http.js";
 import { utils } from "./utils.js";
-
-const MANTISSA_18 = 10n ** 18n;
-const USD_PRICE_SCALE = 36;
-const USD_VALUE_SCALE = 10n ** 36n;
-
-function pow10(decimals: number): bigint {
-  return 10n ** BigInt(decimals);
-}
-
-function divRound(numerator: bigint, denominator: bigint): bigint {
-  if (denominator === 0n) return 0n;
-  return numerator >= 0n
-    ? (numerator + denominator / 2n) / denominator
-    : (numerator - denominator / 2n) / denominator;
-}
-
-function formatScaled(value: bigint, scale: number, fractionDigits: number, trimTrailingZeros = false): string {
-  if (fractionDigits === 0) {
-    return divRound(value, pow10(scale)).toString();
-  }
-
-  const rounded = divRound(value * pow10(fractionDigits), pow10(scale));
-  const divisor = pow10(fractionDigits);
-  const integer = rounded / divisor;
-  const remainder = rounded % divisor;
-  let fraction = remainder.toString().padStart(fractionDigits, "0");
-
-  if (trimTrailingZeros) {
-    fraction = fraction.replace(/0+$/, "");
-  }
-
-  return fraction ? `${integer}.${fraction}` : integer.toString();
-}
-
-function formatDisplayUnits(raw: bigint, decimals: number): string {
-  const divisor = pow10(decimals);
-  const integer = raw / divisor;
-  const remainder = raw % divisor;
-
-  if (remainder === 0n) return integer.toString();
-
-  const fracFull = remainder.toString().padStart(decimals, "0");
-  const maxFrac = integer >= 1_000_000n ? 2 : integer >= 1n ? 6 : decimals;
-  const frac = fracFull.slice(0, maxFrac).replace(/0+$/, "");
-
-  return frac ? `${integer}.${frac}` : integer.toString();
-}
-
-function formatUsdCents(cents: bigint): string {
-  return formatScaled(cents, 2, 2);
-}
-
-function formatRatio(numerator: bigint, denominator: bigint, fractionDigits: number): string {
-  if (denominator === 0n) return "∞";
-  const scaled = divRound(numerator * pow10(fractionDigits), denominator);
-  return formatScaled(scaled, fractionDigits, fractionDigits);
-}
-
-function priceNumberToRaw(priceUSD: number, underlyingDecimals: number): bigint {
-  if (!Number.isFinite(priceUSD) || priceUSD <= 0) return 0n;
-  const normalized = priceUSD.toFixed(18).replace(/0+$/, "").replace(/\.$/, "");
-  return utils.parseUnits(normalized === "" ? "0" : normalized, USD_PRICE_SCALE - underlyingDecimals);
-}
-
-function amountToUsdCents(amountRaw: bigint, priceRaw: bigint): bigint {
-  if (amountRaw === 0n || priceRaw === 0n) return 0n;
-  return divRound(amountRaw * priceRaw * 100n, USD_VALUE_SCALE);
-}
+import {
+  MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
+  divRound, formatScaled, formatDisplayUnits,
+  formatUsdCents, formatRatio, priceNumberToRaw, amountToUsdCents,
+} from "./bigint-math.js";
 
 export interface AccountPosition {
   jTokenAddress: string;

@@ -8,6 +8,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout } from "./http.js";
+import { formatDisplayUnits } from "./bigint-math.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MARKETS_TTL_MS = 60_000; // 60s
@@ -38,14 +39,6 @@ function rateToAPY(ratePerBlock: bigint): number {
   const rate = Number(ratePerBlock) / MANTISSA;
   const apy = (Math.pow(1 + rate, BLOCKS_PER_YEAR) - 1) * 100;
   return Math.round(apy * 100) / 100;
-}
-
-function formatUnits(raw: bigint, decimals: number): string {
-  const divisor = 10 ** decimals;
-  const value = Number(raw) / divisor;
-  if (value > 1e6) return value.toFixed(2);
-  if (value > 1) return value.toFixed(6);
-  return value.toFixed(decimals);
 }
 
 
@@ -135,10 +128,10 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     underlyingAddress: jTokenInfo.underlying,
     supplyAPY,
     borrowAPY,
-    totalSupply: formatUnits(totalSupplyBig, jTokenInfo.decimals),
-    totalBorrows: formatUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
-    totalReserves: formatUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
-    availableLiquidity: formatUnits(cashBig, jTokenInfo.underlyingDecimals),
+    totalSupply: formatDisplayUnits(totalSupplyBig, jTokenInfo.decimals),
+    totalBorrows: formatDisplayUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
+    totalReserves: formatDisplayUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
+    availableLiquidity: formatDisplayUnits(cashBig, jTokenInfo.underlyingDecimals),
     exchangeRate: exchangeRateNum.toFixed(10),
     collateralFactor: Math.round(collateralFactor * 100) / 100,
     reserveFactor: Math.round(reserveFactor * 100) / 100,

@@ -13,95 +13,14 @@ import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } f
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
 import { fetchWithTimeout } from "./http.js";
+import {
+  MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
+  divRound, formatScaled, formatDisplayUnits,
+  formatUsdCents, formatPriceUSD, formatPercentRatio,
+  amountToUsdCents, normalizeDecimalString, buildCollateralBreakdown,
+} from "./bigint-math.js";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-const MANTISSA_18 = 10n ** 18n;
-const USD_PRICE_SCALE = 36;
-const USD_VALUE_SCALE = 10n ** 36n;
-
-function pow10(decimals: number): bigint {
-  return 10n ** BigInt(decimals);
-}
-
-function divRound(numerator: bigint, denominator: bigint): bigint {
-  if (denominator === 0n) return 0n;
-  return numerator >= 0n
-    ? (numerator + denominator / 2n) / denominator
-    : (numerator - denominator / 2n) / denominator;
-}
-
-function formatScaled(value: bigint, scale: number, fractionDigits: number, trimTrailingZeros = false): string {
-  if (fractionDigits === 0) {
-    return divRound(value, pow10(scale)).toString();
-  }
-
-  const rounded = divRound(value * pow10(fractionDigits), pow10(scale));
-  const divisor = pow10(fractionDigits);
-  const integer = rounded / divisor;
-  const remainder = rounded % divisor;
-  let fraction = remainder.toString().padStart(fractionDigits, "0");
-
-  if (trimTrailingZeros) {
-    fraction = fraction.replace(/0+$/, "");
-  }
-
-  return fraction ? `${integer}.${fraction}` : integer.toString();
-}
-
-function formatDisplayUnits(raw: bigint, decimals: number): string {
-  const divisor = pow10(decimals);
-  const integer = raw / divisor;
-  const remainder = raw % divisor;
-
-  if (remainder === 0n) return integer.toString();
-
-  const fracFull = remainder.toString().padStart(decimals, "0");
-  const maxFrac = integer >= 1_000_000n ? 2 : integer >= 1n ? 6 : decimals;
-  const frac = fracFull.slice(0, maxFrac).replace(/0+$/, "");
-
-  return frac ? `${integer}.${frac}` : integer.toString();
-}
-
-function formatUsdCents(cents: bigint): string {
-  return formatScaled(cents, 2, 2);
-}
-
-function formatPercentRatio(numerator: bigint, denominator: bigint, fractionDigits = 2): string {
-  if (denominator === 0n) return "∞";
-  const scaledPercent = divRound(numerator * pow10(fractionDigits + 2), denominator);
-  return formatScaled(scaledPercent, fractionDigits, fractionDigits);
-}
-
-function formatPriceUSD(priceRaw: bigint, underlyingDecimals: number): string {
-  return formatScaled(priceRaw, USD_PRICE_SCALE - underlyingDecimals, 6);
-}
-
-function amountToUsdCents(amountRaw: bigint, priceRaw: bigint): bigint {
-  if (amountRaw === 0n || priceRaw === 0n) return 0n;
-  return divRound(amountRaw * priceRaw * 100n, USD_VALUE_SCALE);
-}
-
-function normalizeDecimalString(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "0";
-    return value.toFixed(18).replace(/0+$/, "").replace(/\.$/, "");
-  }
-  return String(value ?? "0");
-}
-
-function buildCollateralBreakdown(details: Array<{
-  symbol: string;
-  supplyValueCents: bigint;
-  collateralFactorMantissa: bigint;
-  adjustedValueCents: bigint;
-  borrowBalanceCents: bigint;
-}>): string {
-  return details.map((detail) =>
-    `${detail.symbol}: supply=$${formatUsdCents(detail.supplyValueCents)} × CF ${formatScaled(detail.collateralFactorMantissa * 100n, 18, 0)}% = $${formatUsdCents(detail.adjustedValueCents)}` +
-    (detail.borrowBalanceCents > 0n ? `, borrow=$${formatUsdCents(detail.borrowBalanceCents)}` : "")
-  ).join("; ");
-}
 
 async function waitForTx(txID: string, network: string, maxRetries = 20, intervalMs = 3000): Promise<any> {
   const { getTronWeb } = await import("./clients.js");
