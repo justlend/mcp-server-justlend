@@ -414,7 +414,7 @@ vi.mock("../../src/core/services/index.js", () => ({
   })),
 }));
 
-import { registerJustLendTools } from "../../src/core/tools.js";
+import { registerJustLendTools } from "../../src/core/tools/index.js";
 import * as services from "../../src/core/services/index.js";
 import { setWalletMode } from "../../src/core/services/global.js";
 

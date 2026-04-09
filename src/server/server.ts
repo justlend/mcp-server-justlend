@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerJustLendResources } from "../core/resources.js";
-import { registerJustLendTools } from "../core/tools.js";
+import { registerJustLendTools } from "../core/tools/index.js";
 import { registerJustLendPrompts } from "../core/prompts.js";
 import { getSupportedNetworks } from "../core/chains.js";
 import { checkWalletStatus } from "../core/services/wallet.js";
