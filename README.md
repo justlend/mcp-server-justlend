@@ -128,9 +128,14 @@ npx agent-wallet activate <wallet-id>
 | `connect_browser_wallet` | Connect TronLink / browser wallet for signing |
 | `set_wallet_mode` | Switch between `browser` and `agent` signing |
 | `get_wallet_mode` | Show current signing mode and addresses |
-| `import_wallet` | Import an existing private key (stored encrypted) |
 | `list_wallets` | List all wallets with IDs, types, addresses |
 | `set_active_wallet` | Switch active wallet by ID |
+
+Importing an existing private key is intentionally not exposed as an MCP tool because MCP arguments can be logged by clients and transports. Use the CLI instead:
+
+```bash
+npx agent-wallet import
+```
 
 ```bash
 # (Optional) For automated/CI setups, set the wallet password
@@ -250,7 +255,6 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `get_wallet_mode` | Show current signing mode and addresses | No |
 | `list_wallets` | List all wallets (IDs, types, addresses) | No |
 | `set_active_wallet` | Switch active wallet by wallet ID | No |
-| `import_wallet` | Import existing private key (stored encrypted) | No |
 | `get_supported_networks` | List available networks | No |
 | `get_supported_markets` | List all jToken markets with addresses | No |
 | `set_network` | Set global default network (mainnet, nile) | Yes |

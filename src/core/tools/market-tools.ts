@@ -5,6 +5,7 @@ import {
   getSupportedNetworks,
 } from "../chains.js";
 import * as services from "../services/index.js";
+import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { sanitizeError } from "./shared.js";
 
@@ -270,16 +271,7 @@ export function registerMarketTools(server: McpServer) {
         }
         const userAddress = address || await services.getWalletAddress();
 
-        // Resolve token symbol to contract address from JustLend markets
-        let resolvedAddress = tokenInput;
-        const allTokens = getAllJTokens(network);
-        // Try to match by underlying symbol (case-insensitive)
-        const matchedToken = allTokens.find(
-          (t) => t.underlyingSymbol.toLowerCase() === tokenInput.toLowerCase() && t.underlying,
-        );
-        if (matchedToken) {
-          resolvedAddress = matchedToken.underlying;
-        }
+        const resolvedAddress = resolveKnownToken(tokenInput, network)?.address ?? tokenInput;
 
         const result = await services.getTokenBalance(userAddress, resolvedAddress, network);
         return {

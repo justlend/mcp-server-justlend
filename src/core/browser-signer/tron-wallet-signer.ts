@@ -82,12 +82,12 @@ export class TronWalletSigner {
   async connectWallet(options?: { address?: string; network?: string }): Promise<ConnectResult> {
     const port = await this.start();
 
-    const { id, promise } = this._pendingStore.createConnectRequest({
+    const { id, promise, authToken } = this._pendingStore.createConnectRequest({
       address: options?.address,
       network: options?.network,
     });
 
-    const approvalUrl = buildConnectUrl(port, id);
+    const approvalUrl = buildConnectUrl(port, id, authToken);
     await this._openBrowser(approvalUrl);
 
     const result = await promise;
@@ -105,13 +105,13 @@ export class TronWalletSigner {
   async signTransaction(unsignedTx: unknown, description?: string, network?: string): Promise<SignTransactionResult> {
     const port = await this.start();
 
-    const { id, promise } = this._pendingStore.createSignTransactionRequest({
+    const { id, promise, authToken } = this._pendingStore.createSignTransactionRequest({
       unsignedTransaction: unsignedTx,
       description,
       network,
     });
 
-    const approvalUrl = buildSignUrl(port, id);
+    const approvalUrl = buildSignUrl(port, id, authToken);
     await this._openBrowser(approvalUrl);
 
     const result = await promise;
@@ -135,13 +135,13 @@ export class TronWalletSigner {
   async signMessage(params: { message: string; address?: string; network?: string }): Promise<SignMessageResult> {
     const port = await this.start();
 
-    const { id, promise } = this._pendingStore.createSignMessageRequest({
+    const { id, promise, authToken } = this._pendingStore.createSignMessageRequest({
       message: params.message,
       address: params.address,
       network: params.network,
     });
 
-    const approvalUrl = buildSignUrl(port, id);
+    const approvalUrl = buildSignUrl(port, id, authToken);
     await this._openBrowser(approvalUrl);
 
     const result = await promise;

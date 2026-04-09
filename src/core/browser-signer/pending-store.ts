@@ -5,6 +5,7 @@
  * that blocks until the browser completes it (or 5-minute timeout).
  */
 
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type {
   ConnectRequest,
   PendingEntry,
@@ -18,6 +19,17 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
+function generateApprovalToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function tokensEqual(expected: string, actual: string): boolean {
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const actualBytes = Buffer.from(actual, "utf8");
+  if (expectedBytes.length !== actualBytes.length) return false;
+  return timingSafeEqual(expectedBytes, actualBytes);
+}
+
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export class PendingStore {
@@ -27,7 +39,7 @@ export class PendingStore {
   createConnectRequest(params?: {
     address?: string;
     network?: string;
-  }): { id: string; promise: Promise<RequestResult> } {
+  }): { id: string; promise: Promise<RequestResult>; authToken: string } {
     const request: ConnectRequest = {
       id: generateId(),
       type: "connect",
@@ -42,7 +54,7 @@ export class PendingStore {
     unsignedTransaction: unknown;
     description?: string;
     network?: string;
-  }): { id: string; promise: Promise<RequestResult> } {
+  }): { id: string; promise: Promise<RequestResult>; authToken: string } {
     const request: SignTransactionRequest = {
       id: generateId(),
       type: "sign_transaction",
@@ -56,7 +68,7 @@ export class PendingStore {
     message: string;
     address?: string;
     network?: string;
-  }): { id: string; promise: Promise<RequestResult> } {
+  }): { id: string; promise: Promise<RequestResult>; authToken: string } {
     const request: SignMessageRequest = {
       id: generateId(),
       type: "sign_message",
@@ -66,9 +78,10 @@ export class PendingStore {
     return this._create(request);
   }
 
-  private _create<T extends PendingRequest>(request: T): { id: string; promise: Promise<RequestResult> } {
+  private _create<T extends PendingRequest>(request: T): { id: string; promise: Promise<RequestResult>; authToken: string } {
+    const authToken = generateApprovalToken();
     const promise = new Promise<RequestResult>((resolve, reject) => {
-      const entry: PendingEntry<T> = { request, resolve, reject };
+      const entry: PendingEntry<T> = { request, resolve, reject, authToken };
       this.pending.set(request.id, entry);
 
       const timeoutId = setTimeout(() => {
@@ -82,7 +95,7 @@ export class PendingStore {
       this.timeouts.set(request.id, timeoutId);
     });
 
-    return { id: request.id, promise };
+    return { id: request.id, promise, authToken };
   }
 
   get(id: string): PendingRequest | undefined {
@@ -121,6 +134,13 @@ export class PendingStore {
 
   has(id: string): boolean {
     return this.pending.has(id);
+  }
+
+  isAuthorized(id: string, authToken: string | null | undefined): boolean {
+    if (!authToken) return false;
+    const entry = this.pending.get(id);
+    if (!entry) return false;
+    return tokensEqual(entry.authToken, authToken);
   }
 
   getPendingIds(): string[] {

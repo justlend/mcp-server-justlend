@@ -4,7 +4,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abi
 import { fetchPriceFromAPI } from "./price.js";
 import { multicall } from "./contracts.js";
 import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
-import { fetchWithTimeout } from "./http.js";
+import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
 import { utils } from "./utils.js";
 import {
   MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
@@ -72,18 +72,30 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
   const jTokens = getAllJTokens(network);
 
   // 💡 核心修复 1：获取资产并从 Hex 转换回 Base58
-  const assetsInRaw: string[] = await comptroller.methods.getAssetsIn(userAddress).call();
+  const assetsInRaw: string[] = await promiseWithTimeout(
+    comptroller.methods.getAssetsIn(userAddress).call(),
+    undefined,
+    "Timed out while loading collateral markets",
+  );
   const assetsIn = assetsInRaw.map(a => tronWeb.address.fromHex(a));
   const collateralSet = new Set(assetsIn.map((a: string) => a.toLowerCase()));
 
   // Get account liquidity
-  const [error, liquidity, shortfall] = await comptroller.methods.getAccountLiquidity(userAddress).call()
+  const [error, liquidity, shortfall] = await promiseWithTimeout(
+    comptroller.methods.getAccountLiquidity(userAddress).call(),
+    undefined,
+    "Timed out while loading account liquidity",
+  )
     .then((r: any) => [BigInt(r.err || r[0]), BigInt(r.liquidity || r[1]), BigInt(r.shortfall || r[2])]);
 
   // 💡 核心修复 2：动态获取真正的 Oracle 地址
   let realOracleAddress = addresses.priceOracle;
   try {
-    const oracleHex = await comptroller.methods.oracle().call();
+    const oracleHex = await promiseWithTimeout(
+      comptroller.methods.oracle().call() as Promise<string>,
+      undefined,
+      "Timed out while loading oracle address",
+    );
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
   } catch (e) { }
 
@@ -213,7 +225,11 @@ export async function checkAllowance(
   if (!info.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
 
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
-  const raw = await token.methods.allowance(userAddress, info.address).call();
+  const raw = await promiseWithTimeout(
+    token.methods.allowance(userAddress, info.address).call() as Promise<string>,
+    undefined,
+    "Timed out while loading token allowance",
+  );
   const allowance = BigInt(raw);
   const formatted = formatDisplayUnits(allowance, info.underlyingDecimals);
 
@@ -234,7 +250,11 @@ export async function checkAllowance(
  */
 export async function getAccountTRXBalance(address: string, network = "mainnet"): Promise<string> {
   const tronWeb = getTronWeb(network);
-  const balance = await tronWeb.trx.getBalance(address);
+  const balance = await promiseWithTimeout(
+    tronWeb.trx.getBalance(address),
+    undefined,
+    "Timed out while loading TRX balance",
+  );
   return formatDisplayUnits(BigInt(balance), 6);
 }
 
@@ -286,7 +306,11 @@ export async function getWalletTokensBalance(
     try {
       const contract = tronWeb.contract(MULTICALL3_BALANCE_ABI, multicall3Address);
       const tokenAddresses = tokens.map((t) => t.address);
-      const result = await (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call();
+      const result = await promiseWithTimeout<any>(
+        (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call(),
+        undefined,
+        "Timed out while loading wallet token balances",
+      );
 
       // Result is [balances: uint256[], errors: bool[]]
       const rawBalances: bigint[] = Array.isArray(result[0]) ? result[0] : result.balances;

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-import { fetchWithTimeout } from "../../../src/core/services/http.js";
+import { fetchWithTimeout, promiseWithTimeout } from "../../../src/core/services/http.js";
 
 describe("fetchWithTimeout", () => {
   beforeEach(() => {
@@ -31,5 +31,11 @@ describe("fetchWithTimeout", () => {
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.headers).toEqual({ Accept: "application/json" });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("rejects long-running async work with promiseWithTimeout", async () => {
+    await expect(
+      promiseWithTimeout(new Promise(() => {}), 10, "rpc timeout"),
+    ).rejects.toThrow("rpc timeout");
   });
 });

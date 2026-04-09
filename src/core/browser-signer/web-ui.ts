@@ -6,6 +6,7 @@ const HTML = `<!DOCTYPE html>
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
     <title>TRON Wallet Signer</title>
     <style>
       *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -404,8 +405,26 @@ const HTML = `<!DOCTYPE html>
         }
 
         // --- API Client ---
+        function getApprovalTokenFromUrl() {
+          var params = new URLSearchParams(window.location.search);
+          var token = params.get("token");
+          if (!token) throw new Error("Missing approval token");
+          return token;
+        }
+
+        function buildApiHeaders(extraHeaders) {
+          var headers = { "X-Approval-Token": approvalToken };
+          if (!extraHeaders) return headers;
+          for (var key in extraHeaders) {
+            headers[key] = extraHeaders[key];
+          }
+          return headers;
+        }
+
         async function fetchPendingRequest(id) {
-          var res = await fetch("/api/pending/" + id);
+          var res = await fetch("/api/pending/" + id, {
+            headers: buildApiHeaders(),
+          });
           if (!res.ok) {
             var err = await res.json().catch(function () { return { error: "Unknown error" }; });
             throw new Error(err.error || "HTTP " + res.status);
@@ -416,7 +435,7 @@ const HTML = `<!DOCTYPE html>
         async function completeSuccess(id, result) {
           var res = await fetch("/api/complete/" + id, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: buildApiHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ success: true, result: result }),
           });
           if (!res.ok) {
@@ -428,13 +447,14 @@ const HTML = `<!DOCTYPE html>
         async function completeError(id, error) {
           await fetch("/api/complete/" + id, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: buildApiHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ success: false, error: error }),
           }).catch(function () {});
         }
 
         // --- App State ---
         var request = null;
+        var approvalToken = "";
         var viewStatus = "idle";
         var viewError = "";
         var connectedAddress = "";
@@ -738,6 +758,7 @@ const HTML = `<!DOCTYPE html>
           }
 
           try {
+            approvalToken = getApprovalTokenFromUrl();
             request = await fetchPendingRequest(match[2]);
             if (request.type === "connect") {
               showView("view-connect");

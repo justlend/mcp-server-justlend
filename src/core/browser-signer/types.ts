@@ -59,6 +59,7 @@ export interface PendingEntry<T extends PendingRequest = PendingRequest> {
   request: T;
   resolve: (result: RequestResult) => void;
   reject: (error: Error) => void;
+  authToken: string;
 }
 
 // HTTP API types

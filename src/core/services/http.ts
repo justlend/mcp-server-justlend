@@ -1,4 +1,5 @@
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+const DEFAULT_RPC_TIMEOUT_MS = 15_000;
 
 /**
  * Execute a fetch with a default timeout to avoid indefinitely hung upstream
@@ -25,4 +26,22 @@ export async function fetchWithTimeout(
   return fetch(input, { ...init, signal: timeoutSignal });
 }
 
-export { DEFAULT_FETCH_TIMEOUT_MS };
+export async function promiseWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
+  timeoutMessage = `Operation timed out after ${timeoutMs}ms`,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+export { DEFAULT_FETCH_TIMEOUT_MS, DEFAULT_RPC_TIMEOUT_MS };

@@ -165,6 +165,11 @@ vi.mock("../../src/core/services/index.js", () => ({
     symbol: "USDT",
     decimals: 6,
   })),
+  transferTRX: vi.fn(async () => "mock_transfer_trx_tx_id_123"),
+  transferTRC20: vi.fn(async () => ({
+    txHash: "mock_transfer_trc20_tx_id_123",
+    token: { symbol: "USDT", decimals: 6 },
+  })),
 
   // Lending Operations
   supply: vi.fn(async () => ({
@@ -523,6 +528,7 @@ describe("Tool Registration", () => {
       "get_dashboard_from_api",
       "get_jtoken_details_from_api",
       "get_account_data_from_api",
+      "import_wallet",
     ];
     for (const name of removedTools) {
       expect(registeredTools.has(name), `Removed tool "${name}" should NOT be registered`).toBe(false);
@@ -709,6 +715,33 @@ describe("Account & Balance Tools", () => {
     expect(output.balance).toBe("5000.000000");
     expect(output.symbol).toBe("USDT");
     expect(services.getTokenBalance).toHaveBeenCalled();
+  });
+
+  it("get_token_balance should resolve known token symbols", async () => {
+    const result = await callTool("get_token_balance", { token: "USDT" });
+    const output = getToolOutput(result);
+    expect(output.tokenAddress).toBe("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+    expect(services.getTokenBalance).toHaveBeenCalledWith(
+      "TTestWalletAddress123456789012345",
+      "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "mainnet",
+    );
+  });
+
+  it("transfer_trc20 should resolve known token symbols", async () => {
+    const result = await callTool("transfer_trc20", {
+      to: "TRecipient123456789012345678901234567",
+      amount: "1.5",
+      token: "USDT",
+    });
+    const output = getToolOutput(result);
+    expect(output.txId).toBe("mock_transfer_trc20_tx_id_123");
+    expect(services.transferTRC20).toHaveBeenCalledWith(
+      "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "TRecipient123456789012345678901234567",
+      "1500000",
+      "mainnet",
+    );
   });
 });
 

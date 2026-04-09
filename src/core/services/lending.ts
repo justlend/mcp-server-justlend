@@ -13,6 +13,7 @@ import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } f
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
 import { fetchWithTimeout } from "./http.js";
+import { getResourcePrices, type ResourcePrices } from "./resource-prices.js";
 import {
   MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
   divRound, formatScaled, formatDisplayUnits,
@@ -655,13 +656,6 @@ const TYPICAL_RESOURCES: Record<string, { energy: number; bandwidth: number }> =
   claim_rewards: { energy: 60000, bandwidth: 330 },
 };
 
-const RESOURCE_PRICES = {
-  energyPriceSun: 100,
-  bandwidthPriceSun: 1000,
-  freeBandwidthPerDay: 600,
-  sunPerTRX: 1_000_000,
-};
-
 interface StepEstimate {
   step: string;
   description: string;
@@ -798,16 +792,20 @@ function buildStep(
   };
 }
 
-function calculateTRXCost(totalEnergy: number, totalBandwidth: number): ResourceEstimation["costBreakdown"] & { total: string } {
-  const energyCost = totalEnergy * RESOURCE_PRICES.energyPriceSun;
-  const bandwidthCost = totalBandwidth * RESOURCE_PRICES.bandwidthPriceSun;
+function calculateTRXCost(
+  totalEnergy: number,
+  totalBandwidth: number,
+  resourcePrices: ResourcePrices,
+): ResourceEstimation["costBreakdown"] & { total: string } {
+  const energyCost = totalEnergy * resourcePrices.energyPriceSun;
+  const bandwidthCost = totalBandwidth * resourcePrices.bandwidthPriceSun;
   const totalCost = energyCost + bandwidthCost;
 
   return {
-    energyCostTRX: (energyCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    bandwidthCostTRX: (bandwidthCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    total: (totalCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    note: `Energy price: ${RESOURCE_PRICES.energyPriceSun} SUN/unit, Bandwidth price: ${RESOURCE_PRICES.bandwidthPriceSun} SUN/point. If you have staked TRX for energy/bandwidth, actual TRX cost will be lower. Each account gets ${RESOURCE_PRICES.freeBandwidthPerDay} free bandwidth points per day.`,
+    energyCostTRX: (energyCost / resourcePrices.sunPerTRX).toFixed(3),
+    bandwidthCostTRX: (bandwidthCost / resourcePrices.sunPerTRX).toFixed(3),
+    total: (totalCost / resourcePrices.sunPerTRX).toFixed(3),
+    note: `Energy price: ${resourcePrices.energyPriceSun} SUN/unit, Bandwidth price: ${resourcePrices.bandwidthPriceSun} SUN/point. If you have staked TRX for energy/bandwidth, actual TRX cost will be lower. Each account gets ${resourcePrices.freeBandwidthPerDay} free bandwidth points per day.${resourcePrices.source === "fallback" ? " Current values are fallback defaults because live chain parameters were unavailable." : ""}`,
   };
 }
 
@@ -838,6 +836,7 @@ export async function checkResourceSufficiency(
 ): Promise<ResourceWarning> {
   const tronWeb = getTronWeb(network);
   const resources = await tronWeb.trx.getAccountResources(ownerAddress);
+  const resourcePrices = await getResourcePrices(network);
 
   const totalEnergy = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
   const freeBandwidth = (resources.freeNetLimit || 0) - (resources.freeNetUsed || 0);
@@ -848,8 +847,8 @@ export async function checkResourceSufficiency(
   const bandwidthDeficit = bandwidthCovered ? 0 : requiredBandwidth;
   const totalBandwidth = freeBandwidth + stakedBandwidth;
 
-  const energyBurnTRX = energyDeficit * RESOURCE_PRICES.energyPriceSun / RESOURCE_PRICES.sunPerTRX;
-  const bandwidthBurnTRX = bandwidthDeficit * RESOURCE_PRICES.bandwidthPriceSun / RESOURCE_PRICES.sunPerTRX;
+  const energyBurnTRX = energyDeficit * resourcePrices.energyPriceSun / resourcePrices.sunPerTRX;
+  const bandwidthBurnTRX = bandwidthDeficit * resourcePrices.bandwidthPriceSun / resourcePrices.sunPerTRX;
 
   const warnings: string[] = [];
   if (energyDeficit > 0) {
@@ -1046,7 +1045,8 @@ export async function estimateLendingEnergy(
   const totalEnergy = steps.reduce((sum, s) => sum + s.energyEstimate, 0);
   const totalBandwidth = steps.reduce((sum, s) => sum + s.bandwidthEstimate, 0);
   const hasTypical = steps.some((s) => s.energySource === "typical");
-  const cost = calculateTRXCost(totalEnergy, totalBandwidth);
+  const resourcePrices = await getResourcePrices(network);
+  const cost = calculateTRXCost(totalEnergy, totalBandwidth, resourcePrices);
 
   return {
     operation,

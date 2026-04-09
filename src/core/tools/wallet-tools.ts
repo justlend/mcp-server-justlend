@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getJTokenInfo, getAllJTokens } from "../chains.js";
 import * as services from "../services/index.js";
+import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { getWalletMode, setWalletMode } from "../services/global.js";
 import { getBrowserSigner } from "../services/wallet.js";
@@ -135,35 +135,6 @@ export function registerWalletTools(server: McpServer) {
         activeAddress: status.activeAddress,
         wallets: status.wallets,
       }, null, 2) }] };
-    },
-  );
-
-  server.registerTool(
-    "import_wallet",
-    {
-      description:
-        "Import an existing wallet from a private key. The key is stored encrypted in ~/.agent-wallet/. " +
-        "Use this to import an existing funded wallet instead of the auto-generated one. " +
-        "WARNING: The private key will be transmitted through the MCP protocol and may appear in AI conversation logs. " +
-        "For maximum security, use the agent-wallet CLI directly: `npx agent-wallet import`.",
-      inputSchema: {
-        privateKey: z.string().describe("Private key hex string (64 characters, with or without 0x prefix)"),
-        walletId: z.string().optional().describe("Wallet identifier. Default: 'imported'"),
-      },
-      annotations: { title: "Import Wallet", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    },
-    async ({ privateKey, walletId }: { privateKey: string; walletId?: string }) => {
-      try {
-        const result = await services.importWallet(privateKey, walletId);
-        return { content: [{ type: "text", text: JSON.stringify({
-          address: result.address,
-          walletId: result.walletId,
-          message: "Wallet imported and encrypted. Set as active if it was the first wallet.",
-          securityNote: "For future imports, prefer using the CLI: `npx agent-wallet import` to avoid exposing keys in conversation logs.",
-        }, null, 2) }] };
-      } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
-      }
     },
   );
 
@@ -363,7 +334,8 @@ export function registerWalletTools(server: McpServer) {
     {
       description:
         "Transfer TRC20 tokens to another TRON address. " +
-        "You can pass a token symbol (e.g. 'USDT', 'JST') or a contract address. " +
+        "You can pass a token symbol (e.g. 'USDT', 'JST', 'wstUSDT') or a contract address. " +
+        "Symbol resolution uses the server's known TRON token registry and JustLend underlying-token mappings. " +
         "Amount is in human-readable units (e.g. '100' for 100 USDT). " +
         "Checks balance sufficiency before sending.",
       inputSchema: {
@@ -377,25 +349,20 @@ export function registerWalletTools(server: McpServer) {
     },
     async ({ to, amount, token, tokenAddress, network = services.getGlobalNetwork() }) => {
       try {
-        // Resolve token address from symbol if needed
-        let resolvedAddress = tokenAddress;
-        if (token && !resolvedAddress) {
-          const info = getJTokenInfo(`j${token}`, network);
-          if (!info) {
-            throw new Error(`Unknown token symbol: ${token}. Please provide the token contract address directly.`);
-          }
-          resolvedAddress = info.underlying;
-        }
+        const resolvedToken = token ? resolveKnownToken(token, network) : null;
+        const resolvedAddress = tokenAddress || resolvedToken?.address;
         if (!resolvedAddress) {
+          if (token) {
+            throw new Error(
+              `Unknown token symbol: ${token}. ` +
+              "Use a known TRON token symbol or provide the TRC20 contract address directly via tokenAddress.",
+            );
+          }
           throw new Error("Either 'token' or 'tokenAddress' must be provided.");
         }
 
         // Convert human-readable amount to raw amount
-        let decimals = 18;
-        if (token) {
-          const info = getJTokenInfo(`j${token}`, network);
-          if (info) decimals = info.underlyingDecimals;
-        }
+        const decimals = resolvedToken?.decimals ?? 18;
         const rawAmount = utils.parseUnits(amount, decimals).toString();
 
         const result = await services.transferTRC20(resolvedAddress, to, rawAmount, network);

@@ -16,12 +16,16 @@ import { ENERGY_MARKET_ABI } from "../abis.js";
 import { safeSend } from "./contracts.js";
 import { waitForTransaction } from "./transactions.js";
 import { checkResourceSufficiency } from "./lending.js";
-import { fetchWithTimeout } from "./http.js";
+import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+function logEnergyRentalFallback(message: string): void {
+  console.warn(`[energy-rental] ${message}`);
+}
 
 function validateTronAddress(address: string, label = "address"): string {
   if (!TRON_ADDRESS_RE.test(address)) {
@@ -80,14 +84,17 @@ export async function getEnergyRentalDashboard(network = "mainnet") {
         };
       }
     } catch (error) {
-      console.warn(`[Fallback] Dashboard API failed, using on-chain energy calculations...`);
+      logEnergyRentalFallback("Dashboard API unavailable; using on-chain fallback.");
     }
   }
 
-  console.warn(`[Nile/Fallback] Fetching Global Energy params purely on-chain...`);
   // Pure On-Chain Fallback: Calculate Energy per TRX directly from the network
   const tronWeb = getTronWeb(network);
-  const resource = await tronWeb.trx.getAccountResources("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb");
+  const resource = await promiseWithTimeout(
+    tronWeb.trx.getAccountResources("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb"),
+    undefined,
+    "Timed out while loading global energy parameters",
+  );
   const totalEnergyLimit = resource.TotalEnergyLimit || 90_000_000_000;
   const totalEnergyWeight = resource.TotalEnergyWeight || 1;
   const energyStakePerTrx = Math.floor(totalEnergyLimit / totalEnergyWeight);
@@ -125,12 +132,16 @@ async function viewContractMethod(
   const tronWeb = getTronWeb(network);
   const from = (tronWeb.defaultAddress.hex || tronWeb.defaultAddress.base58 || undefined) as string | undefined;
 
-  const result = await tronWeb.transactionBuilder.triggerSmartContract(
-    contractAddress,
-    functionSelector,
-    { _isConstant: true },
-    parameters,
-    from,
+  const result = await promiseWithTimeout(
+    tronWeb.transactionBuilder.triggerSmartContract(
+      contractAddress,
+      functionSelector,
+      { _isConstant: true },
+      parameters,
+      from,
+    ),
+    undefined,
+    "Timed out while reading energy rental contract state",
   );
 
   if (result && result.result && result.constant_result && result.constant_result.length > 0) {
@@ -149,7 +160,6 @@ function decodeUint256(hex: string, offset = 0): bigint {
  * usageChargeRatio may not exist).
  */
 export async function getEnergyRentalParams(network = "mainnet") {
-  console.warn(`[DEBUG] getEnergyRentalParams called, network=${network}, using viewContractMethod`);
   const addrs = getJustLendAddresses(network);
   const market = addrs.strx.market;
 
@@ -195,7 +205,7 @@ export async function getEnergyRentalParams(network = "mainnet") {
         usageChargeRatio = Number(decodeUint256(hex)) / TOKEN_PRECISION;
       }
     } catch {
-      console.warn(`[Nile/Fallback] usageChargeRatio() not available, using default 0.5`);
+      logEnergyRentalFallback("Using default usage charge ratio.");
     }
 
     return {
@@ -209,9 +219,7 @@ export async function getEnergyRentalParams(network = "mainnet") {
       usageChargeRatio,
     };
   } catch (error) {
-    console.warn(
-      `[Nile/Fallback] getEnergyRentalParams failed: ${error instanceof Error ? error.message : error}. Using defaults...`,
-    );
+    logEnergyRentalFallback("Energy rental parameters unavailable; using safe defaults.");
 
     return {
       liquidateThreshold: 86400,
@@ -256,7 +264,7 @@ export async function getRentalRate(trxAmount: number, network = "mainnet") {
     }
 
     // Fallback: Nile-style — get totalDelegated/totalFrozen, call energyRateModel
-    console.warn(`[Nile/Fallback] _rentalRate/_stableRate not available, using energyRateModel...`);
+    logEnergyRentalFallback("Primary rental-rate query unavailable; using fallback estimator.");
 
     const totalDelegatedHex = await viewContractMethod(
       market, "totalDelegatedOfType(uint256)", [{ type: "uint256", value: 1 }], network,
@@ -286,9 +294,7 @@ export async function getRentalRate(trxAmount: number, network = "mainnet") {
     const rate = Number(decodeUint256(rateHex)) / TOKEN_PRECISION;
     return { rentalRate: rate, stableRate: rate, effectiveRate: rate };
   } catch (error) {
-    console.warn(
-      `[Nile/Fallback] getRentalRate failed: ${error instanceof Error ? error.message : error}. Using default rate...`,
-    );
+    logEnergyRentalFallback("Rental rate unavailable; using default rate.");
     const defaultRate = 4e-8;
     return { rentalRate: defaultRate, stableRate: defaultRate, effectiveRate: defaultRate };
   }
@@ -537,9 +543,7 @@ async function getOrdersFromContractEvents(
 
     return { orders: activeRenterOrders, receiverOrders: activeReceiverOrders };
   } catch (error) {
-    console.warn(
-      `[Fallback] getOrdersFromContractEvents failed: ${error instanceof Error ? error.message : error}`,
-    );
+    logEnergyRentalFallback("Event-based rental order scan failed.");
     return { orders: [], receiverOrders: [] };
   }
 }
@@ -603,13 +607,10 @@ export async function getUserRentalOrders(
     // API returned empty — may be legitimate or API limitation, fall through to event scan
     apiSuccess = true; // API worked, just returned empty
   } catch (error) {
-    console.warn(
-      `[Fallback] getUserRentalOrders API failed: ${error instanceof Error ? error.message : error}`,
-    );
+    logEnergyRentalFallback("Rental order API unavailable; trying on-chain discovery.");
   }
 
   // Fallback: scan contract events to discover active orders
-  console.warn(`[Fallback] Trying contract event scan for rental orders (network=${network})...`);
   const eventOrders = await getOrdersFromContractEvents(address, network);
 
   if (eventOrders.orders.length > 0 || eventOrders.receiverOrders.length > 0) {
@@ -680,9 +681,7 @@ export async function getRentInfo(
       hasActiveRental: rentBalance > 0,
     };
   } catch (error) {
-    console.warn(
-      `[Nile/Fallback] getRentInfo failed: ${error instanceof Error ? error.message : error}. Assuming no active rental.`,
-    );
+    logEnergyRentalFallback("Rental status lookup failed; assuming no active rental.");
     return {
       securityDeposit: 0,
       rentBalance: 0,
@@ -731,7 +730,7 @@ export async function getReturnRentalInfo(
         };
       }
     } catch (error) {
-      console.warn(`[Fallback] Quit API failed, using on-chain estimates for return info.`);
+      logEnergyRentalFallback("Return-info API unavailable; using on-chain estimate.");
     }
   }
 
@@ -786,7 +785,7 @@ export async function rentEnergy(
       remainingSeconds = Number(matchingOrder.canRentSeconds);
     } else {
       // 2. Pure On-chain Fallback calculation if API fails
-      console.warn(`[Fallback] Calculating remaining rental seconds purely on-chain...`);
+      logEnergyRentalFallback("Calculating remaining rental time from on-chain state.");
       const params = await getEnergyRentalParams(network);
       const rateInfo = await getRentalRate(existingRental.rentBalance, network);
       const rate = rateInfo.effectiveRate;
@@ -823,7 +822,11 @@ export async function rentEnergy(
   }
 
   // Check TRX balance with dynamic gas estimation
-  const balanceSun = await tronWebForCheck.trx.getBalance(walletAddress);
+  const balanceSun = await promiseWithTimeout(
+    tronWebForCheck.trx.getBalance(walletAddress),
+    undefined,
+    "Timed out while loading renter TRX balance",
+  );
   const balanceTrx = Number(balanceSun) / TRX_PRECISION;
 
   const RENT_ENERGY_ESTIMATE = 70000;
@@ -831,7 +834,7 @@ export async function rentEnergy(
   let gasTrx = 30;
 
   if (network === "nile") {
-    console.warn(`[Nile/Fallback] Skipping backend checkResourceSufficiency, using hardcoded gas estimate.`);
+    logEnergyRentalFallback("Using fallback gas estimate for energy rental.");
     gasTrx = 30;
   } else {
     const resourceCheck = await checkResourceSufficiency(walletAddress, RENT_ENERGY_ESTIMATE, RENT_BANDWIDTH_ESTIMATE, network);

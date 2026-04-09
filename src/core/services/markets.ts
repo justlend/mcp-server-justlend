@@ -7,7 +7,7 @@ import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
-import { fetchWithTimeout } from "./http.js";
+import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
 import { formatDisplayUnits } from "./bigint-math.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
@@ -65,7 +65,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     mintPaused,
     borrowPaused,
     oracleAddressHex
-  ] = await Promise.all([
+  ] = await promiseWithTimeout(Promise.all([
     jToken.methods.supplyRatePerBlock().call(),
     jToken.methods.borrowRatePerBlock().call(),
     jToken.methods.totalSupply().call(),
@@ -78,7 +78,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     comptroller.methods.mintGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.borrowGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.oracle().call(),
-  ]);
+  ]), undefined, `Timed out while loading market data for ${jTokenInfo.symbol}`);
 
   let underlyingPriceRaw = 0n;
   let priceUSD = 0;
@@ -86,7 +86,11 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
   try {
     const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
-    underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
+    underlyingPriceRaw = BigInt(await promiseWithTimeout(
+      oracle.methods.getUnderlyingPrice(jTokenInfo.address).call(),
+      undefined,
+      `Timed out while loading oracle price for ${jTokenInfo.symbol}`,
+    ));
   } catch (err: any) {
     // 链上报错静默，交由下游 API 兜底
   }
