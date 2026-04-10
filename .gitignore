@@ -112,6 +112,7 @@ dist
 
 build
 **/.DS_Store
+CLAUDE.md
 
 # Generated docs
 *.docx
