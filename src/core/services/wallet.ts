@@ -13,7 +13,7 @@ import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
 import { getSessionState, getWalletMode, type SessionState } from "./global.js";
-import { TronWalletSigner } from "../browser-signer/index.js";
+import { TronWalletSigner } from "../browser-signer.js";
 
 export interface ConfiguredWallet {
   address: string;
@@ -352,13 +352,20 @@ export async function signMessage(message: string): Promise<string> {
 }
 
 /**
- * Sign typed data (EIP-712 / TRON-712) using the agent-wallet.
+ * Sign typed data (EIP-712 / TRON-712).
+ * Routes to browser wallet (via tronlink-signer) or agent-wallet based on mode.
  */
 export async function signTypedData(
   domain: object,
   types: object,
   value: object,
 ): Promise<string> {
+  if (getWalletMode() === "browser") {
+    const signer = getBrowserSigner();
+    const { signature } = await signer.signTypedData({ domain, types, message: value });
+    return signature;
+  }
+
   const wallet = await getAgentWallet();
   // agent-wallet Wallet supports signTypedData for EIP-712
   const w = wallet as any;
