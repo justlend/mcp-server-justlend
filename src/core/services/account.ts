@@ -58,6 +58,34 @@ export interface AccountSummary {
   lastUpdated: string;
 }
 
+const ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE = 8;
+
+async function runBatchedMulticall<
+  TCall extends {
+    address: string;
+    functionName: string;
+    args?: any[];
+    abi: any[];
+    allowFailure?: boolean;
+  },
+>(
+  calls: TCall[],
+  multicallAddress: string | undefined,
+  network: string,
+) {
+  if (calls.length <= ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE) {
+    return multicall({ calls, multicallAddress }, network);
+  }
+
+  const results: Array<{ success: boolean; result?: any; error?: string }> = [];
+  for (let i = 0; i < calls.length; i += ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE) {
+    const batch = calls.slice(i, i + ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE);
+    const batchResults = await multicall({ calls: batch, multicallAddress }, network);
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 // ============================================================================
 // ACCOUNT SUMMARY
 // ============================================================================
@@ -99,11 +127,10 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
   } catch (e) { }
 
-  // Batch-fetch all snapshots + prices via Multicall3 (single RPC call).
-  // Falls back to sequential calls if multicall address is not configured (e.g. Nile testnet).
+  // Batch-fetch snapshots first, then fetch prices only for active positions.
+  // This keeps account-summary reads below TronGrid/multicall limits on mainnet.
   const multicallAddress = addresses.multicall3;
 
-  // Build call array: snapshot calls first, then price calls
   const snapshotCalls = jTokens.map((info) => ({
     address: info.address,
     functionName: "getAccountSnapshot",
@@ -112,34 +139,43 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     allowFailure: true,
   }));
 
-  const priceCalls = jTokens.map((info) => ({
+  const snapshotResults = await runBatchedMulticall(snapshotCalls, multicallAddress, network);
+
+  const activeMarkets: Array<{
+    info: JTokenInfo;
+    snapshot: any;
+  }> = [];
+
+  for (let i = 0; i < jTokens.length; i++) {
+    const snapshotRes = snapshotResults[i];
+    if (!snapshotRes?.success) continue;
+
+    const snapshot = snapshotRes.result;
+    const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
+    const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
+
+    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
+    activeMarkets.push({ info: jTokens[i], snapshot });
+  }
+
+  const priceCalls = activeMarkets.map(({ info }) => ({
     address: realOracleAddress,
     functionName: "getUnderlyingPrice",
     args: [info.address],
     abi: PRICE_ORACLE_ABI,
     allowFailure: true,
   }));
-
-  const allCalls = [...snapshotCalls, ...priceCalls];
-  const results = await multicall({ calls: allCalls, multicallAddress }, network);
-
-  const snapshotResults = results.slice(0, jTokens.length);
-  const priceResults = results.slice(jTokens.length);
+  const priceResults = priceCalls.length > 0
+    ? await runBatchedMulticall(priceCalls, multicallAddress, network)
+    : [];
 
   // Process results into positions
   const positions: AccountPosition[] = [];
-  for (let i = 0; i < jTokens.length; i++) {
-    const info = jTokens[i];
-    const snapshotRes = snapshotResults[i];
-
-    if (!snapshotRes.success) continue;
-
-    const snapshot = snapshotRes.result;
+  for (let i = 0; i < activeMarkets.length; i++) {
+    const { info, snapshot } = activeMarkets[i];
     const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
     const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
     const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
-
-    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
 
     const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
 

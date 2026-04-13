@@ -82,14 +82,9 @@ describe("getAccountSummary (multicall)", () => {
   });
 
   it("should return empty positions when no balances", async () => {
-    // Snapshot returns zero balances for both tokens
     mockMulticall.mockResolvedValueOnce([
-      // snapshot results (2 tokens)
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      // price results (2 tokens)
-      { success: true, result: "1000000000000000000000000000000" },
-      { success: true, result: "100000000000000000000000000000" },
     ]);
 
     const summary = await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
@@ -101,14 +96,11 @@ describe("getAccountSummary (multicall)", () => {
 
   it("should build position from multicall snapshot", async () => {
     mockMulticall.mockResolvedValueOnce([
-      // jUSDT snapshot: has balance
       { success: true, result: { 0: 0, 1: "50000000000", 2: 0, 3: "200000000000000000" } },
-      // jTRX snapshot: no balance
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      // jUSDT price
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: true, result: "1000000000000000000000000000000" },
-      // jTRX price
-      { success: true, result: "100000000000000000000000000000" },
     ]);
 
     const summary = await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
@@ -119,13 +111,10 @@ describe("getAccountSummary (multicall)", () => {
 
   it("should skip markets where snapshot call failed", async () => {
     mockMulticall.mockResolvedValueOnce([
-      // jUSDT snapshot: failed
       { success: false, error: "call failed" },
-      // jTRX snapshot: has balance
       { success: true, result: { 0: 0, 1: "100000000000", 2: 0, 3: "200000000000000000" } },
-      // jUSDT price
-      { success: true, result: "1000000000000000000000000000000" },
-      // jTRX price
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: true, result: "100000000000000000000000000000" },
     ]);
 
@@ -137,14 +126,11 @@ describe("getAccountSummary (multicall)", () => {
 
   it("should fallback to price API when oracle returns 0", async () => {
     mockMulticall.mockResolvedValueOnce([
-      // jUSDT snapshot: has balance
       { success: true, result: { 0: 0, 1: "50000000000", 2: 0, 3: "200000000000000000" } },
-      // jTRX snapshot: no balance
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      // jUSDT price: 0 → trigger API fallback
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: true, result: "0" },
-      // jTRX price
-      { success: true, result: "100000000000000000000000000000" },
     ]);
 
     mockFetchPriceFromAPI.mockResolvedValueOnce(1.0);
@@ -158,8 +144,9 @@ describe("getAccountSummary (multicall)", () => {
     mockMulticall.mockResolvedValueOnce([
       { success: true, result: { 0: 0, 1: "50000000000", 2: 0, 3: "200000000000000000" } },
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: false, error: "price call failed" },
-      { success: true, result: "100000000000000000000000000000" },
     ]);
 
     mockFetchPriceFromAPI.mockResolvedValueOnce(1.0);
@@ -173,8 +160,6 @@ describe("getAccountSummary (multicall)", () => {
     mockMulticall.mockResolvedValueOnce([
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      { success: true, result: "0" },
-      { success: true, result: "0" },
     ]);
 
     const summary = await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
@@ -204,8 +189,9 @@ describe("getAccountSummary (multicall)", () => {
         },
       },
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: true, result: "1000000000000000000000000000000" },
-      { success: true, result: "0" },
     ]);
 
     const summary = await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
@@ -223,23 +209,22 @@ describe("getAccountSummary (multicall)", () => {
 
   it("should pass multicall calls with correct structure", async () => {
     mockMulticall.mockResolvedValueOnce([
+      { success: true, result: { 0: 0, 1: "50000000000", 2: 0, 3: "200000000000000000" } },
       { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      { success: true, result: { 0: 0, 1: 0, 2: 0, 3: "200000000000000000" } },
-      { success: true, result: "0" },
+    ]);
+    mockMulticall.mockResolvedValueOnce([
       { success: true, result: "0" },
     ]);
 
     await getAccountSummary("TTestUser123456789012345678901234", "mainnet");
 
-    expect(mockMulticall).toHaveBeenCalledTimes(1);
-    const callArgs = mockMulticall.mock.calls[0][0];
-    // 2 tokens × 2 calls (snapshot + price) = 4 total
-    expect(callArgs.calls).toHaveLength(4);
-    // First 2 are snapshots
-    expect(callArgs.calls[0].functionName).toBe("getAccountSnapshot");
-    expect(callArgs.calls[1].functionName).toBe("getAccountSnapshot");
-    // Last 2 are prices
-    expect(callArgs.calls[2].functionName).toBe("getUnderlyingPrice");
-    expect(callArgs.calls[3].functionName).toBe("getUnderlyingPrice");
+    expect(mockMulticall).toHaveBeenCalledTimes(2);
+    const snapshotBatch = mockMulticall.mock.calls[0][0];
+    const priceBatch = mockMulticall.mock.calls[1][0];
+    expect(snapshotBatch.calls).toHaveLength(2);
+    expect(snapshotBatch.calls[0].functionName).toBe("getAccountSnapshot");
+    expect(snapshotBatch.calls[1].functionName).toBe("getAccountSnapshot");
+    expect(priceBatch.calls).toHaveLength(1);
+    expect(priceBatch.calls[0].functionName).toBe("getUnderlyingPrice");
   });
 });
