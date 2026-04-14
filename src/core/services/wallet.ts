@@ -187,9 +187,14 @@ export async function importWallet(
   // wallet record and secret reference cannot drift apart.
   const keyBytes = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
   if (keyBytes.length !== 32) {
+    keyBytes.fill(0);
     throw new Error("Invalid private key: must be 32 bytes (64 hex characters)");
   }
-  kvStore.saveSecret(finalId, keyBytes);
+  try {
+    kvStore.saveSecret(finalId, keyBytes);
+  } finally {
+    keyBytes.fill(0);
+  }
 
   provider.addWallet(finalId, {
     type: "local_secure",
