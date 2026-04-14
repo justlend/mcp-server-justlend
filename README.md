@@ -404,6 +404,8 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `compare_markets` | Find best supply/borrow opportunities |
 | `rent_energy` | Guided energy rental with price estimation and balance checks |
 | `stake_trx` | Guided TRX staking to sTRX with APY info and verification |
+| `query_proposals` | Browse and query governance proposals, check voting requirements |
+| `cast_vote` | Guided governance voting with vote verification |
 
 ## Architecture
 
@@ -413,18 +415,18 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + JustLend contract addresses
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 ABIs
-│   │   ├── tools.ts           # MCP tool registrations (59 tools)
+│   │   ├── tools/             # MCP tool registrations (59 tools)
+│   │   │   ├── index.ts           # Barrel export
+│   │   │   ├── wallet-tools.ts    # Wallet, network, transfer tools
+│   │   │   ├── market-tools.ts    # Market data, balance, mining tools
+│   │   │   ├── lending-tools.ts   # Supply, borrow, repay, collateral tools
+│   │   │   ├── voting-tools.ts    # Governance proposal & voting tools
+│   │   │   ├── energy-tools.ts    # Energy rental tools
+│   │   │   ├── staking-tools.ts   # sTRX staking tools
+│   │   │   └── shared.ts         # Shared helpers
 │   │   ├── prompts.ts         # AI-guided workflow prompts
 │   │   ├── resources.ts       # Static protocol info resource
-│   │   ├── browser-signer/    # Browser wallet signing via localhost HTTP bridge
-│   │   │   ├── types.ts           # Request/response type definitions
-│   │   │   ├── pending-store.ts   # UUID-Promise queue for pending sign requests
-│   │   │   ├── http-server.ts     # Localhost HTTP server (node:http)
-│   │   │   ├── browser.ts         # Open browser + URL construction
-│   │   │   ├── tron-wallet-signer.ts # Core orchestration class
-│   │   │   ├── web-ui.ts          # Inlined HTML (generated from index.html)
-│   │   │   ├── index.html         # Browser SPA (wallet discovery + approval UI)
-│   │   │   └── index.ts           # Barrel export
+│   │   ├── browser-signer.ts  # tronlink-signer SDK adapter (TronWalletSigner wrapper)
 │   │   └── services/
 │   │       ├── # — JustLend-specific —
 │   │       ├── global.ts     # Global state: network, wallet mode
@@ -456,8 +458,7 @@ mcp-server-justlend/
 │   └── index.ts               # Stdio entry point
 ├── bin/cli.js                 # CLI entry for npx
 ├── scripts/
-│   ├── setup-mcp-test.sh      # Quick setup: build + generate .mcp.json config
-│   └── gen-web-ui.ts          # Build: index.html → web-ui.ts
+│   └── setup-mcp-test.sh      # Quick setup: build + generate .mcp.json config
 └── tests/
     └── core/
         ├── chains.test.ts
@@ -550,7 +551,7 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 → AI calls `get_user_vote_status` to find withdrawable proposals → calls `withdraw_votes_from_proposal` for each
 
 **"How much does it cost to rent 300,000 energy for 7 days?"**
-→ AI calls `calculate_energy_rental_price` with energyAmount=300000, durationDays=7, returns cost breakdown
+→ AI calls `calculate_energy_rental_price` with energyAmount=300000, durationHours=168, returns cost breakdown
 
 **"Rent 500,000 energy to address TXxx... for 14 days"**
 → AI uses `rent_energy` prompt: checks balance → checks rental status → calculates price → rents energy → verifies
