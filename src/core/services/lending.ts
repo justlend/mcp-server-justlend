@@ -12,6 +12,14 @@ import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
+import { fetchWithTimeout } from "./http.js";
+import { getResourcePrices, type ResourcePrices } from "./resource-prices.js";
+import {
+  MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
+  divRound, formatScaled, formatDisplayUnits,
+  formatUsdCents, formatPriceUSD, formatPercentRatio,
+  amountToUsdCents, normalizeDecimalString, buildCollateralBreakdown,
+} from "./bigint-math.js";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 
@@ -69,45 +77,53 @@ function resolveJToken(symbolOrAddress: string, network: string): JTokenInfo {
 // PRICE ORACLE FALLBACK HELPERS (Injected to fix Nile testnet $0 collateral bug)
 // ============================================================================
 
-async function fetchPriceFromAPI(underlyingSymbol: string, underlyingDecimals: number, network: string): Promise<number> {
+async function fetchPriceRawFromAPI(underlyingSymbol: string, network: string): Promise<bigint> {
   const tryFetch = async (targetNetwork: string) => {
     const host = targetNetwork === "nile" ? "https://nileapi.justlend.org" : "https://labc.ablesdxd.link";
-    const resp = await fetch(`${host}/justlend/markets`);
+    const resp = await fetchWithTimeout(`${host}/justlend/markets`);
     const data = await resp.json();
-    if (data.code !== 0 || !data.data || !data.data.jtokenList) return 0;
+    if (data.code !== 0 || !data.data || !data.data.jtokenList) return 0n;
 
     const market = data.data.jtokenList.find((m: any) =>
       m.collateralSymbol.toUpperCase() === underlyingSymbol.toUpperCase()
     );
-    if (!market) return 0;
+    if (!market) return 0n;
 
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
+    const depositedUSD = normalizeDecimalString(market.depositedUSD || "0");
+    const totalSupplyRaw = BigInt(market.totalSupply || 0);
+    const exchangeRateRaw = BigInt(market.exchangeRate || 0);
 
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return 0;
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-    return depositedUSD / underlyingAmount;
+    if (depositedUSD === "0" || totalSupplyRaw === 0n || exchangeRateRaw === 0n) return 0n;
+
+    const underlyingRaw = totalSupplyRaw * exchangeRateRaw / MANTISSA_18;
+    if (underlyingRaw === 0n) return 0n;
+
+    const depositedUsdScaled = utils.parseUnits(depositedUSD, 18);
+    return divRound(depositedUsdScaled * MANTISSA_18, underlyingRaw);
   };
 
   try {
     const price = await tryFetch(network);
-    if (price > 0) return price;
+    if (price > 0n) return price;
   } catch (err) { }
 
   if (network === "nile") {
     try {
       const mainnetPrice = await tryFetch("mainnet");
-      if (mainnetPrice > 0) return mainnetPrice;
+      if (mainnetPrice > 0n) return mainnetPrice;
     } catch (err) { }
   }
-  return 0;
+  return 0n;
 }
 
-async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddress: string, assetInfo: JTokenInfo | undefined, network: string): Promise<number> {
+async function getAssetPriceData(
+  tronWeb: any,
+  oracleAddress: string,
+  assetAddress: string,
+  assetInfo: JTokenInfo | undefined,
+  network: string,
+): Promise<{ raw: bigint; display: string }> {
   let priceRaw = 0n;
-  let priceUSD = 0;
 
   try {
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, oracleAddress);
@@ -115,12 +131,15 @@ async function getAssetPriceUSD(tronWeb: any, oracleAddress: string, assetAddres
   } catch (err) { }
 
   if (priceRaw > 0n && network === "mainnet") {
-    const decimals = assetInfo ? assetInfo.underlyingDecimals : 18;
-    priceUSD = Number(priceRaw) / (10 ** (36 - decimals));
   } else if (assetInfo) {
-    priceUSD = await fetchPriceFromAPI(assetInfo.underlyingSymbol, assetInfo.underlyingDecimals, network);
+    priceRaw = await fetchPriceRawFromAPI(assetInfo.underlyingSymbol, network);
   }
-  return priceUSD;
+
+  const underlyingDecimals = assetInfo ? assetInfo.underlyingDecimals : 18;
+  return {
+    raw: priceRaw,
+    display: formatPriceUSD(priceRaw, underlyingDecimals),
+  };
 }
 
 // ============================================================================
@@ -145,7 +164,7 @@ export async function supply(
     const needed = BigInt(amountRaw.toString()) + supplyGasSun;
     if (BigInt(balanceSun) < needed) {
       throw new Error(
-        `Insufficient TRX balance. Have ${(Number(balanceSun) / 1e6).toFixed(2)} TRX, need ~${(Number(needed) / 1e6).toFixed(2)} TRX (supply + estimated gas)`,
+        `Insufficient TRX balance. Have ${formatDisplayUnits(BigInt(balanceSun), 6)} TRX, need ~${formatDisplayUnits(needed, 6)} TRX (supply + estimated gas)`,
       );
     }
 
@@ -270,17 +289,17 @@ export async function borrow(
 
   interface CollateralDetail {
     symbol: string;
-    supplyBalance: number;
-    supplyValueUSD: number;
-    collateralFactor: number;
-    adjustedValueUSD: number;
-    borrowBalanceUSD: number;
+    supplyValueCents: bigint;
+    collateralFactorMantissa: bigint;
+    adjustedValueCents: bigint;
+    borrowBalanceCents: bigint;
   }
 
-  const MANTISSA_18 = BigInt(1e18);
+  const liquidityResult = await comptroller.methods.getAccountLiquidity(walletAddress).call();
+  const availableLiquidityRaw = BigInt(liquidityResult.liquidity || liquidityResult[1] || 0);
   const collateralDetails: CollateralDetail[] = [];
-  let totalAdjustedCollateralUSD = 0;
-  let totalBorrowUSD = 0;
+  let totalAdjustedCollateralCents = 0n;
+  let totalBorrowCents = 0n;
 
   for (const rawAsset of assetsInRaw) {
     try {
@@ -296,70 +315,60 @@ export async function borrow(
       const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
       const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / MANTISSA_18;
 
-      const assetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, asset, assetInfo, network);
+      const assetPrice = await getAssetPriceData(tronWeb, realOracleAddress, asset, assetInfo, network);
 
       const marketInfo = await comptroller.methods.markets(asset).call();
-      const cf = Number(BigInt(marketInfo.collateralFactorMantissa || marketInfo[1])) / 1e18;
+      const collateralFactorMantissa = BigInt(marketInfo.collateralFactorMantissa || marketInfo[1] || 0);
+      const supplyValueCents = amountToUsdCents(supplyBalanceRaw, assetPrice.raw);
+      const adjustedValueCents = divRound(supplyValueCents * collateralFactorMantissa, MANTISSA_18);
+      const borrowBalanceCents = amountToUsdCents(borrowBalance, assetPrice.raw);
 
-      const assetDecimals = assetInfo ? assetInfo.underlyingDecimals : 18;
-      const supplyBalance = Number(supplyBalanceRaw) / 10 ** assetDecimals;
-      const supplyValueUSD = supplyBalance * assetPriceUSD;
-      const adjustedValueUSD = supplyValueUSD * cf;
-      const borrowBalanceUSD = Number(borrowBalance) / 10 ** assetDecimals * assetPriceUSD;
-
-      totalAdjustedCollateralUSD += adjustedValueUSD;
-      totalBorrowUSD += borrowBalanceUSD;
+      totalAdjustedCollateralCents += adjustedValueCents;
+      totalBorrowCents += borrowBalanceCents;
 
       const label = assetInfo ? assetInfo.underlyingSymbol : asset;
       collateralDetails.push({
         symbol: label,
-        supplyBalance,
-        supplyValueUSD,
-        collateralFactor: cf,
-        adjustedValueUSD,
-        borrowBalanceUSD,
+        supplyValueCents,
+        collateralFactorMantissa,
+        adjustedValueCents,
+        borrowBalanceCents,
       });
     } catch (e) {
       console.error(`[Borrow Debug] Skipped asset ${rawAsset}:`, e);
     }
   }
 
-  const availableLiquidityUSD = totalAdjustedCollateralUSD - totalBorrowUSD;
+  const availableLiquidityCents = divRound(availableLiquidityRaw * 100n, MANTISSA_18);
 
-  if (availableLiquidityUSD <= 0) {
-    const breakdown = collateralDetails.map(d =>
-      `${d.symbol}: supply=$${d.supplyValueUSD.toFixed(2)} × CF ${(d.collateralFactor * 100).toFixed(0)}% = $${d.adjustedValueUSD.toFixed(2)}` +
-      (d.borrowBalanceUSD > 0 ? `, borrow=$${d.borrowBalanceUSD.toFixed(2)}` : "")
-    ).join("; ");
+  if (availableLiquidityRaw <= 0n) {
+    const breakdown = buildCollateralBreakdown(collateralDetails);
 
     throw new Error(
-      `No borrowing capacity. Total adjusted collateral: $${totalAdjustedCollateralUSD.toFixed(2)}, ` +
-      `total borrows: $${totalBorrowUSD.toFixed(2)}, available: $${availableLiquidityUSD.toFixed(2)}. ` +
+      `No borrowing capacity. Total adjusted collateral: $${formatUsdCents(totalAdjustedCollateralCents)}, ` +
+      `total borrows: $${formatUsdCents(totalBorrowCents)}, available: $${formatUsdCents(availableLiquidityCents)}. ` +
       `Breakdown: [${breakdown}]. ` +
       `Supply more collateral or repay existing borrows first.`
     );
   }
 
-  const targetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, info.address, info, network);
+  const targetPrice = await getAssetPriceData(tronWeb, realOracleAddress, info.address, info, network);
 
-  if (targetPriceUSD === 0) {
+  if (targetPrice.raw === 0n) {
     throw new Error(`Cannot fetch price for ${info.underlyingSymbol}. Unable to verify borrowing capacity.`);
   }
 
-  const maxBorrowable = availableLiquidityUSD / targetPriceUSD;
-  const maxBorrowableRaw = BigInt(Math.floor(maxBorrowable * 10 ** info.underlyingDecimals));
+  const maxBorrowableRaw = availableLiquidityRaw * MANTISSA_18 / targetPrice.raw;
 
   if (amountRaw > maxBorrowableRaw) {
-    const breakdown = collateralDetails.map(d =>
-      `${d.symbol}: supply=$${d.supplyValueUSD.toFixed(2)} × CF ${(d.collateralFactor * 100).toFixed(0)}% = $${d.adjustedValueUSD.toFixed(2)}` +
-      (d.borrowBalanceUSD > 0 ? `, borrow=$${d.borrowBalanceUSD.toFixed(2)}` : "")
-    ).join("; ");
+    const breakdown = buildCollateralBreakdown(collateralDetails);
+    const requestedBorrowCents = amountToUsdCents(amountRaw, targetPrice.raw);
 
     throw new Error(
-      `Insufficient borrowing capacity. Requested: ${amount} ${info.underlyingSymbol} (~$${(parseFloat(amount) * targetPriceUSD).toFixed(2)}), ` +
-      `max borrowable: ~${maxBorrowable.toFixed(info.underlyingDecimals > 6 ? 6 : info.underlyingDecimals)} ${info.underlyingSymbol} ` +
-      `(~$${availableLiquidityUSD.toFixed(2)}). ` +
-      `${info.underlyingSymbol} price: $${targetPriceUSD.toFixed(6)}. ` +
+      `Insufficient borrowing capacity. Requested: ${amount} ${info.underlyingSymbol} (~$${formatUsdCents(requestedBorrowCents)}), ` +
+      `max borrowable: ~${formatDisplayUnits(maxBorrowableRaw, info.underlyingDecimals)} ${info.underlyingSymbol} ` +
+      `(~$${formatUsdCents(availableLiquidityCents)}). ` +
+      `${info.underlyingSymbol} price: $${targetPrice.display}. ` +
       `Collateral breakdown: [${breakdown}]. ` +
       `Supply more collateral or reduce borrow amount.`
     );
@@ -406,7 +415,7 @@ export async function repay(
       const needed = repayRaw + repayGasSun;
       if (BigInt(balanceSun) < needed) {
         throw new Error(
-          `Insufficient TRX balance for repayment. Have ${(Number(balanceSun) / 1e6).toFixed(2)} TRX, need ~${(Number(needed) / 1e6).toFixed(2)} TRX (repay + estimated gas)`
+          `Insufficient TRX balance for repayment. Have ${formatDisplayUnits(BigInt(balanceSun), 6)} TRX, need ~${formatDisplayUnits(needed, 6)} TRX (repay + estimated gas)`
         );
       }
     } else {
@@ -498,9 +507,8 @@ export async function exitMarket(
   const snapshot = await jToken.methods.getAccountSnapshot(walletAddress).call();
   const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
   if (borrowBalance > 0n) {
-    const borrowHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
     throw new Error(
-      `Cannot disable ${jTokenSymbol} as collateral: you have an outstanding borrow of ${borrowHuman} ${info.underlyingSymbol} in this market. ` +
+      `Cannot disable ${jTokenSymbol} as collateral: you have an outstanding borrow of ${formatDisplayUnits(borrowBalance, info.underlyingDecimals)} ${info.underlyingSymbol} in this market. ` +
       `Please repay the borrow first before disabling collateral.`
     );
   }
@@ -510,10 +518,9 @@ export async function exitMarket(
 
   const assetsInRaw: string[] = await comptroller.methods.getAssetsIn(walletAddress).call();
 
-  const MANTISSA_18 = BigInt(1e18);
-  let totalAdjustedCollateralUSD = 0;
-  let totalBorrowUSD = 0;
-  let removedCollateralUSD = 0;
+  let totalAdjustedCollateralCents = 0n;
+  let totalBorrowCents = 0n;
+  let removedCollateralCents = 0n;
 
   for (const rawAsset of assetsInRaw) {
     try {
@@ -530,34 +537,33 @@ export async function exitMarket(
 
       const supplyBalanceRaw = jTokenBal * exchangeRateMantissa / MANTISSA_18;
 
-      const assetPriceUSD = await getAssetPriceUSD(tronWeb, realOracleAddress, asset, assetInfo, network);
+      const assetPrice = await getAssetPriceData(tronWeb, realOracleAddress, asset, assetInfo, network);
 
       const marketInfo = await comptroller.methods.markets(asset).call();
-      const cf = Number(BigInt(marketInfo.collateralFactorMantissa || marketInfo[1])) / 1e18;
+      const collateralFactorMantissa = BigInt(marketInfo.collateralFactorMantissa || marketInfo[1] || 0);
+      const supplyValueCents = amountToUsdCents(supplyBalanceRaw, assetPrice.raw);
+      const adjustedValueCents = divRound(supplyValueCents * collateralFactorMantissa, MANTISSA_18);
+      const borrowBalanceCents = amountToUsdCents(borrowBal, assetPrice.raw);
 
-      const assetDecimals = assetInfo ? assetInfo.underlyingDecimals : 18;
-      const supplyBalance = Number(supplyBalanceRaw) / 10 ** assetDecimals;
-      const supplyValueUSD = supplyBalance * assetPriceUSD;
-      const adjustedValueUSD = supplyValueUSD * cf;
-      const borrowBalanceUSD = Number(borrowBal) / 10 ** assetDecimals * assetPriceUSD;
-
-      totalAdjustedCollateralUSD += adjustedValueUSD;
-      totalBorrowUSD += borrowBalanceUSD;
+      totalAdjustedCollateralCents += adjustedValueCents;
+      totalBorrowCents += borrowBalanceCents;
 
       if (asset.toLowerCase() === info.address.toLowerCase()) {
-        removedCollateralUSD = adjustedValueUSD;
+        removedCollateralCents = adjustedValueCents;
       }
     } catch { /* skip unavailable markets */ }
   }
 
-  if (totalBorrowUSD > 0) {
-    const remainingCollateralUSD = totalAdjustedCollateralUSD - removedCollateralUSD;
-    if (remainingCollateralUSD < totalBorrowUSD) {
-      const currentRatio = totalBorrowUSD > 0 ? (totalBorrowUSD / remainingCollateralUSD * 100).toFixed(2) : "0";
+  if (totalBorrowCents > 0n) {
+    const remainingCollateralCents = totalAdjustedCollateralCents - removedCollateralCents;
+    if (remainingCollateralCents < totalBorrowCents) {
+      const currentRatio = remainingCollateralCents > 0n
+        ? formatPercentRatio(totalBorrowCents, remainingCollateralCents)
+        : "∞";
       throw new Error(
         `Cannot disable ${jTokenSymbol} as collateral: doing so would make your account undercollateralized. ` +
-        `After removing ${jTokenSymbol} collateral ($${removedCollateralUSD.toFixed(2)}), ` +
-        `remaining collateral: $${remainingCollateralUSD.toFixed(2)}, total borrows: $${totalBorrowUSD.toFixed(2)}, ` +
+        `After removing ${jTokenSymbol} collateral ($${formatUsdCents(removedCollateralCents)}), ` +
+        `remaining collateral: $${formatUsdCents(remainingCollateralCents)}, total borrows: $${formatUsdCents(totalBorrowCents)}, ` +
         `borrow risk would be ${currentRatio}% (must be < 100%). ` +
         `Please repay some borrows or add more collateral first.`
       );
@@ -648,13 +654,6 @@ const TYPICAL_RESOURCES: Record<string, { energy: number; bandwidth: number }> =
   enter_market: { energy: 80000, bandwidth: 300 },
   exit_market: { energy: 50000, bandwidth: 280 },
   claim_rewards: { energy: 60000, bandwidth: 330 },
-};
-
-const RESOURCE_PRICES = {
-  energyPriceSun: 100,
-  bandwidthPriceSun: 1000,
-  freeBandwidthPerDay: 600,
-  sunPerTRX: 1_000_000,
 };
 
 interface StepEstimate {
@@ -793,16 +792,20 @@ function buildStep(
   };
 }
 
-function calculateTRXCost(totalEnergy: number, totalBandwidth: number): ResourceEstimation["costBreakdown"] & { total: string } {
-  const energyCost = totalEnergy * RESOURCE_PRICES.energyPriceSun;
-  const bandwidthCost = totalBandwidth * RESOURCE_PRICES.bandwidthPriceSun;
+function calculateTRXCost(
+  totalEnergy: number,
+  totalBandwidth: number,
+  resourcePrices: ResourcePrices,
+): ResourceEstimation["costBreakdown"] & { total: string } {
+  const energyCost = totalEnergy * resourcePrices.energyPriceSun;
+  const bandwidthCost = totalBandwidth * resourcePrices.bandwidthPriceSun;
   const totalCost = energyCost + bandwidthCost;
 
   return {
-    energyCostTRX: (energyCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    bandwidthCostTRX: (bandwidthCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    total: (totalCost / RESOURCE_PRICES.sunPerTRX).toFixed(3),
-    note: `Energy price: ${RESOURCE_PRICES.energyPriceSun} SUN/unit, Bandwidth price: ${RESOURCE_PRICES.bandwidthPriceSun} SUN/point. If you have staked TRX for energy/bandwidth, actual TRX cost will be lower. Each account gets ${RESOURCE_PRICES.freeBandwidthPerDay} free bandwidth points per day.`,
+    energyCostTRX: (energyCost / resourcePrices.sunPerTRX).toFixed(3),
+    bandwidthCostTRX: (bandwidthCost / resourcePrices.sunPerTRX).toFixed(3),
+    total: (totalCost / resourcePrices.sunPerTRX).toFixed(3),
+    note: `Energy price: ${resourcePrices.energyPriceSun} SUN/unit, Bandwidth price: ${resourcePrices.bandwidthPriceSun} SUN/point. If you have staked TRX for energy/bandwidth, actual TRX cost will be lower. Each account gets ${resourcePrices.freeBandwidthPerDay} free bandwidth points per day.${resourcePrices.source === "fallback" ? " Current values are fallback defaults because live chain parameters were unavailable." : ""}`,
   };
 }
 
@@ -833,6 +836,7 @@ export async function checkResourceSufficiency(
 ): Promise<ResourceWarning> {
   const tronWeb = getTronWeb(network);
   const resources = await tronWeb.trx.getAccountResources(ownerAddress);
+  const resourcePrices = await getResourcePrices(network);
 
   const totalEnergy = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
   const freeBandwidth = (resources.freeNetLimit || 0) - (resources.freeNetUsed || 0);
@@ -843,8 +847,8 @@ export async function checkResourceSufficiency(
   const bandwidthDeficit = bandwidthCovered ? 0 : requiredBandwidth;
   const totalBandwidth = freeBandwidth + stakedBandwidth;
 
-  const energyBurnTRX = energyDeficit * RESOURCE_PRICES.energyPriceSun / RESOURCE_PRICES.sunPerTRX;
-  const bandwidthBurnTRX = bandwidthDeficit * RESOURCE_PRICES.bandwidthPriceSun / RESOURCE_PRICES.sunPerTRX;
+  const energyBurnTRX = energyDeficit * resourcePrices.energyPriceSun / resourcePrices.sunPerTRX;
+  const bandwidthBurnTRX = bandwidthDeficit * resourcePrices.bandwidthPriceSun / resourcePrices.sunPerTRX;
 
   const warnings: string[] = [];
   if (energyDeficit > 0) {
@@ -1041,7 +1045,8 @@ export async function estimateLendingEnergy(
   const totalEnergy = steps.reduce((sum, s) => sum + s.energyEstimate, 0);
   const totalBandwidth = steps.reduce((sum, s) => sum + s.bandwidthEstimate, 0);
   const hasTypical = steps.some((s) => s.energySource === "typical");
-  const cost = calculateTRXCost(totalEnergy, totalBandwidth);
+  const resourcePrices = await getResourcePrices(network);
+  const cost = calculateTRXCost(totalEnergy, totalBandwidth, resourcePrices);
 
   return {
     operation,

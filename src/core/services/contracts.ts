@@ -1,7 +1,9 @@
 import { getTronWeb } from "./clients.js";
 import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
 import { MULTICALL2_ABI, MULTICALL3_ABI } from "./multicall-abi.js";
+import { getResourcePrices } from "./resource-prices.js";
 import { waitForTransaction } from "./transactions.js";
+import { utils } from "./utils.js";
 
 /**
  * Read from a smart contract (view/pure functions).
@@ -80,7 +82,7 @@ export async function writeContract(
       ownerAddress,
     );
 
-    const signed = await signTransactionWithWallet(tx.transaction);
+    const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
     const broadcast = await tronWeb.trx.sendRawTransaction(signed);
 
     if (broadcast.result) {
@@ -171,17 +173,18 @@ export async function safeSend(
   const resources = await tronWeb.trx.getAccountResources(ownerAddress);
   const account = await tronWeb.trx.getAccount(ownerAddress);
   const balanceSun = BigInt(account.balance || 0);
+  const resourcePrices = await getResourcePrices(network);
 
   const totalEnergyAvailable = (resources.EnergyLimit || 0) - (resources.EnergyUsed || 0);
   const totalEnergyTarget = energyUsed + energyPenalty;
   const energyDeficit = Math.max(0, totalEnergyTarget - totalEnergyAvailable);
-  const trxForEnergy = BigInt(energyDeficit) * 420n;
+  const trxForEnergy = BigInt(energyDeficit) * BigInt(resourcePrices.energyPriceSun);
 
   const requiredBandwidth = 350;
   const totalBandwidthAvailable = ((resources.freeNetLimit || 0) - (resources.freeNetUsed || 0)) +
     ((resources.NetLimit || 0) - (resources.NetUsed || 0));
   const bandwidthDeficit = totalBandwidthAvailable >= requiredBandwidth ? 0 : requiredBandwidth;
-  const trxForBandwidth = BigInt(bandwidthDeficit) * 1000n;
+  const trxForBandwidth = BigInt(bandwidthDeficit) * BigInt(resourcePrices.bandwidthPriceSun);
 
   const callValueSun = BigInt(params.callValue || 0);
 
@@ -191,11 +194,11 @@ export async function safeSend(
   const requiredBalanceWithMargin = feeMargin + callValueSun;
 
   if (balanceSun < requiredBalanceWithMargin) {
-    const requiredTrx = Number(requiredBalanceWithMargin) / 1e6;
-    const currentTrx = Number(balanceSun) / 1e6;
+    const requiredTrx = utils.fromSun(requiredBalanceWithMargin.toString());
+    const currentTrx = utils.fromSun(balanceSun.toString());
     throw new Error(
       `Pre-flight check failed: Insufficient TRX balance. ` +
-      `Estimated requirement to cover fees+value: ~${requiredTrx.toFixed(2)} TRX, but you only have ${currentTrx.toFixed(2)} TRX.`
+      `Estimated requirement to cover fees+value: ~${requiredTrx} TRX, but you only have ${currentTrx} TRX.`
     );
   }
 
@@ -253,7 +256,7 @@ export async function safeSend(
       ownerAddress
     );
 
-    const signed = await signTransactionWithWallet(tx.transaction);
+    const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
     const broadcast = await tronWeb.trx.sendRawTransaction(signed);
 
     if (broadcast.result) {
@@ -505,7 +508,7 @@ export async function deployContract(
       deploymentOptions,
       tronWeb.defaultAddress.hex as string,
     );
-    const signedTx = await signTransactionWithWallet(transaction);
+    const signedTx = await signTransactionWithWallet(transaction, undefined, network);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result && result.result) {

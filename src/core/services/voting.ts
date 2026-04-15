@@ -8,6 +8,7 @@ import { safeSend } from "./contracts.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { GOVERNOR_ALPHA_ABI, WJST_ABI, POLY_ABI, TRC20_ABI } from "../abis.js";
 import { utils } from "./utils.js";
+import { fetchWithTimeout } from "./http.js";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 const JST_DECIMALS = 18;
@@ -139,7 +140,7 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
     const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/proposalList?block=${block}`;
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     const data = await response.json();
 
     if (data.code !== 0 && data.message !== "SUCCESS") {
@@ -238,7 +239,7 @@ export async function getUserVoteStatus(
     const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/voteStatus?account=${encodeURIComponent(address)}&block=${block}`;
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     const data = await response.json();
 
     const statusList: UserVoteStatus[] = (data.data?.statusList || []).map((item: any) => ({

@@ -4,8 +4,13 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI, TRC20_ABI } from "../abi
 import { fetchPriceFromAPI } from "./price.js";
 import { multicall } from "./contracts.js";
 import { MULTICALL3_BALANCE_ABI } from "./multicall-abi.js";
-
-const MANTISSA = 1e18;
+import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
+import { utils } from "./utils.js";
+import {
+  MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
+  divRound, formatScaled, formatDisplayUnits,
+  formatUsdCents, formatRatio, priceNumberToRaw, amountToUsdCents,
+} from "./bigint-math.js";
 
 export interface AccountPosition {
   jTokenAddress: string;
@@ -53,19 +58,32 @@ export interface AccountSummary {
   lastUpdated: string;
 }
 
-function formatUnits(raw: bigint, decimals: number): string {
-  const divisor = BigInt(10) ** BigInt(decimals);
-  const integer = raw / divisor;
-  const remainder = raw % divisor;
+const ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE = 8;
 
-  if (remainder === 0n) return integer.toString();
+async function runBatchedMulticall<
+  TCall extends {
+    address: string;
+    functionName: string;
+    args?: any[];
+    abi: any[];
+    allowFailure?: boolean;
+  },
+>(
+  calls: TCall[],
+  multicallAddress: string | undefined,
+  network: string,
+) {
+  if (calls.length <= ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE) {
+    return multicall({ calls, multicallAddress }, network);
+  }
 
-  const fracFull = remainder.toString().padStart(decimals, "0");
-  const intNum = Number(integer);
-  const maxFrac = intNum > 1e6 ? 2 : intNum > 1 ? 6 : decimals;
-  const frac = fracFull.slice(0, maxFrac).replace(/0+$/, "");
-
-  return frac ? `${integer}.${frac}` : integer.toString();
+  const results: Array<{ success: boolean; result?: any; error?: string }> = [];
+  for (let i = 0; i < calls.length; i += ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE) {
+    const batch = calls.slice(i, i + ACCOUNT_SUMMARY_MULTICALL_BATCH_SIZE);
+    const batchResults = await multicall({ calls: batch, multicallAddress }, network);
+    results.push(...batchResults);
+  }
+  return results;
 }
 
 // ============================================================================
@@ -82,26 +100,37 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
   const jTokens = getAllJTokens(network);
 
   // 💡 核心修复 1：获取资产并从 Hex 转换回 Base58
-  const assetsInRaw: string[] = await comptroller.methods.getAssetsIn(userAddress).call();
+  const assetsInRaw: string[] = await promiseWithTimeout(
+    comptroller.methods.getAssetsIn(userAddress).call(),
+    undefined,
+    "Timed out while loading collateral markets",
+  );
   const assetsIn = assetsInRaw.map(a => tronWeb.address.fromHex(a));
   const collateralSet = new Set(assetsIn.map((a: string) => a.toLowerCase()));
 
   // Get account liquidity
-  const [error, liquidity, shortfall] = await comptroller.methods.getAccountLiquidity(userAddress).call()
+  const [error, liquidity, shortfall] = await promiseWithTimeout(
+    comptroller.methods.getAccountLiquidity(userAddress).call(),
+    undefined,
+    "Timed out while loading account liquidity",
+  )
     .then((r: any) => [BigInt(r.err || r[0]), BigInt(r.liquidity || r[1]), BigInt(r.shortfall || r[2])]);
 
   // 💡 核心修复 2：动态获取真正的 Oracle 地址
   let realOracleAddress = addresses.priceOracle;
   try {
-    const oracleHex = await comptroller.methods.oracle().call();
+    const oracleHex = await promiseWithTimeout(
+      comptroller.methods.oracle().call() as Promise<string>,
+      undefined,
+      "Timed out while loading oracle address",
+    );
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
   } catch (e) { }
 
-  // Batch-fetch all snapshots + prices via Multicall3 (single RPC call).
-  // Falls back to sequential calls if multicall address is not configured (e.g. Nile testnet).
+  // Batch-fetch snapshots first, then fetch prices only for active positions.
+  // This keeps account-summary reads below TronGrid/multicall limits on mainnet.
   const multicallAddress = addresses.multicall3;
 
-  // Build call array: snapshot calls first, then price calls
   const snapshotCalls = jTokens.map((info) => ({
     address: info.address,
     functionName: "getAccountSnapshot",
@@ -110,82 +139,91 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     allowFailure: true,
   }));
 
-  const priceCalls = jTokens.map((info) => ({
+  const snapshotResults = await runBatchedMulticall(snapshotCalls, multicallAddress, network);
+
+  const activeMarkets: Array<{
+    info: JTokenInfo;
+    snapshot: any;
+  }> = [];
+
+  for (let i = 0; i < jTokens.length; i++) {
+    const snapshotRes = snapshotResults[i];
+    if (!snapshotRes?.success) continue;
+
+    const snapshot = snapshotRes.result;
+    const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
+    const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
+
+    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
+    activeMarkets.push({ info: jTokens[i], snapshot });
+  }
+
+  const priceCalls = activeMarkets.map(({ info }) => ({
     address: realOracleAddress,
     functionName: "getUnderlyingPrice",
     args: [info.address],
     abi: PRICE_ORACLE_ABI,
     allowFailure: true,
   }));
-
-  const allCalls = [...snapshotCalls, ...priceCalls];
-  const results = await multicall({ calls: allCalls, multicallAddress }, network);
-
-  const snapshotResults = results.slice(0, jTokens.length);
-  const priceResults = results.slice(jTokens.length);
+  const priceResults = priceCalls.length > 0
+    ? await runBatchedMulticall(priceCalls, multicallAddress, network)
+    : [];
 
   // Process results into positions
   const positions: AccountPosition[] = [];
-  for (let i = 0; i < jTokens.length; i++) {
-    const info = jTokens[i];
-    const snapshotRes = snapshotResults[i];
-
-    if (!snapshotRes.success) continue;
-
-    const snapshot = snapshotRes.result;
+  for (let i = 0; i < activeMarkets.length; i++) {
+    const { info, snapshot } = activeMarkets[i];
     const jTokenBalance = BigInt(snapshot[1] ?? snapshot.jTokenBalance ?? 0);
     const borrowBalance = BigInt(snapshot[2] ?? snapshot.borrowBalance ?? 0);
     const exchangeRateMantissa = BigInt(snapshot[3] ?? snapshot.exchangeRateMantissa ?? 0);
 
-    if (jTokenBalance === 0n && borrowBalance === 0n) continue;
-
     const supplyBalanceRaw = jTokenBalance * exchangeRateMantissa / BigInt(1e18);
 
     // Get price: try multicall result first, then API fallback
-    let priceUSD = 0;
+    let priceRaw = 0n;
     const priceRes = priceResults[i];
     if (priceRes.success) {
-      const priceRaw = BigInt(priceRes.result?.toString() ?? "0");
-      if (priceRaw > 0n && network === "mainnet") {
-        priceUSD = Number(priceRaw) / (10 ** (36 - info.underlyingDecimals));
+      const oraclePriceRaw = BigInt(priceRes.result?.toString() ?? "0");
+      if (oraclePriceRaw > 0n && network === "mainnet") {
+        priceRaw = oraclePriceRaw;
       }
     }
-    if (priceUSD === 0) {
-      priceUSD = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
+    if (priceRaw === 0n) {
+      const fallbackPrice = await fetchPriceFromAPI(info.underlyingSymbol, info.underlyingDecimals, network) ?? 0;
+      priceRaw = priceNumberToRaw(fallbackPrice, info.underlyingDecimals);
     }
 
-    const supplyBalanceHuman = Number(supplyBalanceRaw) / 10 ** info.underlyingDecimals;
-    const borrowBalanceHuman = Number(borrowBalance) / 10 ** info.underlyingDecimals;
+    const supplyValueCents = amountToUsdCents(supplyBalanceRaw, priceRaw);
+    const borrowValueCents = amountToUsdCents(borrowBalance, priceRaw);
 
     positions.push({
       jTokenAddress: info.address,
       symbol: info.symbol,
       underlyingSymbol: info.underlyingSymbol,
-      jTokenBalance: formatUnits(jTokenBalance, info.decimals),
-      supplyBalance: formatUnits(supplyBalanceRaw, info.underlyingDecimals),
-      borrowBalance: formatUnits(borrowBalance, info.underlyingDecimals),
+      jTokenBalance: formatDisplayUnits(jTokenBalance, info.decimals),
+      supplyBalance: formatDisplayUnits(supplyBalanceRaw, info.underlyingDecimals),
+      borrowBalance: formatDisplayUnits(borrowBalance, info.underlyingDecimals),
       isCollateral: collateralSet.has(info.address.toLowerCase()),
-      exchangeRate: (Number(exchangeRateMantissa) / 1e18).toFixed(10),
-      underlyingPriceUSD: priceUSD.toFixed(6),
-      supplyValueUSD: (supplyBalanceHuman * priceUSD).toFixed(2),
-      borrowValueUSD: (borrowBalanceHuman * priceUSD).toFixed(2),
+      exchangeRate: formatScaled(exchangeRateMantissa, 18, 10),
+      underlyingPriceUSD: formatScaled(priceRaw, USD_PRICE_SCALE - info.underlyingDecimals, 6),
+      supplyValueUSD: formatUsdCents(supplyValueCents),
+      borrowValueUSD: formatUsdCents(borrowValueCents),
     });
   }
 
-  const totalSupplyUSD = positions.reduce((sum, p) => sum + parseFloat(p.supplyValueUSD), 0);
-  const totalBorrowUSD = positions.reduce((sum, p) => sum + parseFloat(p.borrowValueUSD), 0);
+  const totalSupplyCents = positions.reduce((sum, p) => sum + utils.parseUnits(p.supplyValueUSD, 2), 0n);
+  const totalBorrowCents = positions.reduce((sum, p) => sum + utils.parseUnits(p.borrowValueUSD, 2), 0n);
 
-  const liquidityUSD = Number(liquidity) / MANTISSA;
-  const shortfallUSD = Number(shortfall) / MANTISSA;
+  const liquidityCents = divRound(liquidity * 100n, MANTISSA_18);
+  const shortfallCents = divRound(shortfall * 100n, MANTISSA_18);
 
   let healthFactor = "∞";
-  if (totalBorrowUSD > 0) {
-    if (shortfallUSD > 0) {
-      // 出现资不抵债缺口：(总借款 - 缺口) / 总借款
-      healthFactor = ((totalBorrowUSD - shortfallUSD) / totalBorrowUSD).toFixed(4);
+  if (totalBorrowCents > 0n) {
+    if (shortfallCents > 0n) {
+      const adjustedBorrowCents = totalBorrowCents > shortfallCents ? totalBorrowCents - shortfallCents : 0n;
+      healthFactor = formatRatio(adjustedBorrowCents, totalBorrowCents, 4);
     } else {
-      // 安全状态：(可用流动性 + 总借款) / 总借款
-      healthFactor = ((liquidityUSD + totalBorrowUSD) / totalBorrowUSD).toFixed(4);
+      healthFactor = formatRatio(liquidityCents + totalBorrowCents, totalBorrowCents, 4);
     }
   }
 
@@ -197,10 +235,10 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     address: userAddress,
     network,
     positions,
-    totalSupplyUSD: totalSupplyUSD.toFixed(2),
-    totalBorrowUSD: totalBorrowUSD.toFixed(2),
-    liquidityUSD: liquidityUSD.toFixed(2),
-    shortfallUSD: shortfallUSD.toFixed(2),
+    totalSupplyUSD: formatUsdCents(totalSupplyCents),
+    totalBorrowUSD: formatUsdCents(totalBorrowCents),
+    liquidityUSD: formatUsdCents(liquidityCents),
+    shortfallUSD: formatUsdCents(shortfallCents),
     healthFactor,
     collateralMarkets: assetsIn, // 返回真实的 base58 抵押池地址列表
     blockNumber,
@@ -223,9 +261,13 @@ export async function checkAllowance(
   if (!info.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
 
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
-  const raw = await token.methods.allowance(userAddress, info.address).call();
+  const raw = await promiseWithTimeout(
+    token.methods.allowance(userAddress, info.address).call() as Promise<string>,
+    undefined,
+    "Timed out while loading token allowance",
+  );
   const allowance = BigInt(raw);
-  const formatted = formatUnits(allowance, info.underlyingDecimals);
+  const formatted = formatDisplayUnits(allowance, info.underlyingDecimals);
 
   return {
     allowance: formatted,
@@ -244,8 +286,12 @@ export async function checkAllowance(
  */
 export async function getAccountTRXBalance(address: string, network = "mainnet"): Promise<string> {
   const tronWeb = getTronWeb(network);
-  const balance = await tronWeb.trx.getBalance(address);
-  return (Number(balance) / 1e6).toFixed(6);
+  const balance = await promiseWithTimeout(
+    tronWeb.trx.getBalance(address),
+    undefined,
+    "Timed out while loading TRX balance",
+  );
+  return formatDisplayUnits(BigInt(balance), 6);
 }
 
 /**
@@ -261,7 +307,7 @@ export async function getTokenBalance(address: string, tokenAddress: string, net
   ]);
   const dec = Number(decimals);
   return {
-    balance: formatUnits(BigInt(raw), dec),
+    balance: formatDisplayUnits(BigInt(raw), dec),
     symbol: String(symbol),
     decimals: dec,
   };
@@ -296,7 +342,11 @@ export async function getWalletTokensBalance(
     try {
       const contract = tronWeb.contract(MULTICALL3_BALANCE_ABI, multicall3Address);
       const tokenAddresses = tokens.map((t) => t.address);
-      const result = await (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call();
+      const result = await promiseWithTimeout<any>(
+        (contract as any).walletTokensBalance(tokenAddresses, walletAddress).call(),
+        undefined,
+        "Timed out while loading wallet token balances",
+      );
 
       // Result is [balances: uint256[], errors: bool[]]
       const rawBalances: bigint[] = Array.isArray(result[0]) ? result[0] : result.balances;
@@ -305,7 +355,7 @@ export async function getWalletTokensBalance(
       return tokens.map((token, i) => ({
         symbol: token.symbol,
         tokenAddress: token.address,
-        balance: errors[i] ? "0" : formatUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
+        balance: errors[i] ? "0" : formatDisplayUnits(BigInt(rawBalances[i] ?? 0), token.decimals),
         decimals: token.decimals,
         error: errors[i] ? true : undefined,
       }));
@@ -328,7 +378,7 @@ export async function getWalletTokensBalance(
     return {
       symbol: token.symbol,
       tokenAddress: token.address,
-      balance: formatUnits(raw, token.decimals),
+      balance: formatDisplayUnits(raw, token.decimals),
       decimals: token.decimals,
       error: r.status === "rejected" || undefined,
     };
@@ -343,7 +393,7 @@ export async function getAccountDataFromAPI(address: string, network = "mainnet"
   const url = `${host}/justlend/account?addr=${encodeURIComponent(address)}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }

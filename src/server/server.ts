@@ -1,16 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerJustLendResources } from "../core/resources.js";
-import { registerJustLendTools } from "../core/tools.js";
+import { registerJustLendTools } from "../core/tools/index.js";
 import { registerJustLendPrompts } from "../core/prompts.js";
 import { getSupportedNetworks } from "../core/chains.js";
 import { checkWalletStatus } from "../core/services/wallet.js";
+import { SERVER_VERSION } from "./version.js";
 
 async function startServer() {
   try {
     const server = new McpServer(
       {
         name: "mcp-server-justlend",
-        version: "1.0.3",
+        version: SERVER_VERSION,
       },
       {
         instructions:
@@ -34,7 +35,7 @@ async function startServer() {
     registerJustLendTools(server);
     registerJustLendPrompts(server);
 
-    console.error("@justlend/mcp-server-justlend v1.0.3 initialized");
+    console.error(`@justlend/mcp-server-justlend v${SERVER_VERSION} initialized`);
     console.error(`Supported networks: ${getSupportedNetworks().join(", ")}`);
 
     // Do not auto-create an agent wallet on startup.

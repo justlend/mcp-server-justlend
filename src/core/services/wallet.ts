@@ -12,8 +12,8 @@ import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
 import { getNetworkConfig } from "../chains.js";
-import { getWalletMode } from "./global.js";
-import { TronWalletSigner } from "../browser-signer/index.js";
+import { getGlobalNetwork, getSessionState, getWalletMode, type SessionState } from "./global.js";
+import { TronWalletSigner } from "../browser-signer.js";
 
 export interface ConfiguredWallet {
   address: string;
@@ -39,14 +39,21 @@ export interface WalletStatus {
 let _walletPromise: Promise<Wallet> | null = null;
 let _addressPromise: Promise<string> | null = null;
 
-// Browser wallet signer singleton (lazy-initialized)
-let _browserSigner: TronWalletSigner | null = null;
-
 export function getBrowserSigner(): TronWalletSigner {
-  if (!_browserSigner) {
-    _browserSigner = new TronWalletSigner();
+  const session = getSessionState();
+  if (session.browserSigner instanceof TronWalletSigner) {
+    return session.browserSigner;
   }
-  return _browserSigner;
+  const signer = new TronWalletSigner();
+  session.browserSigner = signer;
+  return signer;
+}
+
+export async function shutdownBrowserSignerForSession(session: SessionState): Promise<void> {
+  if (!(session.browserSigner instanceof TronWalletSigner)) return;
+  const signer = session.browserSigner;
+  session.browserSigner = undefined;
+  await signer.shutdown();
 }
 
 /** Resolve the agent-wallet config directory. */
@@ -167,13 +174,6 @@ export async function importWallet(
     kvStore.initMaster();
   }
 
-  // Save the private key encrypted
-  const keyBytes = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
-  if (keyBytes.length !== 32) {
-    throw new Error("Invalid private key: must be 32 bytes (64 hex characters)");
-  }
-  kvStore.saveSecret(walletId, keyBytes);
-
   // Make wallet ID unique if it already exists
   let finalId = walletId;
   const existing = provider.listWallets().map(([id]) => id);
@@ -183,9 +183,22 @@ export async function importWallet(
     finalId = `${walletId}-${counter}`;
   }
 
+  // Save the private key encrypted under the final unique wallet ID so the
+  // wallet record and secret reference cannot drift apart.
+  const keyBytes = Buffer.from(privateKeyHex.replace(/^0x/, ""), "hex");
+  if (keyBytes.length !== 32) {
+    keyBytes.fill(0);
+    throw new Error("Invalid private key: must be 32 bytes (64 hex characters)");
+  }
+  try {
+    kvStore.saveSecret(finalId, keyBytes);
+  } finally {
+    keyBytes.fill(0);
+  }
+
   provider.addWallet(finalId, {
     type: "local_secure",
-    params: { secret_ref: walletId },
+    params: { secret_ref: finalId },
   } as WalletConfig, { setActiveIfMissing: true });
 
   // If this is the first wallet or user wants to activate it
@@ -293,10 +306,14 @@ export async function getSigningClient(network = "mainnet"): Promise<TronWeb> {
  * Sign a transaction and return the signed transaction object ready for broadcasting.
  * Routes to browser wallet or agent-wallet based on the current wallet mode.
  */
-export async function signTransactionWithWallet(unsignedTx: any, description?: string): Promise<any> {
+export async function signTransactionWithWallet(
+  unsignedTx: any,
+  description?: string,
+  network = getGlobalNetwork(),
+): Promise<any> {
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
-    const { signedTransaction } = await signer.signTransaction(unsignedTx, description);
+    const { signedTransaction } = await signer.signTransaction(unsignedTx, description, network);
     // Ensure the signature array is on the original tx structure
     if (signedTransaction && signedTransaction.signature) {
       return { ...unsignedTx, signature: signedTransaction.signature };
@@ -334,7 +351,10 @@ export async function signTransactionWithWallet(unsignedTx: any, description?: s
 export async function signMessage(message: string): Promise<string> {
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
-    const { signature } = await signer.signMessage({ message });
+    const { signature } = await signer.signMessage({
+      message,
+      network: getGlobalNetwork(),
+    });
     return signature;
   }
 
@@ -344,13 +364,23 @@ export async function signMessage(message: string): Promise<string> {
 }
 
 /**
- * Sign typed data (EIP-712 / TRON-712) using the agent-wallet.
+ * Sign typed data (EIP-712 / TRON-712).
+ * Routes to browser wallet (via tronlink-signer) or agent-wallet based on mode.
  */
 export async function signTypedData(
   domain: object,
   types: object,
   value: object,
 ): Promise<string> {
+  if (getWalletMode() === "browser") {
+    const signer = getBrowserSigner();
+    const { signature } = await signer.signTypedData(
+      { domain, types, message: value },
+      getGlobalNetwork(),
+    );
+    return signature;
+  }
+
   const wallet = await getAgentWallet();
   // agent-wallet Wallet supports signTypedData for EIP-712
   const w = wallet as any;

@@ -31,9 +31,15 @@ export async function transferTRX(
     );
   }
 
+  if (BigInt(amountSun) > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(
+      `TRX transfer amount exceeds the safe SDK limit. Amount in Sun must be <= ${Number.MAX_SAFE_INTEGER}.`,
+    );
+  }
+
   // Build unsigned transaction, sign with agent-wallet, then broadcast
   const unsignedTx = await tronWeb.transactionBuilder.sendTrx(to, Number(amountSun), walletAddress);
-  const signedTx = await signTransactionWithWallet(unsignedTx);
+  const signedTx = await signTransactionWithWallet(unsignedTx, undefined, network);
   const broadcast = await tronWeb.trx.sendRawTransaction(signedTx);
 
   if ((broadcast as any).result) {
@@ -66,9 +72,8 @@ export async function transferTRC20(
     if (balance < BigInt(amount)) {
       const symbol = await contract.methods.symbol().call();
       const decimals = Number(await contract.methods.decimals().call());
-      const divisor = BigInt(10) ** BigInt(decimals);
       throw new Error(
-        `Insufficient ${symbol} balance. Have ${(Number(balance) / Number(divisor)).toString()}, need ${(Number(BigInt(amount)) / Number(divisor)).toString()}`,
+        `Insufficient ${symbol} balance. Have ${utils.formatUnits(balance, decimals)}, need ${utils.formatUnits(BigInt(amount), decimals)}`,
       );
     }
 
@@ -83,8 +88,7 @@ export async function transferTRC20(
     const decimals = await contract.methods.decimals().call();
 
     const decimalsNum = Number(decimals);
-    const divisor = BigInt(10) ** BigInt(decimalsNum);
-    const formatted = (Number(BigInt(amount)) / Number(divisor)).toString();
+    const formatted = utils.formatUnits(BigInt(amount), decimalsNum);
 
     return {
       txHash: txId,

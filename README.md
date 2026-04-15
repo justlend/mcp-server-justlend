@@ -13,7 +13,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 ## Overview
 
-[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON, based on the Compound V2 architecture. This MCP server wraps the full protocol functionality into tools and guided prompts that AI agents (Claude Desktop, Cursor, etc.) can use.
+[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON, based on the Compound V2 architecture. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
 **📌 Current Version: JustLend V1**
 
@@ -83,14 +83,14 @@ npm install
 
 ## Quick Setup
 
-For a guided setup experience (build, configure, generate `.mcp.json`):
+For a guided setup experience (build, configure, generate `.mcp.json`, print Codex setup command):
 
 ```bash
 bash scripts/setup-mcp-test.sh
-# Add --claude-desktop to also output Claude Desktop config
+# Add --claude-desktop to also print Claude Desktop JSON
 ```
 
-The script checks Node.js 20+, installs dependencies, builds the project, and generates the MCP client configuration.
+The script checks Node.js 20+, installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
 
 ## Configuration
 
@@ -128,9 +128,14 @@ npx agent-wallet activate <wallet-id>
 | `connect_browser_wallet` | Connect TronLink / browser wallet for signing |
 | `set_wallet_mode` | Switch between `browser` and `agent` signing |
 | `get_wallet_mode` | Show current signing mode and addresses |
-| `import_wallet` | Import an existing private key (stored encrypted) |
 | `list_wallets` | List all wallets with IDs, types, addresses |
 | `set_active_wallet` | Switch active wallet by ID |
+
+Importing an existing private key is intentionally not exposed as an MCP tool because MCP arguments can be logged by clients and transports. Use the CLI instead:
+
+```bash
+npx agent-wallet import
+```
 
 ```bash
 # (Optional) For automated/CI setups, set the wallet password
@@ -142,6 +147,18 @@ export TRONGRID_API_KEY="your_trongrid_api_key"
 
 ### Client Configuration
 
+Build the local server first:
+
+```bash
+npm run build
+```
+
+All local client examples below use the built stdio entrypoint:
+
+```bash
+node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
 #### Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -149,10 +166,50 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "mcp-server-justlend": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "@justlend/mcp-server-justlend"],
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
+      "env": {
+        "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
+      }
+    }
+  }
+}
+```
+
+#### Codex
+
+Recommended: register the local stdio server with `codex mcp add`:
+
+```bash
+codex mcp add justlend --env TRONGRID_API_KEY=your_trongrid_api_key -- \
+  node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
+If you do not want to set a TronGrid key yet, omit the `--env` flag:
+
+```bash
+codex mcp add justlend -- node /absolute/path/to/mcp-server-justlend/build/index.js
+```
+
+Useful maintenance commands:
+
+```bash
+codex mcp list
+codex mcp get justlend
+codex mcp remove justlend
+```
+
+#### Claude Code
+
+Add to `.mcp.json` in the project root:
+
+```json
+{
+  "mcpServers": {
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
       "env": {
         "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
@@ -168,10 +225,9 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "mcp-server-justlend": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "@justlend/mcp-server-justlend"],
+    "justlend": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server-justlend/build/index.js"],
       "env": {
         "TRONGRID_API_KEY": "SET_VIA_SYSTEM_ENV"
       }
@@ -190,15 +246,17 @@ The server supports two transport modes. Both share the same Tools, Resources, a
 npm start
 ```
 
-The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Cursor**, and **Claude Code**, which launch the server as a child process. Single client, no extra configuration needed.
+The server communicates via stdin/stdout. This is the standard mode for local MCP clients like **Claude Desktop**, **Codex**, **Claude Code**, and **Cursor**, which launch the server as a child process.
 
 ### HTTP/SSE Mode (Remote / Multi-Client)
 
 ```bash
-npm run start:http
+MCP_API_KEY=my-secret-key npm run start:http
 ```
 
 The server starts an Express HTTP service with Server-Sent Events (SSE) transport. Suitable for **web applications**, **remote clients**, or scenarios where **multiple clients** need to connect concurrently.
+
+HTTP mode is fail-closed: `MCP_API_KEY` is required, the server binds to `127.0.0.1` by default, and CORS is disabled unless you explicitly set `MCP_CORS_ORIGIN`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -211,8 +269,9 @@ The server starts an Express HTTP service with Server-Sent Events (SSE) transpor
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3001` | HTTP listen port |
-| `MCP_API_KEY` | _(none)_ | Bearer token for authentication. If not set, the server runs **without auth** (not recommended for production) |
-| `MCP_CORS_ORIGIN` | `*` | Allowed CORS origins |
+| `MCP_HOST` | `127.0.0.1` | HTTP listen host. Keep the default unless you intentionally want remote exposure. |
+| `MCP_API_KEY` | _(required)_ | Bearer token for authentication. HTTP mode refuses to start without it. |
+| `MCP_CORS_ORIGIN` | _(disabled)_ | Allowed CORS origin. If unset, no CORS headers are sent. |
 | `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
 | `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
 
@@ -236,7 +295,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
-### Tools (60 total)
+### Tools (59 total)
 
 #### Wallet & Network
 | Tool | Description | Write? |
@@ -247,7 +306,6 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `get_wallet_mode` | Show current signing mode and addresses | No |
 | `list_wallets` | List all wallets (IDs, types, addresses) | No |
 | `set_active_wallet` | Switch active wallet by wallet ID | No |
-| `import_wallet` | Import existing private key (stored encrypted) | No |
 | `get_supported_networks` | List available networks | No |
 | `get_supported_markets` | List all jToken markets with addresses | No |
 | `set_network` | Set global default network (mainnet, nile) | Yes |
@@ -346,6 +404,8 @@ npm run dev:http     # HTTP/SSE with auto-reload
 | `compare_markets` | Find best supply/borrow opportunities |
 | `rent_energy` | Guided energy rental with price estimation and balance checks |
 | `stake_trx` | Guided TRX staking to sTRX with APY info and verification |
+| `query_proposals` | Browse and query governance proposals, check voting requirements |
+| `cast_vote` | Guided governance voting with vote verification |
 
 ## Architecture
 
@@ -355,18 +415,18 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + JustLend contract addresses
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 ABIs
-│   │   ├── tools.ts           # MCP tool registrations (60 tools)
+│   │   ├── tools/             # MCP tool registrations (59 tools)
+│   │   │   ├── index.ts           # Barrel export
+│   │   │   ├── wallet-tools.ts    # Wallet, network, transfer tools
+│   │   │   ├── market-tools.ts    # Market data, balance, mining tools
+│   │   │   ├── lending-tools.ts   # Supply, borrow, repay, collateral tools
+│   │   │   ├── voting-tools.ts    # Governance proposal & voting tools
+│   │   │   ├── energy-tools.ts    # Energy rental tools
+│   │   │   ├── staking-tools.ts   # sTRX staking tools
+│   │   │   └── shared.ts         # Shared helpers
 │   │   ├── prompts.ts         # AI-guided workflow prompts
 │   │   ├── resources.ts       # Static protocol info resource
-│   │   ├── browser-signer/    # Browser wallet signing via localhost HTTP bridge
-│   │   │   ├── types.ts           # Request/response type definitions
-│   │   │   ├── pending-store.ts   # UUID-Promise queue for pending sign requests
-│   │   │   ├── http-server.ts     # Localhost HTTP server (node:http)
-│   │   │   ├── browser.ts         # Open browser + URL construction
-│   │   │   ├── tron-wallet-signer.ts # Core orchestration class
-│   │   │   ├── web-ui.ts          # Inlined HTML (generated from index.html)
-│   │   │   ├── index.html         # Browser SPA (wallet discovery + approval UI)
-│   │   │   └── index.ts           # Barrel export
+│   │   ├── browser-signer.ts  # tronlink-signer SDK adapter (TronWalletSigner wrapper)
 │   │   └── services/
 │   │       ├── # — JustLend-specific —
 │   │       ├── global.ts     # Global state: network, wallet mode
@@ -398,8 +458,7 @@ mcp-server-justlend/
 │   └── index.ts               # Stdio entry point
 ├── bin/cli.js                 # CLI entry for npx
 ├── scripts/
-│   ├── setup-mcp-test.sh      # Quick setup: build + generate .mcp.json config
-│   └── gen-web-ui.ts          # Build: index.html → web-ui.ts
+│   └── setup-mcp-test.sh      # Quick setup: build + generate .mcp.json config
 └── tests/
     └── core/
         ├── chains.test.ts
@@ -492,7 +551,7 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 → AI calls `get_user_vote_status` to find withdrawable proposals → calls `withdraw_votes_from_proposal` for each
 
 **"How much does it cost to rent 300,000 energy for 7 days?"**
-→ AI calls `calculate_energy_rental_price` with energyAmount=300000, durationDays=7, returns cost breakdown
+→ AI calls `calculate_energy_rental_price` with energyAmount=300000, durationHours=168, returns cost breakdown
 
 **"Rent 500,000 energy to address TXxx... for 14 days"**
 → AI uses `rent_energy` prompt: checks balance → checks rental status → calculates price → rents energy → verifies

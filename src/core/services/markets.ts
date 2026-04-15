@@ -7,6 +7,8 @@ import { getJustLendAddresses, getAllJTokens, getApiHost, type JTokenInfo } from
 import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
+import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
+import { formatDisplayUnits } from "./bigint-math.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MARKETS_TTL_MS = 60_000; // 60s
@@ -39,14 +41,6 @@ function rateToAPY(ratePerBlock: bigint): number {
   return Math.round(apy * 100) / 100;
 }
 
-function formatUnits(raw: bigint, decimals: number): string {
-  const divisor = 10 ** decimals;
-  const value = Number(raw) / divisor;
-  if (value > 1e6) return value.toFixed(2);
-  if (value > 1) return value.toFixed(6);
-  return value.toFixed(decimals);
-}
-
 
 /**
  * Get full market data for a single jToken market (V1).
@@ -71,7 +65,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     mintPaused,
     borrowPaused,
     oracleAddressHex
-  ] = await Promise.all([
+  ] = await promiseWithTimeout(Promise.all([
     jToken.methods.supplyRatePerBlock().call(),
     jToken.methods.borrowRatePerBlock().call(),
     jToken.methods.totalSupply().call(),
@@ -84,7 +78,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     comptroller.methods.mintGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.borrowGuardianPaused(jTokenInfo.address).call(),
     comptroller.methods.oracle().call(),
-  ]);
+  ]), undefined, `Timed out while loading market data for ${jTokenInfo.symbol}`);
 
   let underlyingPriceRaw = 0n;
   let priceUSD = 0;
@@ -92,7 +86,11 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
   try {
     const realOracleAddress = tronWeb.address.fromHex(oracleAddressHex);
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, realOracleAddress);
-    underlyingPriceRaw = BigInt(await oracle.methods.getUnderlyingPrice(jTokenInfo.address).call());
+    underlyingPriceRaw = BigInt(await promiseWithTimeout(
+      oracle.methods.getUnderlyingPrice(jTokenInfo.address).call(),
+      undefined,
+      `Timed out while loading oracle price for ${jTokenInfo.symbol}`,
+    ));
   } catch (err: any) {
     // 链上报错静默，交由下游 API 兜底
   }
@@ -134,10 +132,10 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     underlyingAddress: jTokenInfo.underlying,
     supplyAPY,
     borrowAPY,
-    totalSupply: formatUnits(totalSupplyBig, jTokenInfo.decimals),
-    totalBorrows: formatUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
-    totalReserves: formatUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
-    availableLiquidity: formatUnits(cashBig, jTokenInfo.underlyingDecimals),
+    totalSupply: formatDisplayUnits(totalSupplyBig, jTokenInfo.decimals),
+    totalBorrows: formatDisplayUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
+    totalReserves: formatDisplayUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
+    availableLiquidity: formatDisplayUnits(cashBig, jTokenInfo.underlyingDecimals),
     exchangeRate: exchangeRateNum.toFixed(10),
     collateralFactor: Math.round(collateralFactor * 100) / 100,
     reserveFactor: Math.round(reserveFactor * 100) / 100,
@@ -154,7 +152,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
  */
 async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
   const host = getApiHost(network);
-  const resp = await fetch(`${host}/justlend/markets`);
+  const resp = await fetchWithTimeout(`${host}/justlend/markets`);
   if (!resp.ok) throw new Error(`Markets API failed: ${resp.status}`);
   const json = await resp.json();
   if (json.code !== 0 || !json.data?.jtokenList) throw new Error("Invalid API response");
@@ -269,7 +267,7 @@ export async function getMarketDataFromAPI(network = "mainnet"): Promise<any> {
   const url = `${host}/justlend/markets`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
@@ -292,7 +290,7 @@ async function getJTokenDetailFromAPI(jtokenAddr: string, network = "mainnet"): 
   const host = getApiHost(network);
   const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
     const data = await response.json();
     return data.code === 0 ? data.data : null;
@@ -341,7 +339,7 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
   const host = getApiHost(network);
 
   // Fetch markets list
-  const marketsResp = await fetch(`${host}/justlend/markets`);
+  const marketsResp = await fetchWithTimeout(`${host}/justlend/markets`);
   if (!marketsResp.ok) throw new Error(`Markets API failed: ${marketsResp.status}`);
   const marketsData = await marketsResp.json();
   if (marketsData.code !== 0) throw new Error(`Markets API error: ${marketsData.code}`);
@@ -450,7 +448,7 @@ export async function getMarketDashboardFromAPI(network = "mainnet"): Promise<an
   const url = `${host}/justlend/markets/dashboard`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
@@ -477,7 +475,7 @@ export async function getJTokenDetailsFromAPI(jtokenAddr: string, network = "mai
   const url = `${host}/justlend/markets/jtokenDetails?jtokenAddr=${encodeURIComponent(jtokenAddr)}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }

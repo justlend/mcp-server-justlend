@@ -22,7 +22,7 @@ describe("getChainId", () => {
 
   it("returns the Nile testnet chain ID", async () => {
     const id = await getChainId("nile");
-    expect(id).toBe(20191029);
+    expect(id).toBe(3448148188);
   });
 
   it("returns 0 for unknown networks", async () => {

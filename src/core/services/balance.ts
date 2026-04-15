@@ -35,15 +35,15 @@ export async function getTRC20Balance(
     const symbol = await contract.methods.symbol().call();
 
     const balanceBigInt = BigInt(balance.toString());
-    const divisor = BigInt(10) ** BigInt(decimals.toString());
-    const formatted = (Number(balanceBigInt) / Number(divisor)).toString();
+    const decimalsNum = Number(decimals);
+    const formatted = utils.formatUnits(balanceBigInt, decimalsNum);
 
     return {
       raw: balanceBigInt,
       formatted,
       token: {
         symbol: String(symbol),
-        decimals: Number(decimals),
+        decimals: decimalsNum,
         address: tokenAddress,
       },
     };

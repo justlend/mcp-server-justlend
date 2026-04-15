@@ -6,6 +6,7 @@
 import { describe, it, expect } from "vitest";
 import {
   autoInitWallet,
+  getBrowserSigner,
   importWallet,
   getAgentWallet,
   getWalletAddress,
@@ -18,6 +19,7 @@ import {
   listWallets,
   setActiveWallet,
 } from "../../../src/core/services/wallet.js";
+import { createSessionState, runWithSessionState } from "../../../src/core/services/global.js";
 
 describe("wallet module exports", () => {
   it("autoInitWallet is a function", () => {
@@ -68,5 +70,19 @@ describe("wallet module exports", () => {
 describe("getWalletAddressFromKey alias", () => {
   it("should be the same function as getWalletAddress", () => {
     expect(getWalletAddressFromKey).toBe(getWalletAddress);
+  });
+});
+
+describe("browser signer session isolation", () => {
+  it("returns a distinct browser signer per session context", () => {
+    const sessionA = createSessionState("wallet-session-a");
+    const sessionB = createSessionState("wallet-session-b");
+
+    const signerA1 = runWithSessionState(sessionA, () => getBrowserSigner());
+    const signerA2 = runWithSessionState(sessionA, () => getBrowserSigner());
+    const signerB = runWithSessionState(sessionB, () => getBrowserSigner());
+
+    expect(signerA1).toBe(signerA2);
+    expect(signerA1).not.toBe(signerB);
   });
 });

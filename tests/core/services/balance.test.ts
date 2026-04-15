@@ -8,6 +8,7 @@ import {
   getTRXBalance,
   getTRC20Balance,
 } from "../../../src/core/services/balance.js";
+import { utils } from "../../../src/core/services/utils.js";
 import { skipOn429 } from "../../helpers.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -33,9 +34,7 @@ describe("getTRXBalance (Mainnet)", () => {
   it("wei and ether should be consistent", skipOn429(async () => {
     await delay(1000);
     const result = await getTRXBalance(TEST_ADDRESS, "mainnet");
-    // ether = wei / 1e6
-    const expectedEther = (Number(result.wei) / 1e6).toString();
-    expect(parseFloat(result.ether)).toBeCloseTo(parseFloat(expectedEther), 3);
+    expect(result.ether).toBe(utils.formatUnits(result.wei, 6));
   }), 20_000);
 
   it("should handle an address with zero balance", skipOn429(async () => {

@@ -16,6 +16,7 @@
 import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { getJTokenDetailsFromAPI } from "./markets.js";
+import { fetchWithTimeout } from "./http.js";
 
 // Merkle Distributor ABI (simplified)
 const MERKLE_DISTRIBUTOR_ABI = [
@@ -207,7 +208,7 @@ export async function getMiningRewardsFromAPI(address: string, network = "mainne
   const url = `${host}/justlend/account?addr=${encodeURIComponent(address)}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }

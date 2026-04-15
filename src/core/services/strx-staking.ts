@@ -17,11 +17,11 @@ import { STRX_ABI } from "../abis.js";
 import { checkResourceSufficiency } from "./lending.js";
 import { safeSend } from "./contracts.js";
 import { cacheGet, cacheSet } from "./cache.js";
+import { fetchWithTimeout } from "./http.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
-const FETCH_TIMEOUT_MS = 15_000;
 const STRX_DASHBOARD_TTL_MS = 60_000; // 60s
 
 const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
@@ -31,10 +31,6 @@ function validateTronAddress(address: string, label = "address"): string {
     throw new Error(`Invalid TRON ${label} format`);
   }
   return address;
-}
-
-function fetchWithTimeout(url: string): Promise<Response> {
-  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
 // ============================================================================
@@ -263,18 +259,16 @@ export async function unstakeStrx(
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const addrs = getJustLendAddresses(network);
 
-  // Check sTRX balance
+  // Check sTRX balance (compare in BigInt to avoid precision loss for large holdings)
   const strxBalance = await getStrxBalance(walletAddress, network);
-  const balanceNum = Number(strxBalance.raw) / TOKEN_PRECISION;
+  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
+  const amountWei = BigInt(amountWeiStr);
 
-  if (tronWeb.toBigNumber(balanceNum).lt(amountStrx)) {
+  if (strxBalance.raw < amountWei) {
     throw new Error(
       `Insufficient sTRX balance for unstaking. Need ${amountStrx} sTRX`,
     );
   }
-
-  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
-  const amountWei = BigInt(amountWeiStr);
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
   const { txID: txId } = await safeSend({

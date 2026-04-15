@@ -1,5 +1,6 @@
 .history
 .vscode
+.claude/skills
 build
 # Logs
 logs
@@ -111,10 +112,10 @@ dist
 
 build
 **/.DS_Store
+CLAUDE.md
 
 # Generated docs
 *.docx
-scripts/generate-security-doc.mjs
 /test-results/
 /blob-report/
 /tests/**-snapshots/**-darwin.png

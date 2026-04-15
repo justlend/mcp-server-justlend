@@ -131,3 +131,15 @@ describe("utils.formatNumber", () => {
     expect(typeof result).toBe("string");
   });
 });
+
+describe("utils.formatUnits", () => {
+  it("formats large values without Number precision loss", () => {
+    expect(utils.formatUnits(900719925474099312345678901234n, 6)).toBe("900719925474099312345678.901234");
+  });
+});
+
+describe("utils.parseUnits", () => {
+  it("parses decimal strings into bigint precisely", () => {
+    expect(utils.parseUnits("900719925474099312345678.901234", 6)).toBe(900719925474099312345678901234n);
+  });
+});

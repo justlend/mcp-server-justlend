@@ -1,6 +1,6 @@
 {
   "name": "@justlend/mcp-server-justlend",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "MCP server for JustLend V1 DAO on TRON blockchain. Supports supply, borrow, repay, withdraw, market data, mining rewards (USDD/WBTC), API integration, general TRON chain utilities, and AI-guided DeFi prompts.",
   "type": "module",
   "module": "src/index.ts",
@@ -16,33 +16,33 @@
   ],
   "scripts": {
     "start": "tsx src/index.ts",
-    "gen:web-ui": "tsx scripts/gen-web-ui.ts",
-    "prebuild": "npm run gen:web-ui",
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start:http": "tsx src/server/http-server.ts",
     "dev:http": "tsx watch src/server/http-server.ts",
     "test": "vitest run",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@bankofai/agent-wallet": "^2.3.0",
-    "@modelcontextprotocol/sdk": "^1.22.0",
-    "cors": "^2.8.6",
-    "express": "^4.21.2",
-    "open": "^11.0.0",
-    "tronweb": "^6.1.1",
-    "zod": "^3.24.3"
+    "@bankofai/agent-wallet": "2.3.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "cors": "2.8.6",
+    "express": "4.22.1",
+    "open": "11.0.0",
+    "tronlink-signer": "0.1.1",
+    "tronweb": "6.2.2",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.19.7",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.15",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.0"
+  },
+  "overrides": {
+    "axios": "1.15.0"
   },
   "engines": {
     "node": ">=20.0.0"

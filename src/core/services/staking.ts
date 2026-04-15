@@ -19,7 +19,7 @@ export async function freezeBalanceV2(
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await signTransactionWithWallet(transaction);
+    const signedTx = await signTransactionWithWallet(transaction, undefined, network);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;
@@ -48,7 +48,7 @@ export async function unfreezeBalanceV2(
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await signTransactionWithWallet(transaction);
+    const signedTx = await signTransactionWithWallet(transaction, undefined, network);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;
@@ -69,7 +69,7 @@ export async function withdrawExpireUnfreeze(network = "mainnet") {
     const transaction = await tronWeb.transactionBuilder.withdrawExpireUnfreeze(
       tronWeb.defaultAddress.base58 || undefined,
     );
-    const signedTx = await signTransactionWithWallet(transaction);
+    const signedTx = await signTransactionWithWallet(transaction, undefined, network);
     const result = await tronWeb.trx.sendRawTransaction(signedTx);
 
     if (result.result) return result.txid;

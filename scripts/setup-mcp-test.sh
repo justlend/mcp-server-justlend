@@ -4,7 +4,7 @@
 #
 # Usage:
 #   bash scripts/setup-mcp-test.sh            # Run inside the project directory
-#   bash scripts/setup-mcp-test.sh --claude-desktop  # Also output Claude Desktop config
+#   bash scripts/setup-mcp-test.sh --claude-desktop  # Also print Claude Desktop config
 #
 
 set -e
@@ -101,7 +101,18 @@ EOF
 
 echo "✅ Claude Code config: $PROJECT_DIR/.mcp.json"
 
-# ── 6. Claude Desktop config (optional output) ────
+# ── 6. Codex command ───────────────────────
+
+echo ""
+echo "📋 Codex local MCP registration command:"
+echo ""
+if [ -n "$TRONGRID_KEY" ]; then
+    echo "codex mcp add justlend --env TRONGRID_API_KEY=$TRONGRID_KEY -- node $BUILD_DIR/index.js"
+else
+    echo "codex mcp add justlend -- node $BUILD_DIR/index.js"
+fi
+
+# ── 7. Claude Desktop config (optional output) ────
 
 if [ "$1" = "--claude-desktop" ]; then
     echo ""
@@ -130,6 +141,10 @@ echo ""
 echo "▶ Start Claude Code:"
 echo "  cd $PROJECT_DIR"
 echo "  claude"
+echo ""
+echo "▶ Start Codex:"
+echo "  cd $PROJECT_DIR"
+echo "  codex"
 echo ""
 echo "▶ Or start in HTTP mode (for other MCP clients):"
 echo "  npm run start:http"

@@ -3,6 +3,7 @@
  */
 
 import { cacheGet, cacheSet } from "./cache.js";
+import { fetchWithTimeout } from "./http.js";
 
 const PRICE_TTL_MS = 30_000; // 30s
 
@@ -29,7 +30,7 @@ export async function fetchPriceFromAPI(
       ? "https://nileapi.justlend.org"
       : "https://labc.ablesdxd.link";
 
-    const resp = await fetch(`${host}/justlend/markets`);
+    const resp = await fetchWithTimeout(`${host}/justlend/markets`);
     const data = await resp.json();
     if (data.code !== 0 || !data.data || !data.data.jtokenList) return null;
 

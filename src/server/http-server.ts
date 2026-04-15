@@ -1,47 +1,65 @@
 import express from "express";
 import cors from "cors";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import startServer from "./server.js";
+import { createSessionState, runWithSessionState, type SessionState } from "../core/services/global.js";
+import { shutdownBrowserSignerForSession } from "../core/services/wallet.js";
+import { SERVER_VERSION } from "./version.js";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
-const API_KEY = process.env.MCP_API_KEY;
-const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN || "*";
+const HOST = process.env.MCP_HOST || "127.0.0.1";
+const API_KEY = process.env.MCP_API_KEY?.trim();
+const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN?.trim();
 const MAX_SESSIONS = parseInt(process.env.MCP_MAX_SESSIONS || "100", 10);
 const SESSION_TIMEOUT_MS = parseInt(process.env.MCP_SESSION_TIMEOUT_MS || "1800000", 10); // 30 min
 
 async function main() {
-  const server = await startServer();
-  const app = express();
+  if (!API_KEY) {
+    throw new Error("MCP_API_KEY is required in HTTP mode. Refusing to start without authentication.");
+  }
 
-  // H-3: CORS
-  app.use(cors({ origin: CORS_ORIGIN }));
+  const app = express();
+  const transports = new Map<string, {
+    server: McpServer;
+    transport: SSEServerTransport;
+    lastActivity: number;
+    state: SessionState;
+  }>();
+
+  const closeSession = async (sessionId: string) => {
+    const session = transports.get(sessionId);
+    if (!session) return;
+    transports.delete(sessionId);
+    await Promise.allSettled([
+      shutdownBrowserSignerForSession(session.state),
+      session.server.close(),
+    ]);
+  };
+
+  if (CORS_ORIGIN) {
+    app.use(cors({ origin: CORS_ORIGIN }));
+  }
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
 
   // H-1: API key authentication
-  if (API_KEY) {
-    app.use((req, res, next) => {
-      if (req.path === "/health") return next();
-      const auth = req.headers.authorization;
-      if (auth !== `Bearer ${API_KEY}`) {
-        res.status(401).json({ error: "Unauthorized" });
-        return;
-      }
-      next();
-    });
-  } else {
-    console.error("WARNING: MCP_API_KEY not set. HTTP server is running without authentication.");
-  }
-
-  // M-6: Session management with timeout
-  const transports = new Map<string, { transport: SSEServerTransport; lastActivity: number }>();
+  app.use((req, res, next) => {
+    if (req.path === "/health") return next();
+    const auth = req.headers.authorization;
+    if (auth !== `Bearer ${API_KEY}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    next();
+  });
 
   // M-6: Periodic cleanup of stale sessions
   setInterval(() => {
     const now = Date.now();
     for (const [id, session] of transports) {
       if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
-        transports.delete(id);
+        void closeSession(id);
       }
     }
   }, 60_000);
@@ -53,15 +71,26 @@ async function main() {
       return;
     }
 
+    const server = await startServer();
     const transport = new SSEServerTransport("/messages", res);
     const sessionId = transport.sessionId;
-    transports.set(sessionId, { transport, lastActivity: Date.now() });
+    const state = createSessionState(sessionId);
+    transports.set(sessionId, { server, transport, lastActivity: Date.now(), state });
 
     res.on("close", () => {
-      transports.delete(sessionId);
+      void closeSession(sessionId);
     });
 
-    await server.connect(transport);
+    try {
+      await runWithSessionState(state, () => server.connect(transport));
+    } catch (error) {
+      transports.delete(sessionId);
+      await Promise.allSettled([
+        shutdownBrowserSignerForSession(state),
+        server.close(),
+      ]);
+      throw error;
+    }
   });
 
   app.post("/messages", async (req, res) => {
@@ -79,17 +108,20 @@ async function main() {
       return;
     }
     session.lastActivity = Date.now();
-    await session.transport.handlePostMessage(req, res);
+    await runWithSessionState(
+      session.state,
+      () => session.transport.handlePostMessage(req, res, req.body),
+    );
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", server: "mcp-server-justlend", version: "1.0.2" });
+    res.json({ status: "ok", server: "mcp-server-justlend", version: SERVER_VERSION });
   });
 
-  app.listen(PORT, () => {
-    console.error(`@justlend/mcp-server-justlend HTTP server listening on port ${PORT}`);
-    console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
-    console.error(`Health check: http://localhost:${PORT}/health`);
+  app.listen(PORT, HOST, () => {
+    console.error(`@justlend/mcp-server-justlend HTTP server listening on http://${HOST}:${PORT}`);
+    console.error(`SSE endpoint: http://${HOST}:${PORT}/sse`);
+    console.error(`Health check: http://${HOST}:${PORT}/health`);
   });
 }
 
