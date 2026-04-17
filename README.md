@@ -39,8 +39,8 @@ This MCP server currently supports **JustLend V1** protocol. All contract addres
 - **Energy Rental**: Rent energy from JustLend, calculate rental prices, query rental orders, return/cancel rentals
 - **sTRX Staking**: Stake TRX to receive sTRX, unstake sTRX, claim staking rewards, check withdrawal eligibility
 
-#### Browser Wallet Signing (New in v1.0.3)
-- **TronLink Integration**: Connect TronLink or other browser wallets via localhost HTTP bridge
+#### Browser Wallet Signing
+- **TronLink Integration**: Connect TronLink (and other TIP-6963 browser wallets) via the `tronlink-signer` SDK
 - **Sign-only mode**: Server builds transactions, browser only signs — private keys never leave the wallet
 - **Dual wallet mode**: Users choose between `browser` (recommended) or `agent` (encrypted local storage)
 
