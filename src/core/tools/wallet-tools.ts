@@ -361,8 +361,14 @@ export function registerWalletTools(server: McpServer) {
           throw new Error("Either 'token' or 'tokenAddress' must be provided.");
         }
 
-        // Convert human-readable amount to raw amount
-        const decimals = resolvedToken?.decimals ?? 18;
+        // Resolve real decimals: known-symbol path is trusted; otherwise
+        // (raw address, or symbol that resolved by address) fetch on-chain
+        // metadata so we never silently default to 18.
+        let decimals = resolvedToken?.decimals;
+        if (decimals == null) {
+          const info = await services.getTRC20TokenInfo(resolvedAddress, network);
+          decimals = info.decimals;
+        }
         const rawAmount = utils.parseUnits(amount, decimals).toString();
 
         const result = await services.transferTRC20(resolvedAddress, to, rawAmount, network);

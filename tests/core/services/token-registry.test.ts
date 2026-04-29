@@ -26,4 +26,17 @@ describe("resolveKnownToken", () => {
   it("returns null for unknown symbols", () => {
     expect(resolveKnownToken("DOGE", "mainnet")).toBeNull();
   });
+
+  it("returns decimals=null when the input is a raw TRON address (callers must fetch on-chain)", () => {
+    // Random valid TRON address that is not in the known-token registry.
+    const addr = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
+    const resolved = resolveKnownToken(addr, "mainnet");
+    expect(resolved).toEqual({
+      input: addr,
+      address: addr,
+      symbol: addr,
+      decimals: null,
+      resolution: "address",
+    });
+  });
 });

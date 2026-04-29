@@ -42,7 +42,7 @@
     "vitest": "4.1.0"
   },
   "overrides": {
-    "axios": "1.15.0"
+    "axios": "1.15.2"
   },
   "engines": {
     "node": ">=20.0.0"
