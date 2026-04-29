@@ -7,7 +7,12 @@ export interface ResolvedKnownToken {
   input: string;
   address: string;
   symbol: string;
-  decimals: number;
+  /**
+   * Token decimals. `null` when the token was resolved by raw address and is
+   * not in the known-token registry — callers MUST fetch real decimals from
+   * the contract before scaling user amounts (use `getTRC20TokenInfo`).
+   */
+  decimals: number | null;
   resolution: "symbol" | "address";
 }
 
@@ -24,7 +29,7 @@ export function resolveKnownToken(tokenOrAddress: string, network = "mainnet"): 
       input,
       address: input,
       symbol: input,
-      decimals: 18,
+      decimals: null,
       resolution: "address",
     };
   }
