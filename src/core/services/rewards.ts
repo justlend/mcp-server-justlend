@@ -255,6 +255,26 @@ export async function getMiningRewardsFromAPI(address: string, network = "mainne
     // Calculate mining rewards from API data
     return calculateMiningRewards(data.data, address, network);
   } catch (error) {
+    // Nile testnet has no live rewards backend, and merkle-distributor amounts
+    // require off-chain proofs we can't reconstruct on-chain. Degrade gracefully
+    // to a zero-amount snapshot with a clear note, mirroring get_strx_account's
+    // contract-mode fallback when the API is down.
+    if (network === "nile") {
+      const apiError = error instanceof Error ? error.message : String(error);
+      return {
+        address,
+        network,
+        totalGainNewUSD: "0",
+        totalGainLastUSD: "0",
+        totalUnclaimedUSD: "0",
+        markets: [],
+        rawData: {
+          source: "contract",
+          note: "Mining rewards API is not available on Nile testnet, and merkle-distributor amounts require off-chain proofs. Returning zero-amount snapshot.",
+          apiError,
+        },
+      };
+    }
     throw new Error(`Failed to fetch mining rewards from API: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

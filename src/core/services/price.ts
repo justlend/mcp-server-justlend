@@ -4,6 +4,8 @@
 
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout } from "./http.js";
+import { MANTISSA_18, divRound, normalizeDecimalString, pow10 } from "./bigint-math.js";
+import { utils } from "./utils.js";
 
 const PRICE_TTL_MS = 30_000; // 30s
 
@@ -15,6 +17,10 @@ const PRICE_TTL_MS = 30_000; // 30s
  *
  * On nile testnet, automatically falls back to mainnet API if the nile price is unavailable.
  * Results are cached for 30s per symbol+network.
+ *
+ * Internally computes the ratio in BigInt to avoid precision loss on high-TVL markets
+ * where raw totalSupply already exceeds 2^53. Final conversion to `number` is only for
+ * the API return type (~12 significant digits), which is fine for a USD price.
  */
 export async function fetchPriceFromAPI(
   underlyingSymbol: string,
@@ -39,15 +45,34 @@ export async function fetchPriceFromAPI(
     );
     if (!market) return null;
 
-    const depositedUSD = Number(market.depositedUSD || 0);
-    const totalSupplyRaw = Number(market.totalSupply || 0);
-    const exchangeRate = Number(market.exchangeRate || 0);
+    const depositedUsdStr = normalizeDecimalString(market.depositedUSD || "0");
+    let totalSupplyRaw: bigint;
+    let exchangeRate: bigint;
+    try {
+      totalSupplyRaw = BigInt(normalizeDecimalString(market.totalSupply || "0").split(".")[0] || "0");
+      exchangeRate = BigInt(normalizeDecimalString(market.exchangeRate || "0").split(".")[0] || "0");
+    } catch {
+      return null;
+    }
 
-    if (depositedUSD === 0 || totalSupplyRaw === 0 || exchangeRate === 0) return null;
+    if (depositedUsdStr === "0" || totalSupplyRaw === 0n || exchangeRate === 0n) return null;
 
-    const underlyingRaw = (totalSupplyRaw * exchangeRate) / 1e18;
-    const underlyingAmount = underlyingRaw / (10 ** underlyingDecimals);
-    return depositedUSD / underlyingAmount;
+    // underlyingRaw is denominated in `underlyingDecimals` (e.g. 6 for USDT, 18 for ETH).
+    const underlyingRaw = (totalSupplyRaw * exchangeRate) / MANTISSA_18;
+    if (underlyingRaw === 0n) return null;
+
+    // depositedUSD is a decimal USD string. Scale it by 1e18 so the divide is precise.
+    const depositedUsdScaled = utils.parseUnits(depositedUsdStr, 18);
+
+    // price = depositedUSD / (underlyingRaw / 10^decimals)
+    //       = (depositedUSD * 10^decimals) / underlyingRaw, scaled by 1e18.
+    const numerator = depositedUsdScaled * pow10(underlyingDecimals);
+    const priceScaledBy1e18 = divRound(numerator, underlyingRaw);
+    if (priceScaledBy1e18 === 0n) return null;
+
+    // Convert back to a JS number for the existing API surface.
+    // For USD prices well under 1e15, this fits comfortably in double precision.
+    return Number(priceScaledBy1e18) / 1e18;
   };
 
   // Try current network first

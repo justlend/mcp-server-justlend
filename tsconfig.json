@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "build", "tests"]
+  "exclude": ["node_modules", "build", "tests", "forTest"]
 }

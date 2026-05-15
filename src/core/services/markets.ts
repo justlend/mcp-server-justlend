@@ -8,7 +8,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
-import { formatDisplayUnits } from "./bigint-math.js";
+import { formatDisplayUnits, formatRatio, formatPercentRatio, MANTISSA_18 } from "./bigint-math.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MARKETS_TTL_MS = 60_000; // 60s
@@ -120,10 +120,19 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
   const totalSupplyBig = BigInt(totalSupplyRaw);
   const totalReservesBig = BigInt(totalReservesRaw);
   const denominator = cashBig + totalBorrowsBig - totalReservesBig;
-  const utilizationRate = denominator > 0n ? Math.round(Number(totalBorrowsBig * 10000n / denominator)) / 100 : 0;
-  const collateralFactor = Number(BigInt(marketInfo.collateralFactorMantissa)) / MANTISSA * 100;
-  const reserveFactor = Number(BigInt(reserveFactorRaw)) / MANTISSA * 100;
-  const exchangeRateNum = Number(BigInt(exchangeRateRaw)) / MANTISSA;
+
+  // BigInt-safe ratio formatting — avoids precision loss when exchangeRate or
+  // mantissas exceed Number.MAX_SAFE_INTEGER on long-running markets.
+  const collateralFactorMantissa = BigInt(marketInfo.collateralFactorMantissa);
+  const reserveFactorMantissa = BigInt(reserveFactorRaw);
+  const exchangeRateMantissa = BigInt(exchangeRateRaw);
+
+  const utilizationRate = denominator > 0n
+    ? Number(formatPercentRatio(totalBorrowsBig, denominator, 2))
+    : 0;
+  const collateralFactor = Number(formatPercentRatio(collateralFactorMantissa, MANTISSA_18, 2));
+  const reserveFactor = Number(formatPercentRatio(reserveFactorMantissa, MANTISSA_18, 2));
+  const exchangeRateStr = formatRatio(exchangeRateMantissa, MANTISSA_18, 10);
 
   return {
     symbol: jTokenInfo.symbol,
@@ -136,9 +145,9 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     totalBorrows: formatDisplayUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
     totalReserves: formatDisplayUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
     availableLiquidity: formatDisplayUnits(cashBig, jTokenInfo.underlyingDecimals),
-    exchangeRate: exchangeRateNum.toFixed(10),
-    collateralFactor: Math.round(collateralFactor * 100) / 100,
-    reserveFactor: Math.round(reserveFactor * 100) / 100,
+    exchangeRate: exchangeRateStr,
+    collateralFactor,
+    reserveFactor,
     isListed: Boolean(marketInfo.isListed),
     mintPaused: Boolean(mintPaused),
     borrowPaused: Boolean(borrowPaused),

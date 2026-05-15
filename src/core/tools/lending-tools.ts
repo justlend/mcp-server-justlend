@@ -349,16 +349,17 @@ export function registerLendingTools(server: McpServer) {
       description:
         "Approve the jToken contract to spend your underlying TRC20 tokens. " +
         "Required before supply() or repay() for TRC20-backed markets (not needed for jTRX). " +
-        "Use amount='max' for unlimited approval. " +
+        "Pass the EXACT amount you intend to use (recommended). " +
+        "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the jToken contract spend the user's entire balance, present and future, until revoked. " +
         "Typical cost: ~23,000 energy + ~265 bandwidth.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT')"),
-        amount: z.string().optional().describe("Amount to approve, or 'max' for unlimited. Default: max"),
+        amount: z.string().describe("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve Underlying Token", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ market, amount = "max", network = services.getGlobalNetwork() }) => {
+    async ({ market, amount, network = services.getGlobalNetwork() }) => {
       try {
 
         const walletAddr = await services.getWalletAddress();

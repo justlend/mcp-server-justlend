@@ -1,4 +1,5 @@
 import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
+import { resolveBroadcastResult, type BroadcastResponse } from "./contracts.js";
 
 /**
  * Freeze TRX to obtain BANDWIDTH or ENERGY resources (Stake 2.0).
@@ -20,10 +21,9 @@ export async function freezeBalanceV2(
       tronWeb.defaultAddress.base58 || undefined,
     );
     const signedTx = await signTransactionWithWallet(transaction, undefined, network);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
-
-    if (result.result) return result.txid;
-    throw new Error(`FreezeBalanceV2 failed: ${JSON.stringify(result)}`);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, transaction.txID);
+    return txID;
   } catch (error: any) {
     throw new Error(`Failed to freeze balance V2: ${error.message}`);
   }
@@ -49,10 +49,9 @@ export async function unfreezeBalanceV2(
       tronWeb.defaultAddress.base58 || undefined,
     );
     const signedTx = await signTransactionWithWallet(transaction, undefined, network);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
-
-    if (result.result) return result.txid;
-    throw new Error(`UnfreezeBalanceV2 failed: ${JSON.stringify(result)}`);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, transaction.txID);
+    return txID;
   } catch (error: any) {
     throw new Error(`Failed to unfreeze balance V2: ${error.message}`);
   }
@@ -70,10 +69,9 @@ export async function withdrawExpireUnfreeze(network = "mainnet") {
       tronWeb.defaultAddress.base58 || undefined,
     );
     const signedTx = await signTransactionWithWallet(transaction, undefined, network);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
-
-    if (result.result) return result.txid;
-    throw new Error(`WithdrawExpireUnfreeze failed: ${JSON.stringify(result)}`);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, transaction.txID);
+    return txID;
   } catch (error: any) {
     throw new Error(`Failed to withdraw expire unfreeze: ${error.message}`);
   }

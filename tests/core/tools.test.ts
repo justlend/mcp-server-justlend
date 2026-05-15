@@ -833,22 +833,22 @@ describe("Lending Operation Tools", () => {
     );
   });
 
-  it("approve_underlying should call services.approveUnderlying", async () => {
-    const result = await callTool("approve_underlying", { market: "jUSDT" });
+  it("approve_underlying should pass through the exact amount", async () => {
+    const result = await callTool("approve_underlying", { market: "jUSDT", amount: "100" });
     const output = getToolOutput(result);
     expect(output.txID).toBe("mock_approve_tx_id_123");
     expect(services.approveUnderlying).toHaveBeenCalledWith(
       "jUSDT",
-      "max",
+      "100",
       "mainnet",
     );
   });
 
-  it("approve_underlying should pass custom amount", async () => {
-    await callTool("approve_underlying", { market: "jUSDT", amount: "1000" });
+  it("approve_underlying should still forward an explicit 'max' opt-in", async () => {
+    await callTool("approve_underlying", { market: "jUSDT", amount: "max" });
     expect(services.approveUnderlying).toHaveBeenCalledWith(
       "jUSDT",
-      "1000",
+      "max",
       "mainnet",
     );
   });

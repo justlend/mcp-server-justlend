@@ -2,7 +2,7 @@
  * Shared BigInt math and formatting utilities for precision-safe
  * financial calculations across lending, account, and market modules.
  */
-import { utils } from "./utils.js";
+import { expandScientificNotation, utils } from "./utils.js";
 
 // ============================================================================
 // Constants
@@ -127,14 +127,21 @@ export function priceNumberToRaw(priceUSD: number, underlyingDecimals: number): 
   return utils.parseUnits(normalized === "" ? "0" : normalized, USD_PRICE_SCALE - underlyingDecimals);
 }
 
-/** Safely convert an unknown value (string | number) to a trimmed decimal string. */
+/**
+ * Safely convert an unknown value (string | number) to a trimmed *plain* decimal
+ * string. Strings already in scientific notation (e.g. `"1.02e+26"`) and numbers
+ * whose `toFixed(18)` falls back to scientific notation (any |value| ≥ 1e21) are
+ * expanded so downstream `.split(".")[0]` and `BigInt(...)` callers see digits.
+ */
 export function normalizeDecimalString(value: unknown): string {
-  if (typeof value === "string") return value.trim();
+  if (typeof value === "string") return expandScientificNotation(value);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return "0";
-    return value.toFixed(18).replace(/0+$/, "").replace(/\.$/, "");
+    return expandScientificNotation(value.toFixed(18))
+      .replace(/(\.\d*?)0+$/, "$1")
+      .replace(/\.$/, "");
   }
-  return String(value ?? "0");
+  return expandScientificNotation(String(value ?? "0"));
 }
 
 /** Build a human-readable collateral breakdown string. */

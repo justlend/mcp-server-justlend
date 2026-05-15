@@ -1,7 +1,7 @@
 import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
 import { utils } from "./utils.js";
 import { checkResourceSufficiency } from "./lending.js";
-import { safeSend } from "./contracts.js";
+import { safeSend, resolveBroadcastResult, type BroadcastResponse } from "./contracts.js";
 import { TRC20_ABI } from "../abis.js";
 
 /**
@@ -40,15 +40,9 @@ export async function transferTRX(
   // Build unsigned transaction, sign with agent-wallet, then broadcast
   const unsignedTx = await tronWeb.transactionBuilder.sendTrx(to, Number(amountSun), walletAddress);
   const signedTx = await signTransactionWithWallet(unsignedTx, undefined, network);
-  const broadcast = await tronWeb.trx.sendRawTransaction(signedTx);
-
-  if ((broadcast as any).result) {
-    return (broadcast as any).txid || (broadcast as any).transaction?.txID || unsignedTx.txID;
-  }
-  const errorMsg = (broadcast as any).message
-    ? Buffer.from((broadcast as any).message, "hex").toString()
-    : JSON.stringify(broadcast);
-  throw new Error(`Broadcast failed: ${errorMsg}`);
+  const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
+  const { txID } = resolveBroadcastResult(broadcast, unsignedTx.txID);
+  return txID;
 }
 
 /**

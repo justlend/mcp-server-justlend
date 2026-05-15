@@ -1,6 +1,34 @@
 import { TronWeb } from "tronweb";
 
 /**
+ * Expand a scientific-notation decimal string to a plain decimal string.
+ * Returns the input unchanged when no exponent is present.
+ *
+ * Needed because the JustLend API serialises very large numbers (e.g. high-TVL
+ * `exchangeRate` values) as JSON numbers; once they exceed 1e21 the JS string
+ * forms switch to scientific notation, which `BigInt(...)` and `parseUnits(...)`
+ * both reject. `Number.prototype.toFixed(18)` has the same behavior for values
+ * ≥ 1e21, so any code path that round-trips through `toFixed` ends up here too.
+ */
+export function expandScientificNotation(value: string): string {
+  const trimmed = value.trim();
+  if (!/[eE]/.test(trimmed)) return trimmed;
+  const m = trimmed.match(/^(-?)(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/);
+  if (!m) return trimmed;
+  const [, sign, intPart, fracPart = "", expStr] = m;
+  const exp = parseInt(expStr, 10);
+  const digits = intPart + fracPart;
+  const decimalPos = intPart.length + exp;
+  if (decimalPos <= 0) {
+    return `${sign}0.${"0".repeat(-decimalPos)}${digits}`;
+  }
+  if (decimalPos >= digits.length) {
+    return `${sign}${digits}${"0".repeat(decimalPos - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, decimalPos)}.${digits.slice(decimalPos)}`;
+}
+
+/**
  * Utility functions for formatting and converting TRON values.
  * 1 TRX = 1,000,000 SUN
  */
@@ -53,7 +81,10 @@ export const utils = {
    * Example: parseUnits("1.5", 18) => 1500000000000000000n
    */
   parseUnits: (value: string, decimals: number): bigint => {
-    const trimmed = value.trim();
+    let trimmed = value.trim();
+    if (/[eE]/.test(trimmed)) {
+      trimmed = expandScientificNotation(trimmed);
+    }
     if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
       throw new Error(`Invalid numeric value: "${value}"`);
     }

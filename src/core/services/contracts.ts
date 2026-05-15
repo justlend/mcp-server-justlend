@@ -6,25 +6,74 @@ import { waitForTransaction } from "./transactions.js";
 import { utils } from "./utils.js";
 
 /**
- * Convert a callValue (sun) into the Number that TronWeb's triggerSmartContract
- * requires, rejecting values past Number.MAX_SAFE_INTEGER (≈9.007e15 sun, ~9B TRX)
- * where the JS Number cast would silently truncate. Mirrors the guard in
- * transfer.ts:34-38 so every payable broadcast path has the same protection.
- * Exported for direct testing.
+ * Typed shape of `tronWeb.trx.sendRawTransaction` responses. TronWeb's types are
+ * incomplete and historically the success indicator has lived under both `result`
+ * and `transaction.txID`. Funnel every call site through this interface so a
+ * future SDK rename surfaces as a compile error, not a silent broadcast failure.
  */
-export function callValueToSafeNumber(callValue: string | number | bigint): number {
-  const big = typeof callValue === "bigint" ? callValue : BigInt(callValue);
+export interface BroadcastResponse {
+  result?: boolean;
+  txid?: string;
+  message?: string;
+  code?: string | number;
+  transaction?: { txID?: string };
+}
+
+/**
+ * Resolve a broadcast result to either a txID or a decoded error message.
+ * Centralises the "did the node accept it?" check that used to be `(broadcast as any).result`.
+ */
+export function resolveBroadcastResult(broadcast: BroadcastResponse, fallbackTxID?: string): { txID: string } {
+  if (broadcast.result) {
+    const txID = broadcast.txid || broadcast.transaction?.txID || fallbackTxID;
+    if (!txID) throw new Error("Broadcast succeeded but no txID was returned.");
+    return { txID };
+  }
+  const decodedMessage = broadcast.message
+    ? safeDecodeHexMessage(broadcast.message)
+    : JSON.stringify(broadcast);
+  throw new Error(`Broadcast failed: ${decodedMessage}`);
+}
+
+function safeDecodeHexMessage(msg: string): string {
+  try {
+    if (/^[0-9a-fA-F]+$/.test(msg) && msg.length % 2 === 0) {
+      return Buffer.from(msg, "hex").toString();
+    }
+  } catch { /* fall through */ }
+  return msg;
+}
+
+/**
+ * Convert a callValue (string | number | bigint) to the Number that TronWeb's
+ * trigger* APIs accept. Throws if the value exceeds Number.MAX_SAFE_INTEGER —
+ * Sun precision would otherwise be silently lost because BigInt → Number rounds
+ * to the nearest double, and the broadcasted callValue would not match input.
+ */
+export function toSafeCallValueNumber(
+  value: string | number | bigint | undefined | null,
+): number {
+  if (value === undefined || value === null || value === "") return 0;
+  let big: bigint;
+  try {
+    big = typeof value === "bigint" ? value : BigInt(value);
+  } catch {
+    throw new Error(`Invalid callValue ${String(value)} (not a valid integer).`);
+  }
   if (big < 0n) {
-    throw new Error("callValue cannot be negative");
+    throw new Error(`callValue cannot be negative (got ${big.toString()}).`);
   }
   if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error(
-      `callValue exceeds the safe SDK limit. Amount in Sun must be <= ${Number.MAX_SAFE_INTEGER} ` +
-      `(got ${big.toString()}).`,
+      `callValue exceeds the safe SDK limit: ${big.toString()} exceeds the SDK safe-integer limit ` +
+      `(${Number.MAX_SAFE_INTEGER} Sun ≈ ${Number.MAX_SAFE_INTEGER / 1e6} TRX). ` +
+      `Reduce the amount or split into multiple calls.`,
     );
   }
   return Number(big);
 }
+
+export const callValueToSafeNumber = toSafeCallValueNumber;
 
 /**
  * Read from a smart contract (view/pure functions).
@@ -64,7 +113,7 @@ export async function writeContract(
     address: string;
     functionName: string;
     args?: any[];
-    value?: string; // TRX call value in Sun
+    value?: string | number | bigint; // TRX call value in Sun
     abi?: any[];
   },
   network = "mainnet",
@@ -93,7 +142,9 @@ export async function writeContract(
     }));
 
     const options: any = {};
-    if (params.value) options.callValue = callValueToSafeNumber(params.value);
+    if (params.value !== undefined && params.value !== null && params.value !== "") {
+      options.callValue = toSafeCallValueNumber(params.value);
+    }
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -104,12 +155,9 @@ export async function writeContract(
     );
 
     const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-
-    if (broadcast.result) {
-      return broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
-    }
-    throw new Error(`Broadcast failed: ${JSON.stringify(broadcast)}`);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signed)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, tx.transaction.txID);
+    return txID;
   } catch (error: any) {
     throw new Error(`Write contract failed: ${error.message}`);
   }
@@ -120,7 +168,7 @@ export interface SafeSendParams {
   abi: any[];
   functionName: string;
   args?: any[];
-  callValue?: string | number;
+  callValue?: string | number | bigint;
   feeLimit?: number;
 }
 
@@ -138,7 +186,10 @@ export async function safeSend(
   if (!ownerAddress) throw new Error("Wallet not configured");
 
   const args = params.args || [];
-  const hasCallValue = params.callValue && Number(params.callValue) > 0;
+  // Validate callValue once up-front: throws on values that exceed the SDK's
+  // safe-integer range, so we don't silently truncate large TRX amounts.
+  const callValueNum = toSafeCallValueNumber(params.callValue);
+  const hasCallValue = callValueNum > 0;
   const isNativeTRXCall = hasCallValue && args.length === 0;
 
   // 1. Simulate and get energy requirement
@@ -156,32 +207,40 @@ export async function safeSend(
     }, network);
     energyUsed = simResult.energyUsed;
     energyPenalty = simResult.energyPenalty;
-    // 检查是否是降级估算
+    // Track whether the estimate was a degraded fallback rather than a real simulation result.
     if ((simResult as any).degraded) {
       simulationDegraded = true;
     }
   } catch (err: any) {
     const errMsg = err.message || "";
 
-    // ====== 新增：对原生 TRX 调用的模拟失败做降级处理 ======
-    // 如果是 "No overload" 错误且是原生 TRX 调用，不阻断交易
+    // Native-TRX-call degrade path: when the ABI has no zero-arg overload but
+    // the contract accepts a payable call via callValue, the "No overload" error
+    // from estimateEnergy is expected and must not block the broadcast.
     if (isNativeTRXCall && errMsg.includes("No overload of")) {
       simulationDegraded = true;
-      // 使用典型 energy 估算值
+      // Typical energy estimate for native-TRX calls (e.g. repayBorrow with TRX).
       energyUsed = 80000;
       energyPenalty = 0;
       console.warn(
         `[safeSend] Simulation skipped for native TRX call ${params.functionName}(): ${errMsg}. Using typical energy estimate.`
       );
     } else if (errMsg.includes("REVERT opcode executed")) {
-      // ====== 降级处理：REVERT 不阻断交易 ======
-      // 测试网节点的 triggerConstantContract 模拟可能不准确，
-      // DApp 前端也不做预检模拟。降级为典型值，让交易继续发送。
+      // Only degrade on testnet: testnet nodes' triggerConstantContract has been
+      // historically unreliable. On mainnet a REVERT is a real failure signal —
+      // broadcasting would burn the user's TRX, so we fail-closed and throw.
+      if (network === "mainnet") {
+        throw new Error(
+          `Transaction pre-flight simulation reverted on mainnet. ` +
+          `Refusing to broadcast — the transaction is very likely to fail on-chain ` +
+          `and would burn TRX (energy/bandwidth/fees). Original error: ${errMsg}`
+        );
+      }
       simulationDegraded = true;
-      energyUsed = 100000; // 保守典型估算值
+      energyUsed = 100000; // Conservative typical estimate for testnet degrade.
       energyPenalty = 0;
       console.warn(
-        `[safeSend] Pre-flight simulation REVERT for ${params.functionName}(): ${errMsg}. ` +
+        `[safeSend] Pre-flight simulation REVERT for ${params.functionName}() on ${network}: ${errMsg}. ` +
         `Proceeding with typical energy estimate. The transaction may still succeed on-chain.`
       );
     } else {
@@ -209,7 +268,7 @@ export async function safeSend(
 
   const callValueSun = BigInt(params.callValue || 0);
 
-  // 降级模式下给更多余量（15%），正常模式 10%
+  // Use a wider safety margin (15%) when the estimate is degraded, vs. 10% on a real simulation.
   const marginPercent = simulationDegraded ? 115n : 110n;
   const feeMargin = (trxForEnergy + trxForBandwidth) * marginPercent / 100n;
   const requiredBalanceWithMargin = feeMargin + callValueSun;
@@ -234,23 +293,23 @@ export async function safeSend(
     let signature: string;
     let typedParams: Array<{ type: string; value: any }>;
 
-    // ====== 新增：原生 TRX 零参数调用的签名构建 ======
+    // Signature construction for native-TRX zero-arg calls.
     if (isNativeTRXCall) {
-      // 优先匹配零参数重载
+      // Prefer a zero-arg overload if the ABI declares one.
       const zeroArgMatch = candidates.filter((item) => (item.inputs || []).length === 0);
       if (zeroArgMatch.length > 0) {
-        // ABI 中有零参数版本，直接用
+        // ABI has a zero-arg overload — use it directly.
         signature = `${params.functionName}()`;
         typedParams = [];
       } else {
-        // ABI 中没有零参数版本（如只有 repayBorrow(uint256)），
-        // 但实际合约有零参数的 payable 重载（通过 callValue 传值）。
-        // 直接用零参数签名发交易。
+        // ABI has no zero-arg overload (e.g. only repayBorrow(uint256)) but the
+        // deployed contract still exposes a payable zero-arg variant (value passed
+        // via callValue). Use the zero-arg signature anyway.
         signature = `${params.functionName}()`;
         typedParams = [];
       }
     } else {
-      // 标准路径：按参数数量匹配
+      // Standard path: match by argument count.
       const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
       if (matched.length === 0) throw new Error(`No overload of ${params.functionName} accepts ${args.length} argument(s)`);
       if (matched.length > 1) throw new Error(`Ambiguous overload for ${params.functionName} with ${args.length} argument(s)`);
@@ -267,7 +326,7 @@ export async function safeSend(
     const options: any = {
       feeLimit: params.feeLimit || 1_000_000_000,
     };
-    if (params.callValue) options.callValue = callValueToSafeNumber(params.callValue);
+    if (hasCallValue) options.callValue = callValueNum;
 
     const tx = await tronWeb.transactionBuilder.triggerSmartContract(
       params.address,
@@ -278,15 +337,9 @@ export async function safeSend(
     );
 
     const signed = await signTransactionWithWallet(tx.transaction, undefined, network);
-    const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-
-    if (broadcast.result) {
-      const txID = broadcast.txid || broadcast.transaction?.txID || tx.transaction.txID;
-      return { txID, message: "Transaction broadcasted successfully" };
-    } else {
-      const errorMsg = broadcast.message ? Buffer.from(broadcast.message, "hex").toString() : JSON.stringify(broadcast);
-      throw new Error(`Broadcast failed: ${errorMsg}`);
-    }
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signed)) as BroadcastResponse;
+    const { txID } = resolveBroadcastResult(broadcast, tx.transaction.txID);
+    return { txID, message: "Transaction broadcasted successfully" };
   } catch (error: any) {
     throw new Error(`Transaction failed during broadcast: ${error.message}`);
   }
@@ -530,10 +583,10 @@ export async function deployContract(
       tronWeb.defaultAddress.hex as string,
     );
     const signedTx = await signTransactionWithWallet(transaction, undefined, network);
-    const result = await tronWeb.trx.sendRawTransaction(signedTx);
+    const broadcast = (await tronWeb.trx.sendRawTransaction(signedTx)) as BroadcastResponse;
 
-    if (result && result.result) {
-      const txID = result.transaction.txID;
+    if (broadcast && broadcast.result) {
+      const txID = broadcast.transaction?.txID ?? transaction.txID;
       const info = await waitForTransaction(txID, network);
 
       if (info.receipt?.result && info.receipt.result !== "SUCCESS") {
@@ -559,7 +612,7 @@ export async function deployContract(
       return { txID, contractAddress, message: "Contract deployment successful" };
     }
 
-    throw new Error(`Broadcast failed: ${JSON.stringify(result)}`);
+    throw new Error(`Broadcast failed: ${JSON.stringify(broadcast)}`);
   } catch (error: any) {
     throw new Error(`Deploy contract failed: ${error.message}`);
   }
@@ -574,7 +627,7 @@ export async function estimateEnergy(
     functionName: string;
     args?: any[];
     abi: any[];
-    callValue?: string | number;
+    callValue?: string | number | bigint;
     ownerAddress?: string;
   },
   network = "mainnet",
@@ -591,6 +644,9 @@ export async function estimateEnergy(
 
     const normalizedAbi = parseABI(params.abi);
     const args = params.args || [];
+    // Validate callValue once: rejects values above Number.MAX_SAFE_INTEGER so
+    // simulation matches the broadcast that safeSend will eventually do.
+    const callValueNum = toSafeCallValueNumber(params.callValue);
 
     const candidates = normalizedAbi.filter(
       (item) => item.type === "function" && item.name === params.functionName,
@@ -599,16 +655,17 @@ export async function estimateEnergy(
 
     const matched = candidates.filter((item) => (item.inputs || []).length === args.length);
 
-    // ====== 新增：原生 TRX 零参数 + callValue 降级处理 ======
-    if (matched.length === 0 && args.length === 0 && params.callValue && Number(params.callValue) > 0) {
-      // 没有零参数重载，但这是一个原生 TRX 调用（通过 callValue 传值）。
-      // 直接用零参数函数签名调 triggerConstantContract，绕过 ABI 匹配。
+    // Native-TRX zero-arg + callValue degrade path.
+    if (matched.length === 0 && args.length === 0 && callValueNum > 0) {
+      // No zero-arg overload in the ABI, but this is a native-TRX call (value passed
+      // via callValue). Bypass ABI matching and call triggerConstantContract with
+      // the zero-arg signature directly.
       const signature = `${params.functionName}()`;
       try {
         const result = await tronWeb.transactionBuilder.triggerConstantContract(
           params.address,
           signature,
-          { callValue: callValueToSafeNumber(params.callValue) },
+          { callValue: callValueNum },
           [],
           ownerAddress,
         );
@@ -621,20 +678,21 @@ export async function estimateEnergy(
           };
         }
 
-        // 模拟返回了结果但不是 success，解码 revert reason
+        // Simulation returned a result but not a success — decode the revert reason.
         const errorMsg = result?.result?.message
           ? tryDecodeHexMessage(result.result.message)
           : JSON.stringify(result);
         throw new Error(`Estimate energy failed: ${errorMsg}`);
       } catch (innerErr: any) {
-        // 如果 triggerConstantContract 本身也失败了（比如节点不支持零参数重载），
-        // 不阻断，而是返回一个降级估算值，让 safeSend 可以继续发交易。
+        // triggerConstantContract itself failed (e.g. the node doesn't support
+        // a zero-arg overload). Don't block the call — return a degraded estimate
+        // so safeSend can still proceed.
         if (innerErr.message?.includes("Estimate energy failed")) {
-          throw innerErr; // 真正的 REVERT，继续抛出
+          throw innerErr; // Real REVERT — propagate.
         }
-        // 节点级别的错误（如 ABI 解析失败），返回典型值
+        // Node-level error (e.g. ABI parse failure) — return a typical estimate.
         return {
-          energyUsed: 80000,  // repay TRX 典型值
+          energyUsed: 80000,  // Typical estimate for repay-with-TRX.
           energyPenalty: 0,
           totalEnergy: 80000,
           degraded: true,
@@ -642,7 +700,7 @@ export async function estimateEnergy(
         };
       }
     }
-    // ====== 降级处理结束 ======
+    // End of native-TRX degrade path.
 
     if (matched.length === 0) {
       const overloads = candidates
@@ -678,7 +736,7 @@ export async function estimateEnergy(
     const result = await tronWeb.transactionBuilder.triggerConstantContract(
       params.address,
       signature,
-      params.callValue ? { callValue: callValueToSafeNumber(params.callValue) } : {},
+      callValueNum > 0 ? { callValue: callValueNum } : {},
       typedParams,
       ownerAddress,
     );
@@ -691,7 +749,7 @@ export async function estimateEnergy(
       };
     }
 
-    // ====== 改进：解码 REVERT reason ======
+    // Decode the REVERT reason from the simulation result.
     const errorMsg = result?.result?.message
       ? tryDecodeHexMessage(result.result.message)
       : JSON.stringify(result);
@@ -709,9 +767,9 @@ function tryDecodeHexMessage(hexMsg: string): string {
   try {
     const hex = hexMsg.startsWith("0x") ? hexMsg.slice(2) : hexMsg;
 
-    // 尝试检测 ABI 编码的 Error(string)：选择器 08c379a0
+    // Detect ABI-encoded Error(string): selector 08c379a0.
     if (hex.startsWith("08c379a0") && hex.length >= 136) {
-      // 跳过 4 字节选择器 + 32 字节 offset + 32 字节 length，读取字符串
+      // Skip 4-byte selector + 32-byte offset + 32-byte length, then read the string.
       const lengthHex = hex.slice(72, 136);
       const strLength = parseInt(lengthHex, 16);
       if (strLength > 0 && strLength < 1000) {
@@ -723,14 +781,14 @@ function tryDecodeHexMessage(hexMsg: string): string {
       }
     }
 
-    // 直接尝试 hex → utf8
+    // Fall back to a direct hex → utf8 conversion.
     const direct = Buffer.from(hex, "hex").toString("utf8");
-    // 只返回可打印的 ASCII 内容
+    // Only return printable ASCII content.
     if (direct && /^[\x20-\x7E\n\r\t]+$/.test(direct)) {
       return direct;
     }
   } catch { /* ignore decode failures */ }
 
-  // 解码失败，原样返回
+  // Decoding failed — return the original hex unchanged.
   return hexMsg;
 }

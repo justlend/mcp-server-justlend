@@ -135,14 +135,15 @@ export function registerVotingTools(server: McpServer) {
     {
       description:
         "Approve JST token for the WJST voting contract. Required before depositing JST to get voting power. " +
-        "Use amount='max' for unlimited approval.",
+        "Pass the EXACT amount you intend to deposit (recommended). " +
+        "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the WJST contract spend the user's entire JST balance, present and future, until revoked.",
       inputSchema: {
-        amount: z.string().optional().describe("Amount to approve, or 'max' for unlimited. Default: max"),
+        amount: z.string().describe("Exact amount to approve (e.g. '1000'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve JST for Voting", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ amount = "max", network = services.getGlobalNetwork() }) => {
+    async ({ amount, network = services.getGlobalNetwork() }) => {
       try {
 
         const result = await services.approveJSTForVoting(amount, network);

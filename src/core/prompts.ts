@@ -103,7 +103,8 @@ Ask the user what they'd like to do first.`,
 
 ## Approval (TRC20 only, skip for jTRX)
 4. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
-5. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market} with amount='max'.
+5. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market} with amount='${amount}' (exact amount, NOT 'max').
+   - Unlimited (\`max\`) approval is convenient but lets the jToken contract spend the user's entire balance forever. Only use \`max\` if the user explicitly opts in after understanding this trade-off.
 
 ## Execute Supply
 6. Call the \`supply\` tool with market='${market}', amount='${amount}'.
@@ -222,7 +223,7 @@ Provide a summary:
 
 ## Approval (TRC20 only, skip for jTRX)
 3. Call the \`check_allowance\` tool for ${market} passing amount='${amount}' to explicitly check sufficiency.
-4. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market}.
+4. If the returned \`isSufficient\` is false, call the \`approve_underlying\` tool for ${market} with amount='${amount}' (exact amount, NOT 'max'). Use 'max' only if the user explicitly opts in.
 
 ## Execute Repay
 5. Call the \`repay\` tool with market='${market}', amount='${amount}'.

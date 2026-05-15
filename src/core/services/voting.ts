@@ -133,8 +133,8 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
     proposalList.sort((a, b) => b.proposalId - a.proposalId);
     return { proposals: proposalList, total: count };
 
-  } catch (error) {
-    console.error(`[API Fallback] On-chain proposal query failed, falling back to API:`, error);
+  } catch (error: any) {
+    console.warn(`[API Fallback] On-chain proposal query failed, falling back to API: ${error?.message ?? error}`);
 
     // --- 2. 链上失败时，兜底请求后端 API ---
     const host = getApiHost(network);
@@ -189,7 +189,7 @@ export interface UserVoteStatus {
 export async function getUserVoteStatus(
   address: string,
   network = "mainnet",
-): Promise<{ statusList: UserVoteStatus[]; votedProposals: number[]; withdrawableProposals: UserVoteStatus[]; }> {
+): Promise<{ statusList: UserVoteStatus[]; votedProposals: number[]; withdrawableProposals: UserVoteStatus[]; failedProposals?: number[]; }> {
   try {
     // --- 1. 优先尝试从链上获取用户最近 20 条提案的投票状态 ---
     const tronWeb = getTronWeb(network);
@@ -199,6 +199,7 @@ export async function getUserVoteStatus(
     const proposalCount = await contract.methods.proposalCount().call();
     const count = Number(proposalCount.toString());
     const statusList: UserVoteStatus[] = [];
+    const failedProposals: number[] = [];
 
     const startId = count;
     const endId = Math.max(1, count - 19);
@@ -225,15 +226,26 @@ export async function getUserVoteStatus(
             stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
           });
         }
-      } catch (err) { }
+      } catch (err: any) {
+        // Per-proposal failure — don't abort the whole scan, but record the
+        // proposal id so the caller can tell the difference between
+        // "user has not voted" and "we could not read the receipt".
+        failedProposals.push(pId);
+        console.warn(`[getUserVoteStatus] Failed receipt fetch for proposal ${pId}: ${err?.message ?? err}`);
+      }
     }
 
     const votedProposals = statusList.map(i => i.proposalId);
     const withdrawableProposals = statusList.filter(i => i.canWithdraw);
-    return { statusList, votedProposals, withdrawableProposals };
+    return {
+      statusList,
+      votedProposals,
+      withdrawableProposals,
+      ...(failedProposals.length > 0 ? { failedProposals } : {}),
+    };
 
-  } catch (error) {
-    console.error(`[API Fallback] On-chain user vote query failed, falling back to API:`, error);
+  } catch (error: any) {
+    console.error(`[API Fallback] On-chain user vote query failed, falling back to API: ${error?.message ?? error}`);
 
     // --- 2. 链上失败时，兜底请求后端 API ---
     const host = getApiHost(network);
@@ -321,15 +333,32 @@ export async function checkJSTAllowanceForVoting(address: string, network = "mai
   };
 }
 
-export async function approveJSTForVoting(amount: string = "max", network = "mainnet"): Promise<{ txID: string; message: string }> {
-  const tronWeb = await getSigningClient(network);
+export async function approveJSTForVoting(amount: string, network = "mainnet"): Promise<{ txID: string; message: string; warning?: string }> {
+  if (amount === undefined || amount === null || amount === "") {
+    throw new Error(
+      `approve_jst_for_voting requires an explicit amount. Pass the exact value you intend to deposit ` +
+      `(e.g. amount='1000'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
+    );
+  }
+  await getSigningClient(network);
   const addresses = getJustLendAddresses(network);
-  const approveAmount = amount.toLowerCase() === "max" ? MAX_UINT256 : utils.parseUnits(amount, JST_DECIMALS).toString();
+  const isMax = amount.toLowerCase() === "max";
+  const approveAmount = isMax ? MAX_UINT256 : utils.parseUnits(amount, JST_DECIMALS).toString();
 
   const { txID } = await safeSend({
     address: addresses.jst, abi: TRC20_ABI, functionName: "approve", args: [addresses.wjst, approveAmount]
   }, network);
-  return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} JST for WJST voting contract` };
+  const result: { txID: string; message: string; warning?: string } = {
+    txID,
+    message: `Approved ${isMax ? "unlimited" : amount} JST for WJST voting contract`,
+  };
+  if (isMax) {
+    result.warning =
+      `⚠️ UNLIMITED APPROVAL granted. The WJST contract can now spend your entire JST balance — ` +
+      `present and future — without further confirmation. ` +
+      `If you no longer need this, revoke with: approve_jst_for_voting amount='0'.`;
+  }
+  return result;
 }
 
 export async function depositJSTForVotes(amount: string, network = "mainnet"): Promise<{ txID: string; amount: string; message: string }> {

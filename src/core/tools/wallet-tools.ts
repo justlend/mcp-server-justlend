@@ -245,7 +245,9 @@ export function registerWalletTools(server: McpServer) {
         const status = await services.checkWalletStatus();
         agentAddress = status.activeAddress;
         agentWalletAvailable = !!status.activeAddress;
-      } catch {}
+      } catch (err: any) {
+        console.warn(`[get_wallet_mode] checkWalletStatus failed: ${err?.message ?? err}`);
+      }
 
       return { content: [{ type: "text", text: JSON.stringify({
         mode,

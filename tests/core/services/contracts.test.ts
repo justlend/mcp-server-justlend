@@ -14,6 +14,7 @@ import {
   getFunctionFromABI,
   readContract,
   fetchContractABI,
+  toSafeCallValueNumber,
 } from "../../../src/core/services/contracts.js";
 import { skipOn429 } from "../../helpers.js";
 
@@ -190,4 +191,46 @@ describe("fetchContractABI (Mainnet)", () => {
     expect(abi.length).toBeGreaterThan(0);
     console.error(`USDT ABI has ${abi.length} entries`);
   }), 30_000);
+});
+
+// ============================================================================
+// toSafeCallValueNumber (pure)
+// ============================================================================
+
+describe("toSafeCallValueNumber", () => {
+  it("returns 0 for undefined / null / empty string", () => {
+    expect(toSafeCallValueNumber(undefined)).toBe(0);
+    expect(toSafeCallValueNumber(null)).toBe(0);
+    expect(toSafeCallValueNumber("")).toBe(0);
+  });
+
+  it("accepts number, string, and bigint inputs and returns Number", () => {
+    expect(toSafeCallValueNumber(0)).toBe(0);
+    expect(toSafeCallValueNumber(1_000_000)).toBe(1_000_000);
+    expect(toSafeCallValueNumber("1000000")).toBe(1_000_000);
+    expect(toSafeCallValueNumber(1_000_000n)).toBe(1_000_000);
+  });
+
+  it("accepts the maximum safe integer (the upper bound)", () => {
+    expect(toSafeCallValueNumber(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(toSafeCallValueNumber(BigInt(Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
+    expect(toSafeCallValueNumber(String(Number.MAX_SAFE_INTEGER))).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it("rejects values above Number.MAX_SAFE_INTEGER without truncating silently", () => {
+    const tooBig = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    expect(() => toSafeCallValueNumber(tooBig)).toThrow(/exceeds the SDK safe-integer limit/);
+    expect(() => toSafeCallValueNumber(tooBig.toString())).toThrow(/exceeds the SDK safe-integer limit/);
+  });
+
+  it("rejects negative values", () => {
+    expect(() => toSafeCallValueNumber(-1)).toThrow(/cannot be negative/);
+    expect(() => toSafeCallValueNumber("-1000")).toThrow(/cannot be negative/);
+    expect(() => toSafeCallValueNumber(-1n)).toThrow(/cannot be negative/);
+  });
+
+  it("rejects non-integer / non-numeric strings", () => {
+    expect(() => toSafeCallValueNumber("not-a-number")).toThrow(/Invalid callValue/);
+    expect(() => toSafeCallValueNumber("1.5")).toThrow(/Invalid callValue/);
+  });
 });

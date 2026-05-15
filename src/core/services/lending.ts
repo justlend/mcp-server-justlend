@@ -8,7 +8,7 @@
 
 import { getTronWeb } from "./clients.js";
 import { getSigningClient } from "./wallet.js";
-import { safeSend } from "./contracts.js";
+import { safeSend, toSafeCallValueNumber } from "./contracts.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -105,13 +105,17 @@ async function fetchPriceRawFromAPI(underlyingSymbol: string, network: string): 
   try {
     const price = await tryFetch(network);
     if (price > 0n) return price;
-  } catch (err) { }
+  } catch (err: any) {
+    console.warn(`[fetchPriceRawFromAPI] primary lookup failed (network=${network}): ${err?.message ?? err}`);
+  }
 
   if (network === "nile") {
     try {
       const mainnetPrice = await tryFetch("mainnet");
       if (mainnetPrice > 0n) return mainnetPrice;
-    } catch (err) { }
+    } catch (err: any) {
+      console.warn(`[fetchPriceRawFromAPI] mainnet fallback failed: ${err?.message ?? err}`);
+    }
   }
   return 0n;
 }
@@ -128,7 +132,9 @@ async function getAssetPriceData(
   try {
     const oracle = tronWeb.contract(PRICE_ORACLE_ABI, oracleAddress);
     priceRaw = BigInt(await oracle.methods.getUnderlyingPrice(assetAddress).call());
-  } catch (err) { }
+  } catch (err: any) {
+    console.warn(`[getAssetPriceData] on-chain oracle read failed for ${assetAddress}: ${err?.message ?? err}`);
+  }
 
   if (priceRaw > 0n && network === "mainnet") {
   } else if (assetInfo) {
@@ -334,8 +340,8 @@ export async function borrow(
         adjustedValueCents,
         borrowBalanceCents,
       });
-    } catch (e) {
-      console.error(`[Borrow Debug] Skipped asset ${rawAsset}:`, e);
+    } catch (e: any) {
+      console.warn(`[Borrow Debug] Skipped asset ${rawAsset}: ${e?.message ?? e}`);
     }
   }
 
@@ -587,18 +593,26 @@ export async function exitMarket(
 
 export async function approveUnderlying(
   jTokenSymbol: string,
-  amount: string = "max",
+  amount: string,
   network = "mainnet",
-): Promise<{ txID: string; message: string }> {
+): Promise<{ txID: string; message: string; warning?: string }> {
   const info = resolveJToken(jTokenSymbol, network);
   if (!info.underlying) throw new Error(`${jTokenSymbol} is native TRX — no approval needed`);
+
+  if (amount === undefined || amount === null || amount === "") {
+    throw new Error(
+      `approve_underlying requires an explicit amount. Pass the exact value you intend to supply/repay ` +
+      `(e.g. amount='100'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
+    );
+  }
 
   const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const token = tronWeb.contract(TRC20_ABI, info.underlying);
 
+  const isMax = amount.toLowerCase() === "max";
   const currentAllowance = BigInt(await token.methods.allowance(walletAddress, info.address).call());
-  const approveAmount = amount.toLowerCase() === "max"
+  const approveAmount = isMax
     ? MAX_UINT256
     : utils.parseUnits(amount, info.underlyingDecimals).toString();
 
@@ -615,7 +629,17 @@ export async function approveUnderlying(
     functionName: "approve",
     args: [info.address, approveAmount],
   }, network);
-  return { txID, message: `Approved ${amount === "max" ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}` };
+  const result: { txID: string; message: string; warning?: string } = {
+    txID,
+    message: `Approved ${isMax ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}`,
+  };
+  if (isMax) {
+    result.warning =
+      `⚠️ UNLIMITED APPROVAL granted. The ${jTokenSymbol} contract can now spend your entire ` +
+      `${info.underlyingSymbol} balance — present and future — without further confirmation. ` +
+      `If you no longer need this, revoke with: approve_underlying market='${jTokenSymbol}' amount='0'.`;
+  }
+  return result;
 }
 
 // ============================================================================
@@ -709,7 +733,10 @@ async function trySimulateEnergy(
   _network = "mainnet",
 ): Promise<{ energy: number | null; energyPenalty: number; bandwidth: number | null; error?: string }> {
   const parameter = encodeParams(tronWeb, params);
-  const callValue = options.callValue ? parseInt(options.callValue.toString(), 10) : 0;
+  // Use the same safe-integer guard as safeSend's broadcast path so the
+  // simulation either matches what we will broadcast, or throws here cleanly
+  // for values beyond Number.MAX_SAFE_INTEGER instead of silently truncating.
+  const callValue = toSafeCallValueNumber(options.callValue);
 
   const requestBody: Record<string, any> = {
     owner_address: tronWeb.address.toHex(ownerAddress),

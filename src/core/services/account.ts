@@ -125,7 +125,9 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
       "Timed out while loading oracle address",
     );
     realOracleAddress = tronWeb.address.fromHex(oracleHex);
-  } catch (e) { }
+  } catch (e: any) {
+    console.warn(`[getAccountSummary] dynamic oracle lookup failed, falling back to configured oracle (${addresses.priceOracle}): ${e?.message ?? e}`);
+  }
 
   // Batch-fetch snapshots first, then fetch prices only for active positions.
   // This keeps account-summary reads below TronGrid/multicall limits on mainnet.

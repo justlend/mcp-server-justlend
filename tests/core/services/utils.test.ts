@@ -2,7 +2,7 @@
  * Unit tests for utils.ts — pure functions, no network calls.
  */
 import { describe, it, expect } from "vitest";
-import { utils } from "../../../src/core/services/utils.js";
+import { utils, expandScientificNotation } from "../../../src/core/services/utils.js";
 
 describe("utils.toSun", () => {
   it("converts 1 TRX to 1,000,000 Sun", () => {
@@ -141,5 +141,56 @@ describe("utils.formatUnits", () => {
 describe("utils.parseUnits", () => {
   it("parses decimal strings into bigint precisely", () => {
     expect(utils.parseUnits("900719925474099312345678.901234", 6)).toBe(900719925474099312345678901234n);
+  });
+
+  // Regression: high-TVL JustLend exchangeRate values arrive as JS numbers ≥ 1e21,
+  // which `.toString()` / `.toFixed(18)` render in scientific notation. The previous
+  // parseUnits rejected those and threw "Invalid numeric value: \"3.88...e+24\"",
+  // which propagated up through getAccountSummary as an opaque error.
+  it("accepts positive scientific-notation strings", () => {
+    expect(utils.parseUnits("3.88807391354968e+24", 0)).toBe(
+      utils.parseUnits("3888073913549680000000000", 0),
+    );
+  });
+
+  it("accepts unsigned-exponent scientific notation", () => {
+    expect(utils.parseUnits("1.5e10", 0)).toBe(15_000_000_000n);
+  });
+
+  it("accepts negative-exponent scientific notation", () => {
+    expect(utils.parseUnits("1.5e-3", 6)).toBe(1500n);
+  });
+
+  it("accepts negative-value scientific notation", () => {
+    expect(utils.parseUnits("-2.5e3", 0)).toBe(-2500n);
+  });
+
+  it("still rejects garbage strings", () => {
+    expect(() => utils.parseUnits("not-a-number", 0)).toThrow(/Invalid numeric value/);
+  });
+});
+
+describe("expandScientificNotation", () => {
+  it("returns plain decimals unchanged", () => {
+    expect(expandScientificNotation("123.456")).toBe("123.456");
+    expect(expandScientificNotation("-0")).toBe("-0");
+  });
+
+  it("expands large exponents", () => {
+    expect(expandScientificNotation("1.0279569798944131e+26")).toBe("102795697989441310000000000");
+  });
+
+  it("expands small exponents into a leading 0.", () => {
+    expect(expandScientificNotation("1.5e-3")).toBe("0.0015");
+    expect(expandScientificNotation("9e-1")).toBe("0.9");
+  });
+
+  it("preserves sign on negative values", () => {
+    expect(expandScientificNotation("-3.88e+24")).toBe("-3880000000000000000000000");
+    expect(expandScientificNotation("-1e-2")).toBe("-0.01");
+  });
+
+  it("returns malformed scientific strings unchanged (parseUnits handles rejection)", () => {
+    expect(expandScientificNotation("e10")).toBe("e10");
   });
 });
