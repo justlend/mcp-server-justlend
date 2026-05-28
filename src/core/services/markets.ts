@@ -8,7 +8,8 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
-import { formatDisplayUnits, formatRatio, formatPercentRatio, MANTISSA_18 } from "./bigint-math.js";
+import { formatDisplayUnits, formatRatio, formatPercentRatio, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
+import { utils } from "./utils.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
 const MARKETS_TTL_MS = 60_000; // 60s
@@ -157,6 +158,22 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
 }
 
 /**
+ * Compare two TRON addresses for equality regardless of format (Base58 `T...`
+ * vs hex `41...`). `toLowerCase()` alone is unsafe on Base58 — different formats
+ * never match — so normalize to hex first.
+ */
+function addressesEqual(a: string | undefined, b: string | undefined, tronWeb: any): boolean {
+  if (!a || !b) return false;
+  try {
+    const aHex = a.startsWith("T") ? tronWeb.address.toHex(a) : a;
+    const bHex = b.startsWith("T") ? tronWeb.address.toHex(b) : b;
+    return aHex.toLowerCase() === bHex.toLowerCase();
+  } catch {
+    return a === b;
+  }
+}
+
+/**
  * Fetch single market data from API by jToken address, mapped to MarketData interface.
  */
 async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "mainnet"): Promise<MarketData> {
@@ -166,21 +183,44 @@ async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "ma
   const json = await resp.json();
   if (json.code !== 0 || !json.data?.jtokenList) throw new Error("Invalid API response");
 
-  const m = json.data.jtokenList.find(
-    (item: any) => item.jtokenAddress?.toLowerCase() === jTokenInfo.address.toLowerCase(),
+  const tronWeb = getTronWeb(network);
+  const m = json.data.jtokenList.find((item: any) =>
+    addressesEqual(item.jtokenAddress, jTokenInfo.address, tronWeb),
   );
   if (!m) throw new Error(`Market ${jTokenInfo.symbol} not found in API`);
 
-  const depositedUSD = parseFloat(m.depositedUSD || "0");
-  const borrowedUSD = parseFloat(m.borrowedUSD || "0");
-  const totalSupplyRaw = parseFloat(m.totalSupply || "0");
-  const exchangeRate = parseFloat(m.exchangeRate || "0");
-  const underlyingAmount = totalSupplyRaw > 0 && exchangeRate > 0
-    ? (totalSupplyRaw * exchangeRate) / 1e18 / (10 ** jTokenInfo.underlyingDecimals)
-    : 0;
-  const priceUSD = underlyingAmount > 0 ? depositedUSD / underlyingAmount : 0;
-  const utilizationRate = depositedUSD > 0 ? Math.round(borrowedUSD / depositedUSD * 10000) / 100 : 0;
+  // BigInt-safe price computation. Mirrors `fetchPriceFromAPI` in price.ts so
+  // both code paths produce the same number on high-TVL markets.
+  const depositedUsdStr = normalizeDecimalString(m.depositedUSD || "0");
+  const borrowedUsdStr = normalizeDecimalString(m.borrowedUSD || "0");
+  let totalSupplyRaw = 0n;
+  let exchangeRateRaw = 0n;
+  try {
+    totalSupplyRaw = BigInt(normalizeDecimalString(m.totalSupply || "0").split(".")[0] || "0");
+    exchangeRateRaw = BigInt(normalizeDecimalString(m.exchangeRate || "0").split(".")[0] || "0");
+  } catch {
+    // leave as 0n; downstream guards handle zero values
+  }
 
+  let priceUSD = 0;
+  if (depositedUsdStr !== "0" && totalSupplyRaw > 0n && exchangeRateRaw > 0n) {
+    const underlyingRaw = (totalSupplyRaw * exchangeRateRaw) / MANTISSA_18;
+    if (underlyingRaw > 0n) {
+      const depositedUsdScaled = utils.parseUnits(depositedUsdStr, 18);
+      const numerator = depositedUsdScaled * pow10(jTokenInfo.underlyingDecimals);
+      const priceScaledBy1e18 = divRound(numerator, underlyingRaw);
+      priceUSD = Number(priceScaledBy1e18) / 1e18;
+    }
+  }
+
+  // Utilization is a display percent (<= 100, ~2-decimal precision) — float math is acceptable.
+  const depositedUsdFloat = Number(depositedUsdStr);
+  const borrowedUsdFloat = Number(borrowedUsdStr);
+  const utilizationRate = depositedUsdFloat > 0
+    ? Math.round(borrowedUsdFloat / depositedUsdFloat * 10000) / 100
+    : 0;
+
+  // APYs and CF are sub-1 decimals from the API — float is fine here.
   return {
     symbol: jTokenInfo.symbol,
     underlyingSymbol: jTokenInfo.underlyingSymbol,
@@ -192,7 +232,7 @@ async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "ma
     totalBorrows: m.totalBorrow || "0",
     totalReserves: m.totalReserves || "0",
     availableLiquidity: m.availableLiquidity || "0",
-    exchangeRate: exchangeRate.toFixed(10),
+    exchangeRate: exchangeRateRaw > 0n ? formatRatio(exchangeRateRaw, MANTISSA_18, 10) : "0",
     collateralFactor: Math.round(parseFloat(m.collateralFactor || "0") / 1e16 * 100) / 100,
     reserveFactor: Math.round(parseFloat(m.reserveFactor || "0") / 1e16 * 100) / 100,
     isListed: true,
@@ -216,24 +256,51 @@ export async function getMarketDataWithFallback(jTokenInfo: JTokenInfo, network 
   }
 }
 
+export interface MarketLoadFailure {
+  symbol: string;
+  address: string;
+  error: string;
+}
+
+export interface AllMarketDataResult {
+  results: MarketData[];
+  failures: MarketLoadFailure[];
+}
+
 /**
  * Get market data for all listed JustLend V1 markets.
+ * Per-market failures are returned in `failures` and also logged at warn level
+ * so callers cannot silently receive a partial list.
  *
  * VERSION: V1 - Queries all V1 jToken markets
  */
-export async function getAllMarketData(network = "mainnet"): Promise<MarketData[]> {
+export async function getAllMarketDataDetailed(network = "mainnet"): Promise<AllMarketDataResult> {
   const tokens = getAllJTokens(network);
   // Query sequentially to avoid RPC rate-limiting (especially on testnet nodes)
-  const allResults: MarketData[] = [];
+  const results: MarketData[] = [];
+  const failures: MarketLoadFailure[] = [];
   for (const token of tokens) {
     try {
       const data = await getMarketData(token, network);
-      allResults.push(data);
-    } catch {
-      // Skip markets that fail to query
+      results.push(data);
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      failures.push({ symbol: token.symbol, address: token.address, error: message });
+      console.warn(`[getAllMarketData] ${token.symbol} (${token.address}) failed: ${message}`);
     }
   }
-  return allResults;
+  return { results, failures };
+}
+
+/**
+ * Backwards-compatible wrapper that returns only the successful markets.
+ * Per-market failures are surfaced via `console.warn` inside
+ * `getAllMarketDataDetailed`; prefer the detailed variant when callers can
+ * propagate failure context to the user.
+ */
+export async function getAllMarketData(network = "mainnet"): Promise<MarketData[]> {
+  const { results } = await getAllMarketDataDetailed(network);
+  return results;
 }
 
 /**
@@ -303,7 +370,8 @@ async function getJTokenDetailFromAPI(jtokenAddr: string, network = "mainnet"): 
     if (!response.ok) return null;
     const data = await response.json();
     return data.code === 0 ? data.data : null;
-  } catch {
+  } catch (err: any) {
+    console.warn(`[getJTokenDetailFromAPI] ${jtokenAddr}: ${err?.message ?? err}`);
     return null;
   }
 }
@@ -422,10 +490,10 @@ export async function getAllMarketOverview(network = "mainnet"): Promise<MarketO
  */
 export async function getAllMarketsWithFallback(network = "mainnet") {
   const cacheKey = `markets:all:${network}`;
-  const cached = cacheGet<{ markets: any[]; source: string; note: string }>(cacheKey);
+  const cached = cacheGet<{ markets: any[]; source: string; note: string; failures?: MarketLoadFailure[] }>(cacheKey);
   if (cached) return cached;
 
-  let result: { markets: any[]; source: string; note: string };
+  let result: { markets: any[]; source: string; note: string; failures?: MarketLoadFailure[] };
   try {
     const markets = await getAllMarketOverview(network);
     result = {
@@ -435,11 +503,15 @@ export async function getAllMarketsWithFallback(network = "mainnet") {
     };
   } catch {
     // API unavailable (e.g. Nile testnet), fallback to on-chain contract queries
-    const markets = await getAllMarketData(network);
+    const { results: markets, failures } = await getAllMarketDataDetailed(network);
+    const baseNote = "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.";
     result = {
       markets,
       source: "contract" as const,
-      note: "Data queried directly from on-chain contracts (API unavailable). Mining rewards and underlying staking APY are not included.",
+      note: failures.length > 0
+        ? `${baseNote} ${failures.length} market(s) failed to load: ${failures.map(f => f.symbol).join(", ")}.`
+        : baseNote,
+      ...(failures.length > 0 ? { failures } : {}),
     };
   }
   cacheSet(cacheKey, result, MARKETS_TTL_MS);

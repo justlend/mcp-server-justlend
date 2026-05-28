@@ -63,8 +63,16 @@ function getConfigDir(): string {
 
 /**
  * Auto-generate an encrypted wallet if none exists.
- * Creates ~/.agent-wallet/ directory, generates a random password (saved to runtime_secrets.json),
- * initializes the encrypted store, generates a private key, and registers it as the active wallet.
+ * Creates ~/.agent-wallet/ directory, initializes the encrypted store, generates
+ * a private key, and registers it as the active wallet.
+ *
+ * Password source order:
+ *   1. AGENT_WALLET_PASSWORD env var (preferred — password never touches disk)
+ *   2. Random 32-byte password saved to runtime_secrets.json (legacy auto-init).
+ *      In this mode the at-rest encryption is effectively obfuscation because
+ *      the key sits next to the ciphertext. A loud warning is emitted so the
+ *      operator knows to switch to browser mode or set AGENT_WALLET_PASSWORD
+ *      before holding any meaningful balance.
  *
  * @returns The new wallet address, or null if wallets already exist.
  */
@@ -102,11 +110,26 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
     try { chmodSync(configDir, 0o700); } catch { /* Windows */ }
   }
 
-  // 2. Generate a random password and save to runtime_secrets.json
-  const password = randomBytes(32).toString("hex");
+  // 2. Resolve the encryption password.
+  const envPassword = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
+  const password = envPassword ?? randomBytes(32).toString("hex");
   const provider = new ConfigWalletProvider(configDir, password, { network: "tron" });
   provider.ensureStorage();
-  provider.saveRuntimeSecrets(password);
+  if (envPassword) {
+    console.error(
+      `[agent-wallet] AGENT_WALLET_PASSWORD provided; encryption key is NOT written to disk. ` +
+      `Keep the env var safe — losing it makes the wallet unrecoverable.`,
+    );
+  } else {
+    provider.saveRuntimeSecrets(password);
+    console.error(
+      `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
+      `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
+      `At-rest encryption is effectively obfuscation in this mode. ` +
+      `For any meaningful balance, prefer browser mode (TronLink) or set ` +
+      `AGENT_WALLET_PASSWORD before first run so the password is held only in memory.`,
+    );
+  }
 
   // 3. Initialize encrypted store (master.json) and generate private key
   const kvStore = new SecureKVStore(configDir, password);
@@ -232,7 +255,8 @@ export async function getExistingAgentWalletAddress(): Promise<string | null> {
 
     const wallet = await provider.getActiveWallet("tron");
     return wallet.getAddress();
-  } catch {
+  } catch (err: any) {
+    console.warn(`[getExistingAgentWalletAddress] failed: ${err?.message ?? err}`);
     return null;
   }
 }
@@ -305,16 +329,46 @@ export async function getSigningClient(network = "mainnet"): Promise<TronWeb> {
 /**
  * Sign a transaction and return the signed transaction object ready for broadcasting.
  * Routes to browser wallet or agent-wallet based on the current wallet mode.
+ *
+ * NOTE on `description`: neither `tronlink-signer` nor `@bankofai/agent-wallet`
+ * exposes a metadata channel to the underlying signing UI, so we surface the
+ * description to the MCP server's stderr log (the standard MCP log channel)
+ * just before signing. Operators running stdio-mode see it directly; HTTP-mode
+ * operators see it in server logs.
  */
+function isSignatureHex(value: unknown): value is string {
+  return typeof value === "string" && /^(0x)?[0-9a-fA-F]+$/.test(value) && value.length >= 64;
+}
+
+interface SignedTxShape {
+  signature: string[];
+  txID?: string;
+}
+
+function extractSignature(resolved: unknown): string[] {
+  if (resolved && typeof resolved === "object" && Array.isArray((resolved as SignedTxShape).signature)) {
+    return (resolved as SignedTxShape).signature;
+  }
+  if (isSignatureHex(resolved)) {
+    return [resolved];
+  }
+  throw new Error(
+    `Signer returned malformed response: expected a hex signature or { signature: string[] }, got ${JSON.stringify(resolved)}`,
+  );
+}
+
 export async function signTransactionWithWallet(
   unsignedTx: any,
   description?: string,
   network = getGlobalNetwork(),
 ): Promise<any> {
+  if (description) {
+    console.error(`[sign] ${description}`);
+  }
+
   if (getWalletMode() === "browser") {
     const signer = getBrowserSigner();
     const { signedTransaction } = await signer.signTransaction(unsignedTx, description, network);
-    // Ensure the signature array is on the original tx structure
     if (signedTransaction && signedTransaction.signature) {
       return { ...unsignedTx, signature: signedTransaction.signature };
     }
@@ -328,19 +382,18 @@ export async function signTransactionWithWallet(
   // 1. A JSON string of the full signed transaction → parse and extract signature
   // 2. A full signed transaction object (with signature[] already embedded)
   // 3. Just the signature hex string
-  let resolved = signed;
+  let resolved: unknown = signed;
   if (typeof signed === "string") {
     try {
       resolved = JSON.parse(signed);
     } catch {
-      // It's a plain hex signature string
+      if (!isSignatureHex(signed)) {
+        throw new Error(`Signer returned malformed hex signature: ${signed}`);
+      }
       return { ...unsignedTx, signature: [signed] };
     }
   }
-  if (resolved && (resolved as any).signature) {
-    return { ...unsignedTx, signature: (resolved as any).signature };
-  }
-  return { ...unsignedTx, signature: [resolved] };
+  return { ...unsignedTx, signature: extractSignature(resolved) };
 }
 
 /**
@@ -407,7 +460,9 @@ export async function checkWalletStatus(): Promise<WalletStatus> {
         try {
           const w = await provider.getWallet(id, "tron");
           info.address = await w.getAddress();
-        } catch { /* password required or other issue */ }
+        } catch (err: any) {
+          console.warn(`[checkWalletStatus] cannot resolve wallet "${id}": ${err?.message ?? err}`);
+        }
         wallets.push(info);
       }
 
