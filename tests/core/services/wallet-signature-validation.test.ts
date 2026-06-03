@@ -54,6 +54,8 @@ import { createSessionState, runWithSessionState, setWalletMode } from "../../..
 describe("signTransactionWithWallet — malformed signer response", () => {
   beforeEach(() => {
     agentSignMock.mockReset();
+    // These tests exercise the auto-init wallet path without a password env var.
+    process.env.ALLOW_INSECURE_RUNTIME_SECRETS = "true";
   });
 
   it("throws a typed error when the signer returns null", async () => {

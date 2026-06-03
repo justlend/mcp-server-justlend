@@ -7,7 +7,7 @@ import {
   type WalletConfig,
 } from "@bankofai/agent-wallet";
 import { randomBytes } from "crypto";
-import { existsSync } from "fs";
+import { existsSync, chmodSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
@@ -62,6 +62,33 @@ function getConfigDir(): string {
 }
 
 /**
+ * Guard the insecure auto-init mode that persists a random encryption password
+ * to `runtime_secrets.json` next to the ciphertext. Refuse unless the operator
+ * explicitly opts in via ALLOW_INSECURE_RUNTIME_SECRETS=true.
+ */
+function assertInsecureRuntimeSecretsAllowed(): void {
+  if (process.env.ALLOW_INSECURE_RUNTIME_SECRETS === "true") return;
+  throw new Error(
+    "Refusing to auto-generate a wallet encryption password and write it to " +
+    "runtime_secrets.json next to the encrypted store: this reduces at-rest " +
+    "encryption to obfuscation. Set AGENT_WALLET_PASSWORD (held only in memory) " +
+    "or use browser mode (TronLink). To explicitly accept the insecure legacy " +
+    "behavior, set ALLOW_INSECURE_RUNTIME_SECRETS=true.",
+  );
+}
+
+/**
+ * Restrict the runtime_secrets.json file itself to owner-only (0o600).
+ * The parent directory is already chmod 0o700, but the file holding the
+ * plaintext password must not be readable by other users either.
+ */
+function secureRuntimeSecretsFile(configDir: string): void {
+  try {
+    chmodSync(join(configDir, "runtime_secrets.json"), 0o600);
+  } catch { /* Windows / best-effort */ }
+}
+
+/**
  * Auto-generate an encrypted wallet if none exists.
  * Creates ~/.agent-wallet/ directory, initializes the encrypted store, generates
  * a private key, and registers it as the active wallet.
@@ -112,6 +139,12 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
 
   // 2. Resolve the encryption password.
   const envPassword = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
+  if (!envPassword) {
+    // Refuse the insecure auto-init mode by default: writing the encryption
+    // password next to the ciphertext reduces at-rest encryption to obfuscation.
+    // Require explicit, conscious opt-in via ALLOW_INSECURE_RUNTIME_SECRETS=true.
+    assertInsecureRuntimeSecretsAllowed();
+  }
   const password = envPassword ?? randomBytes(32).toString("hex");
   const provider = new ConfigWalletProvider(configDir, password, { network: "tron" });
   provider.ensureStorage();
@@ -122,6 +155,7 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
     );
   } else {
     provider.saveRuntimeSecrets(password);
+    secureRuntimeSecretsFile(configDir);
     console.error(
       `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
       `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
@@ -173,6 +207,7 @@ export async function importWallet(
 
   // Resolve or create password
   let password = process.env.AGENT_WALLET_PASSWORD || null;
+  let passwordIsRuntimeGenerated = false;
   try {
     const existingProvider = resolveWalletProvider({ network: "tron" });
     if (existingProvider instanceof ConfigWalletProvider) {
@@ -181,13 +216,27 @@ export async function importWallet(
   } catch { /* no existing provider */ }
 
   if (!password) {
+    // No env password and no pre-existing runtime secret: we would have to
+    // generate a random password and persist it next to the ciphertext, which
+    // degrades at-rest encryption to obfuscation. Require explicit opt-in.
+    assertInsecureRuntimeSecretsAllowed();
     password = randomBytes(32).toString("hex");
+    passwordIsRuntimeGenerated = true;
   }
 
   const provider = new ConfigWalletProvider(configDir, password, { network: "tron" });
   provider.ensureStorage();
   if (!provider.hasRuntimeSecrets()) {
     provider.saveRuntimeSecrets(password);
+    if (passwordIsRuntimeGenerated) {
+      secureRuntimeSecretsFile(configDir);
+      console.error(
+        `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
+        `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
+        `At-rest encryption is effectively obfuscation in this mode. ` +
+        `Prefer browser mode (TronLink) or set AGENT_WALLET_PASSWORD.`,
+      );
+    }
   }
 
   // Initialize master if needed
