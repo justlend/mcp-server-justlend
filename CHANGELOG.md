@@ -1,0 +1,86 @@
+# Changelog
+
+All notable changes to `@justlend/mcp-server-justlend` are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
+project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
+approximate, derived from git history; see the repository log for exact commits.
+
+## [1.0.8]
+
+Security-hardening release addressing the 2026-06-03 full-audit findings, plus dependency
+advisory cleanup. Tool surface unchanged (59 tools).
+
+### Security
+- Address 2026-06-03 full-audit findings (governance read-path data-integrity, energy-rental
+  float-to-Sun construction review, dependency reachability).
+- Clear transitive `npm audit` advisories by pinning `qs` `6.15.2` and `ws` `8.20.1` via
+  `overrides` (alongside the existing `fast-uri` `3.1.2`).
+- Enable the security-guidance plugin in project settings.
+
+### Added
+- `mcp-api-list.md` — machine-readable, offline-loadable catalog of all 59 tools (input
+  schemas, side-effect class, HITL guidance), generated from source via
+  `npm run gen:api-list` (`scripts/gen-mcp-api-list.ts`).
+- Self-describing units (`_unit` / `decimals` / `raw`) on the core balance tools.
+
+### Unchanged
+- Runtime deps: `@modelcontextprotocol/sdk` `1.29.0`, `tronweb` `6.2.2`,
+  `@bankofai/agent-wallet` `2.3.0`, `tronlink-signer` `0.1.1`.
+
+## [1.0.7]
+
+### Added
+- HTX market added to mainnet chains; README market table refreshed.
+
+### Changed
+- Dependency / runtime freshness; sTRX fallback precision expectations updated.
+- Resolves the v1.0.7 audit findings. Keeps the 59-tool surface.
+
+## [1.0.6]
+
+### Fixed
+- Address `audit-2026-05-13` findings: approve safety (explicit approval amounts, opt-in
+  unlimited `max`), BigInt precision, typed broadcast handling.
+- Expand scientific notation in BigInt parsing for high-TVL exchange rates.
+- Degrade gracefully when the mining-rewards API is unavailable on Nile (fallback).
+
+## [1.0.4]
+
+### Fixed
+- Address `audit-2026-05-07` high findings: timing-safe `MCP_API_KEY` comparison
+  (`crypto.timingSafeEqual` + length check), callValue precision.
+- Stop `safeSend` from broadcasting on a simulated `REVERT` (mainnet fail-closed); scope
+  stdio session state.
+- Resolve real `decimals` for `transfer_trc20` when given a raw token address.
+- Zero the private-key buffer after use; bump `follow-redirects`.
+- Use BigInt comparison for sTRX unstake balance check and safe float-to-Sun conversion.
+
+### Changed
+- Pin all dependency versions to exact installed versions.
+
+## [1.0.3]
+
+### Changed
+- Maintenance and dependency updates.
+
+## [1.0.1]
+
+### Changed
+- Early post-release fixes.
+
+## [1.0.0]
+
+### Added
+- Initial release: 59 MCP tools across Wallet & Network, Market Data, Account & Balances,
+  Lending Operations, Mining & Rewards, JST Voting / Governance, Energy Rental, sTRX
+  Staking, Transfers, and general TRON utilities. Dual-mode signing (browser TronLink via
+  TIP-6963 or encrypted `@bankofai/agent-wallet`). stdio and HTTP/SSE transports.
+
+[1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
+[1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
+[1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6
+[1.0.4]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.4
+[1.0.3]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.3
+[1.0.1]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.1
+[1.0.0]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.0

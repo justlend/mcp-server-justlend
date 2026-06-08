@@ -79,6 +79,44 @@ export function formatDisplayUnits(raw: bigint, decimals: number): string {
 }
 
 // ============================================================================
+// Self-describing amounts (AI-Agent doc standard: raw + _unit + decimals + display)
+// ============================================================================
+
+/** A self-describing token/value amount for tool responses. */
+export interface DescribedAmount {
+  /** Raw integer value as a string (base units, e.g. Sun). `string` so values > 2^53 keep full precision. */
+  raw: string;
+  /** Number of decimal places to scale `raw` down to the display value. */
+  decimals: number;
+  /** Unit/symbol of the display value (e.g. "TRX", "USDT", "sTRX", "USD"). */
+  _unit: string;
+  /** Human-readable display value (decimals already applied). Do NOT scale again. */
+  display: string;
+}
+
+/**
+ * Build a self-describing amount object so AI agents never have to guess the
+ * unit or re-apply decimals. Returns `{ raw, decimals, _unit, display }`.
+ *
+ * The standard self-description shape required by the AI-Agent doc standard:
+ * any "raw ↔ display" numeric field should carry raw + `_unit` + `decimals` +
+ * the human-readable display string together.
+ */
+export function describeAmount(
+  raw: bigint | string | number,
+  decimals: number,
+  unit: string,
+): DescribedAmount {
+  const rawBig = typeof raw === "bigint" ? raw : BigInt(normalizeDecimalString(raw).split(".")[0] || "0");
+  return {
+    raw: rawBig.toString(),
+    decimals,
+    _unit: unit,
+    display: formatDisplayUnits(rawBig, decimals),
+  };
+}
+
+// ============================================================================
 // USD helpers
 // ============================================================================
 

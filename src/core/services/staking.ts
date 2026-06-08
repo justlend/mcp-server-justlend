@@ -1,5 +1,5 @@
 import { getSigningClient, signTransactionWithWallet } from "./wallet.js";
-import { resolveBroadcastResult, type BroadcastResponse } from "./contracts.js";
+import { resolveBroadcastResult, toSafeCallValueNumber, type BroadcastResponse } from "./contracts.js";
 
 /**
  * Freeze TRX to obtain BANDWIDTH or ENERGY resources (Stake 2.0).
@@ -16,7 +16,7 @@ export async function freezeBalanceV2(
 
   try {
     const transaction = await tronWeb.transactionBuilder.freezeBalanceV2(
-      amount as any,
+      toSafeCallValueNumber(amount),
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );
@@ -44,7 +44,7 @@ export async function unfreezeBalanceV2(
 
   try {
     const transaction = await tronWeb.transactionBuilder.unfreezeBalanceV2(
-      amount as any,
+      toSafeCallValueNumber(amount),
       resource,
       tronWeb.defaultAddress.base58 || undefined,
     );

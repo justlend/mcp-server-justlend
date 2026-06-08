@@ -361,8 +361,8 @@ export async function getWalletTokensBalance(
         decimals: token.decimals,
         error: errors[i] ? true : undefined,
       }));
-    } catch {
-      // fall through to sequential fallback
+    } catch (err: any) {
+      console.warn(`[getWalletTokensBalance] multicall3 failed, falling back to balanceOf loop: ${err?.message ?? err}`);
     }
   }
 

@@ -7,6 +7,7 @@ import {
 import * as services from "../services/index.js";
 import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
+import { describeAmount } from "../services/bigint-math.js";
 import { sanitizeError } from "./shared.js";
 
 export function registerMarketTools(server: McpServer) {
@@ -239,7 +240,12 @@ export function registerMarketTools(server: McpServer) {
       try {
         const userAddress = address || await services.getWalletAddress();
         const balance = await services.getTRXBalance(userAddress, network);
-        return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, balance: `${balance.formatted} TRX` }, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({
+          address: userAddress,
+          balance: `${balance.formatted} TRX`,
+          // Self-describing amount (raw + _unit + decimals + display) so agents never re-apply decimals.
+          amount: describeAmount(balance.wei, 6, "TRX"),
+        }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }
@@ -281,6 +287,7 @@ export function registerMarketTools(server: McpServer) {
               balance: result.balance,
               balanceNote: "This balance is already in human-readable token units (decimals already applied). Do not divide again.",
               symbol: result.symbol,
+              _unit: result.symbol,
               decimals: result.decimals,
               tokenAddress: resolvedAddress,
             }, null, 2)

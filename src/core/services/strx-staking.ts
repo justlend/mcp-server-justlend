@@ -285,7 +285,7 @@ export async function stakeTrxToStrx(
  * Note: Unstaked TRX has an unbonding period before it can be withdrawn
  */
 export async function unstakeStrx(
-  amountStrx: number | string,
+  amountStrx: string,
   network = "mainnet",
 ) {
   const tronWeb = await getSigningClient(network);
@@ -294,7 +294,7 @@ export async function unstakeStrx(
 
   // Check sTRX balance (compare in BigInt to avoid precision loss for large holdings)
   const strxBalance = await getStrxBalance(walletAddress, network);
-  const amountWei = utils.parseUnits(String(amountStrx), STRX_DECIMALS);
+  const amountWei = utils.parseUnits(amountStrx, STRX_DECIMALS);
 
   if (strxBalance.raw < amountWei) {
     throw new Error(

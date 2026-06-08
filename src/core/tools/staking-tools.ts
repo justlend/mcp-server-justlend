@@ -140,7 +140,7 @@ export function registerStakingTools(server: McpServer) {
         "Note: unstaked TRX has an unbonding period (typically 14 days) before withdrawal. " +
         "Pre-checks: sufficient sTRX balance.",
       inputSchema: {
-        amount: z.number().min(0.000001).describe("Amount of sTRX to unstake"),
+        amount: z.string().regex(/^\d+(\.\d+)?$/).describe("Amount of sTRX to unstake (human-readable decimal string, e.g. '1' or '10.5')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Unstake sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },

@@ -40,6 +40,12 @@ async function main() {
 
   if (CORS_ORIGIN) {
     app.use(cors({ origin: CORS_ORIGIN }));
+  } else if (HOST !== "127.0.0.1" && HOST !== "localhost" && HOST !== "::1") {
+    console.error(
+      `[http-server] WARNING: MCP_HOST=${HOST} binds to a non-loopback address but ` +
+      `MCP_CORS_ORIGIN is not set. The API key alone may not be enough — set ` +
+      `MCP_CORS_ORIGIN to an explicit allow-list, or bind to 127.0.0.1 if remote access is not required.`,
+    );
   }
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
