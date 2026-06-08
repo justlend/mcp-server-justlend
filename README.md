@@ -311,6 +311,8 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ## API Reference
 
+> **Machine-readable tool catalog for AI agents:** [`mcp-api-list.md`](./mcp-api-list.md) — a complete, offline-loadable list of all 59 tools with their input schemas (parameter / type / required / default), MCP side-effect annotations (read-only vs. on-chain write / destructive) and HITL guidance. It is **generated from source** (`npm run gen:api-list`, see [`scripts/gen-mcp-api-list.ts`](./scripts/gen-mcp-api-list.ts)) so it never drifts from the actual tool definitions. Agents can load it to plan tool routing without connecting to the server.
+
 ### Tools (59 total)
 
 #### Wallet & Network
@@ -528,6 +530,23 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
 
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| MCP client doesn't list any tools (stdio) | Server not launched, or wrong command/path in client config | Verify the client `command`/`args` point to this server (`npx @justlend/mcp-server-justlend` or `tsx src/index.ts`). Check the client's MCP logs for a spawn error. |
+| `429 Too Many Requests` / slow market reads on mainnet | TronGrid free-tier rate limit | Set `TRONGRID_API_KEY` (strongly recommended for mainnet). Avoid tight polling; use `get_wallet_balances`/`get_all_markets` batch tools instead of per-token loops. |
+| HTTP/SSE returns `401 Unauthorized` | Missing/wrong `Authorization` header in HTTP mode | HTTP mode is fail-closed: set `MCP_API_KEY` on the server and send `Authorization: Bearer <key>` from the client. `/health` is the only unauthenticated path. |
+| Server refuses to start: `MCP_API_KEY is required in HTTP mode` | HTTP/SSE transport started without an API key | Set `MCP_API_KEY` (e.g. `openssl rand -base64 32`). stdio mode does not require it. |
+| `503 Too many active sessions` (HTTP) | Concurrent SSE sessions exceed `MCP_MAX_SESSIONS` (default 100) | Close idle clients or raise `MCP_MAX_SESSIONS`. Stale sessions are swept every 60s. |
+| Write tool errors with "no wallet" / wallet selection guide | No wallet mode chosen yet | Run `npx agent-wallet start` (agent mode), or call `connect_browser_wallet` (browser mode). Then retry. |
+| Write tool fails with a pre-flight `REVERT` on mainnet | The transaction would revert on-chain (fail-closed by design) | Read the returned revert reason; fix the precondition (e.g. call `approve_underlying` before `supply`, `enter_market` before borrowing). The server does **not** broadcast simulated-revert txs on mainnet. |
+| `approval_required` returned from `supply`/`repay` | TRC20 allowance below the amount | Call `approve_underlying` first (prefer an exact amount; `max` is opt-in and grants unlimited allowance). |
+| Wrong network / unexpected addresses | Active network not set as intended | Check with `get_network`; switch with `set_network` (`mainnet` / `nile`). Nile is the testnet for safe write testing. |
+| Amounts look off by 6–18 orders of magnitude | Double-applying token `decimals` | Balance/amount tool outputs are **already human-readable** (decimals applied) and carry `decimals` + `_unit`; do not divide again. See `mcp-api-list.md` for each tool's output units. |
+
+For deeper inspection, run the server under the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) and watch stderr — startup diagnostics, auth failures, and schema errors are logged there (stdout is reserved for the MCP protocol frames in stdio mode).
+
 ## Security Considerations
 
 - **Private keys** are managed by [@bankofai/agent-wallet](https://github.com/BofAI/agent-wallet) — never stored in environment variables or exposed via MCP tools
@@ -536,6 +555,7 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 - **Transaction summaries before signing**: contract write paths pass signer-facing summaries with network, contract, function, arguments, callValue, feeLimit, and simulation status
 - **Address validation before signing**: transfer and approval services reject invalid recipient/token/spender addresses before contract loading or wallet signing
 - **Precision-safe value handling**: sTRX staking uses string/BigInt parsing for TRX Sun conversion and 18-decimal sTRX display/estimates
+- **Self-describing amounts**: balance/amount fields return human-readable values with explicit `_unit` + `decimals` (and `raw` where applicable) so agents never re-apply decimals or misjudge magnitude. New tools should build amounts with `describeAmount(raw, decimals, unit)` from `core/services/bigint-math.ts`.
 - **Health factor checks** in prompts prevent dangerous borrowing
 - Always **test on Nile testnet** before mainnet operations
 - Be cautious with **unlimited approvals** (`approve_underlying` with `max`)
@@ -587,6 +607,11 @@ TEST_STRX_STAKING=1 npx vitest run tests/core/services/strx-staking.test.ts
 **"Can I withdraw my unstaked TRX?"**
 → AI calls `check_strx_withdrawal_eligibility` to check unbonding status and completed withdrawal rounds
 
+## Changelog
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for the per-version history (Keep a Changelog format, SemVer).
+
 ## License
 
 MIT License Copyright (c) 2026 JustLend
+SPDX-License-Identifier: MIT
