@@ -23,7 +23,14 @@ export function registerVotingTools(server: McpServer) {
       try {
         const data = await services.getProposalList(network);
         const proposals = limit > 0 ? data.proposals.slice(0, limit) : data.proposals;
-        return { content: [{ type: "text", text: JSON.stringify({ proposals, total: data.total, returned: proposals.length }, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({
+          proposals,
+          total: data.total,
+          returned: proposals.length,
+          // Surface proposals whose on-chain state read failed so agents can tell
+          // "no such proposal" from "read failed" (list may be shorter than total).
+          ...(data.failedProposals ? { failedProposals: data.failedProposals } : {}),
+        }, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
       }

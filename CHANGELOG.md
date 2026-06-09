@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
 approximate, derived from git history; see the repository log for exact commits.
 
+## [1.0.9]
+
+Fixes the 2026-06-09 full-audit findings. Tool surface unchanged (59 tools).
+
+### Security
+- **Dependency**: bump the `hono` override `4.12.18 → 4.12.25` to clear 4 moderate advisories
+  (it was pinned to a vulnerable version; `hono` is transitive via `@modelcontextprotocol/sdk`).
+  `npm audit --omit=dev` no longer reports `hono`.
+- **HTTP rate limiting**: add `express-rate-limit` — a per-IP general limiter (default 120/min,
+  `/health` exempt, tune via `MCP_RATE_LIMIT_PER_MIN`) plus a stricter new-session limiter on
+  `/sse` (default 10/min, `MCP_SSE_RATE_LIMIT_PER_MIN`). Prevents abuse / RPC-quota & memory
+  exhaustion if the API key leaks.
+
+### Fixed
+- **Governance data integrity**: `getProposalList` no longer silently drops proposals whose
+  on-chain `state()` read fails — it collects them into `failedProposals[]`, logs a warning, and
+  surfaces them via the `get_proposal_list` tool, so callers can tell "no such proposal" from
+  "read failed" (the returned list may be shorter than `total`).
+- **Collateral safety**: `disableCollateral` no longer silently skips markets it fails to read
+  (which could under-count borrows and make the pre-check look safe). It now warns per skip and
+  fails closed — refusing to disable collateral on incomplete on-chain risk data.
+- **Resource cleanup**: the HTTP session-sweeper `setInterval` is now `unref()`'d so it never
+  blocks process exit.
+
 ## [1.0.8]
 
 Security-hardening release addressing the 2026-06-03 full-audit findings, plus dependency
@@ -77,6 +101,7 @@ advisory cleanup. Tool surface unchanged (59 tools).
   Staking, Transfers, and general TRON utilities. Dual-mode signing (browser TronLink via
   TIP-6963 or encrypted `@bankofai/agent-wallet`). stdio and HTTP/SSE transports.
 
+[1.0.9]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.9
 [1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
 [1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
 [1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6

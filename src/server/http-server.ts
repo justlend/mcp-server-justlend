@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { rateLimit } from "express-rate-limit";
 import { timingSafeEqual } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -47,6 +48,26 @@ async function main() {
       `MCP_CORS_ORIGIN to an explicit allow-list, or bind to 127.0.0.1 if remote access is not required.`,
     );
   }
+  // Rate limiting: protect auth + endpoints from abuse / RPC-quota & memory exhaustion
+  // even if the API key leaks. Per-IP; tune via env. /health is exempt.
+  app.use(rateLimit({
+    windowMs: 60_000,
+    limit: parseInt(process.env.MCP_RATE_LIMIT_PER_MIN || "120", 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === "/health",
+    message: { error: "Too many requests" },
+  }));
+
+  // Stricter limit for new SSE sessions — each opens a server instance + session state.
+  const sseLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: parseInt(process.env.MCP_SSE_RATE_LIMIT_PER_MIN || "10", 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many new sessions" },
+  });
+
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
 
@@ -66,8 +87,9 @@ async function main() {
     next();
   });
 
-  // M-6: Periodic cleanup of stale sessions
-  setInterval(() => {
+  // M-6: Periodic cleanup of stale sessions. unref() so the timer never keeps the
+  // process alive (matters when embedded/tested; harmless for a standalone daemon).
+  const sessionSweeper = setInterval(() => {
     const now = Date.now();
     for (const [id, session] of transports) {
       if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
@@ -75,8 +97,9 @@ async function main() {
       }
     }
   }, 60_000);
+  sessionSweeper.unref();
 
-  app.get("/sse", async (_req, res) => {
+  app.get("/sse", sseLimiter, async (_req, res) => {
     // M-6: Max session limit
     if (transports.size >= MAX_SESSIONS) {
       res.status(503).json({ error: "Too many active sessions" });

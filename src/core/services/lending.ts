@@ -527,6 +527,7 @@ export async function exitMarket(
   let totalAdjustedCollateralCents = 0n;
   let totalBorrowCents = 0n;
   let removedCollateralCents = 0n;
+  const skippedMarkets: string[] = [];
 
   for (const rawAsset of assetsInRaw) {
     try {
@@ -557,7 +558,21 @@ export async function exitMarket(
       if (asset.toLowerCase() === info.address.toLowerCase()) {
         removedCollateralCents = adjustedValueCents;
       }
-    } catch { /* skip unavailable markets */ }
+    } catch (err: any) {
+      // Don't silently drop a market: an unread borrow position would under-count
+      // total borrows and make disabling collateral look safe when it isn't.
+      skippedMarkets.push(rawAsset);
+      console.warn(`[disableCollateral] skipped market ${rawAsset} (read failed): ${err?.message ?? err}`);
+    }
+  }
+
+  // Fail closed: never decide "safe to disable" on incomplete risk data.
+  if (skippedMarkets.length > 0) {
+    throw new Error(
+      `Cannot safely verify the effect of disabling ${jTokenSymbol} as collateral: ` +
+      `${skippedMarkets.length} market(s) failed to load, so collateral/borrow totals are incomplete. ` +
+      `Please retry; refusing to disable collateral on incomplete on-chain data.`,
+    );
   }
 
   if (totalBorrowCents > 0n) {
