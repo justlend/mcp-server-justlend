@@ -8,7 +8,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
-import { formatDisplayUnits, formatRatio, formatPercentRatio, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
+import { formatDisplayUnits, formatRatio, formatPercentRatio, formatScaled, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
 import { utils } from "./utils.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
@@ -98,8 +98,10 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
 
   // 价格决策：如果是测试网或者是0，强制走 API 兜底
   if (underlyingPriceRaw > 0n && network === "mainnet") {
-    const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
-    priceUSD = Number(underlyingPriceRaw) / priceScale;
+    // BigInt-safe: scale down with BigInt division first (the oracle mantissa can
+    // exceed Number.MAX_SAFE_INTEGER), then convert the small result to a number —
+    // consistent with the BigInt mantissa handling below and account.ts.
+    priceUSD = Number(formatScaled(underlyingPriceRaw, 36 - jTokenInfo.underlyingDecimals, 8));
   } else {
     // 传入 UnderlyingSymbol 进行跨网查找
     const apiPrice = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);

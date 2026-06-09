@@ -84,7 +84,7 @@ const HARDCODED_PROPOSALS: Record<number, { title?: string; content?: string }> 
 // ============================================================================
 // READ — Proposal List (Primary: On-chain, Fallback: API)
 // ============================================================================
-export async function getProposalList(network = "mainnet"): Promise<{ proposals: Proposal[]; total: number; }> {
+export async function getProposalList(network = "mainnet"): Promise<{ proposals: Proposal[]; total: number; failedProposals?: number[]; }> {
   try {
     // --- 1. 优先尝试从链上获取最新 20 条提案 ---
     const tronWeb = getTronWeb(network);
@@ -113,8 +113,11 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
 
     const states = await Promise.all(statePromises);
 
+    // Collect proposals whose state() read failed so the caller can distinguish
+    // "no such proposal" from "read failed" (instead of silently dropping them).
+    const failedProposals: number[] = [];
     for (const { pId, stateNum } of states) {
-      if (stateNum === -1) continue;
+      if (stateNum === -1) { failedProposals.push(pId); continue; }
       const hardcoded = HARDCODED_PROPOSALS[pId];
 
       proposalList.push({
@@ -131,7 +134,14 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
 
     // 按 ID 倒序
     proposalList.sort((a, b) => b.proposalId - a.proposalId);
-    return { proposals: proposalList, total: count };
+    if (failedProposals.length > 0) {
+      console.warn(`[getProposalList] ${failedProposals.length} proposal(s) failed state() read and were omitted from the list: ${failedProposals.join(", ")}`);
+    }
+    return {
+      proposals: proposalList,
+      total: count,
+      ...(failedProposals.length > 0 ? { failedProposals } : {}),
+    };
 
   } catch (error: any) {
     console.warn(`[API Fallback] On-chain proposal query failed, falling back to API: ${error?.message ?? error}`);

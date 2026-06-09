@@ -31,6 +31,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "cors": "2.8.6",
     "express": "4.22.1",
+    "express-rate-limit": "8.3.1",
     "open": "11.0.0",
     "tronlink-signer": "0.1.1",
     "tronweb": "6.2.2",
@@ -48,7 +49,7 @@
     "axios": "1.15.2",
     "fast-uri": "3.1.2",
     "ip-address": "10.2.0",
-    "hono": "4.12.18",
+    "hono": "4.12.25",
     "postcss": "8.5.14",
     "qs": "6.15.2",
     "ws": "8.20.1"
