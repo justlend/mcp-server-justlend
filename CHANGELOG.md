@@ -6,9 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
 approximate, derived from git history; see the repository log for exact commits.
 
-## [1.0.8]
+## [1.0.8] - 2026-06-10
 
-Unreleased. Security-hardening release: addresses the 2026-06-03 **and** 2026-06-09 full-audit
+Security-hardening release: addresses the 2026-06-03 **and** 2026-06-09 full-audit
 findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
 
 ### Security
