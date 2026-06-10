@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "start": "tsx src/index.ts",
+    "prebuild": "rm -rf build",
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start:http": "tsx src/server/http-server.ts",
