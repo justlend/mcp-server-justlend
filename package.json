@@ -47,7 +47,7 @@
     "vitest": "4.1.0"
   },
   "overrides": {
-    "axios": "1.15.2",
+    "axios": "1.17.0",
     "fast-uri": "3.1.2",
     "ip-address": "10.2.0",
     "hono": "4.12.25",
