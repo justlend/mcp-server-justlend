@@ -6,17 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
 approximate, derived from git history; see the repository log for exact commits.
 
-## [1.0.8]
+## [1.0.8] - 2026-06-10
 
-Security-hardening release addressing the 2026-06-03 full-audit findings, plus dependency
-advisory cleanup. Tool surface unchanged (59 tools).
+Security-hardening release: addresses the 2026-06-03 **and** 2026-06-09 full-audit
+findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
 
 ### Security
 - Address 2026-06-03 full-audit findings (governance read-path data-integrity, energy-rental
   float-to-Sun construction review, dependency reachability).
-- Clear transitive `npm audit` advisories by pinning `qs` `6.15.2` and `ws` `8.20.1` via
-  `overrides` (alongside the existing `fast-uri` `3.1.2`).
+- Clear transitive `npm audit` advisories via `overrides`: `qs` `6.15.2`, `ws` `8.20.1`
+  (alongside the existing `fast-uri` `3.1.2`), and bump `hono` `4.12.18 → 4.12.25` (it was
+  pinned to a vulnerable version; transitive via `@modelcontextprotocol/sdk`).
+  `npm audit --omit=dev` no longer reports `hono`.
+- **HTTP rate limiting**: add `express-rate-limit` — a per-IP general limiter (default 120/min,
+  `/health` exempt, `MCP_RATE_LIMIT_PER_MIN`) plus a stricter new-session limiter on `/sse`
+  (default 10/min, `MCP_SSE_RATE_LIMIT_PER_MIN`). Guards against abuse / RPC-quota & memory
+  exhaustion if the API key leaks.
 - Enable the security-guidance plugin in project settings.
+
+### Fixed
+- **Governance data integrity**: `getProposalList` no longer silently drops proposals whose
+  on-chain `state()` read fails — it collects them into `failedProposals[]`, logs a warning, and
+  surfaces them via the `get_proposal_list` tool, so callers can tell "no such proposal" from
+  "read failed" (the returned list may be shorter than `total`).
+- **Collateral safety**: `disableCollateral` no longer silently skips markets it fails to read
+  (which could under-count borrows and make the pre-check look safe). It now warns per skip and
+  fails closed — refusing to disable collateral on incomplete on-chain risk data.
+- **Display precision**: `markets` price now computes `priceUSD` with BigInt scaling (oracle
+  mantissa can exceed `Number.MAX_SAFE_INTEGER`), consistent with the account path.
+- **Dead code**: remove the unused `writeContract` export from `contracts.ts` (`safeSend` is the
+  real write path).
+- **Resource cleanup**: the HTTP session-sweeper `setInterval` is now `unref()`'d so it never
+  blocks process exit.
 
 ### Added
 - `mcp-api-list.md` — machine-readable, offline-loadable catalog of all 59 tools (input

@@ -8,7 +8,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
-import { formatDisplayUnits, formatRatio, formatPercentRatio, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
+import { formatDisplayUnits, formatRatio, formatPercentRatio, formatScaled, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
 import { utils } from "./utils.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
@@ -93,15 +93,17 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
       `Timed out while loading oracle price for ${jTokenInfo.symbol}`,
     ));
   } catch (err: any) {
-    // 链上报错静默，交由下游 API 兜底
+    // Swallow on-chain errors; fall back to the downstream API
   }
 
-  // 价格决策：如果是测试网或者是0，强制走 API 兜底
+  // Price decision: on testnet or when the value is 0, force the API fallback
   if (underlyingPriceRaw > 0n && network === "mainnet") {
-    const priceScale = 10 ** (36 - jTokenInfo.underlyingDecimals);
-    priceUSD = Number(underlyingPriceRaw) / priceScale;
+    // BigInt-safe: scale down with BigInt division first (the oracle mantissa can
+    // exceed Number.MAX_SAFE_INTEGER), then convert the small result to a number —
+    // consistent with the BigInt mantissa handling below and account.ts.
+    priceUSD = Number(formatScaled(underlyingPriceRaw, 36 - jTokenInfo.underlyingDecimals, 8));
   } else {
-    // 传入 UnderlyingSymbol 进行跨网查找
+    // Pass the underlying symbol for cross-network lookup
     const apiPrice = await fetchPriceFromAPI(jTokenInfo.underlyingSymbol, jTokenInfo.underlyingDecimals, network);
     if (apiPrice === null) {
       throw new Error(`[Price Exception] Failed to fetch price for ${jTokenInfo.underlyingSymbol} from API`);
@@ -109,7 +111,7 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     priceUSD = apiPrice;
   }
 
-  // 💡 价格为 0 时强制抛出异常！
+  // Force an exception when the final price is 0
   if (priceUSD === 0) {
     throw new Error(`[Price Exception] Final computed price for ${jTokenInfo.symbol} is 0. This is considered an anomaly. Oracle raw: ${underlyingPriceRaw}`);
   }

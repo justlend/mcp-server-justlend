@@ -309,7 +309,7 @@ export async function borrow(
 
   for (const rawAsset of assetsInRaw) {
     try {
-      // 💡 核心修复：将底层返回的 Hex 地址强制转换为标准的 T 开头地址
+      // Core fix: convert the raw hex address into the standard T-prefixed address
       const asset = tronWeb.address.fromHex(rawAsset);
 
       const assetInfo = getJTokenInfo(asset, network);
@@ -440,15 +440,15 @@ export async function repay(
       ? borrowBal + borrowBal / 1000n
       : utils.parseUnits(amount, info.underlyingDecimals);
 
-    // ✅ 修正：TRX 还款与 dapp 前端一致
-    // dapp 使用 repayBorrow(uint256) + parameters: [amount] + callValue: amount
-    // 同时传参数和 callValue
+    // Fix: TRX repayment matches the dapp frontend.
+    // The dapp uses repayBorrow(uint256) + parameters: [amount] + callValue: amount,
+    // passing both the argument and callValue.
     const { txID } = await safeSend({
       address: info.address,
-      abi: JTRX_REPAY_ABI,                // ✅ 使用 payable ABI，与合约签名匹配
+      abi: JTRX_REPAY_ABI,                // use the payable ABI, matching the contract signature
       functionName: "repayBorrow",
-      args: [repayAmount.toString()],     // ✅ 传金额参数，与 dapp 前端一致
-      callValue: repayAmount.toString(),   // 同时通过 callValue 发送 TRX
+      args: [repayAmount.toString()],     // pass the amount argument, matching the dapp frontend
+      callValue: repayAmount.toString(),   // also send TRX via callValue
       feeLimit: 150_000_000,
     }, network);
     return { txID, jTokenSymbol, amount: isMax ? "max" : amount, message: `Repaid ${isMax ? "all" : amount} TRX to ${jTokenSymbol}. IMPORTANT: Please call get_account_summary to see your updated position and health factor.` };
@@ -527,10 +527,11 @@ export async function exitMarket(
   let totalAdjustedCollateralCents = 0n;
   let totalBorrowCents = 0n;
   let removedCollateralCents = 0n;
+  const skippedMarkets: string[] = [];
 
   for (const rawAsset of assetsInRaw) {
     try {
-      // 💡 核心修复：十六进制转换
+      // Core fix: hex conversion
       const asset = tronWeb.address.fromHex(rawAsset);
 
       const assetInfo = getJTokenInfo(asset, network);
@@ -557,7 +558,21 @@ export async function exitMarket(
       if (asset.toLowerCase() === info.address.toLowerCase()) {
         removedCollateralCents = adjustedValueCents;
       }
-    } catch { /* skip unavailable markets */ }
+    } catch (err: any) {
+      // Don't silently drop a market: an unread borrow position would under-count
+      // total borrows and make disabling collateral look safe when it isn't.
+      skippedMarkets.push(rawAsset);
+      console.warn(`[disableCollateral] skipped market ${rawAsset} (read failed): ${err?.message ?? err}`);
+    }
+  }
+
+  // Fail closed: never decide "safe to disable" on incomplete risk data.
+  if (skippedMarkets.length > 0) {
+    throw new Error(
+      `Cannot safely verify the effect of disabling ${jTokenSymbol} as collateral: ` +
+      `${skippedMarkets.length} market(s) failed to load, so collateral/borrow totals are incomplete. ` +
+      `Please retry; refusing to disable collateral on incomplete on-chain data.`,
+    );
   }
 
   if (totalBorrowCents > 0n) {

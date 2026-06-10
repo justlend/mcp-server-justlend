@@ -84,9 +84,9 @@ const HARDCODED_PROPOSALS: Record<number, { title?: string; content?: string }> 
 // ============================================================================
 // READ — Proposal List (Primary: On-chain, Fallback: API)
 // ============================================================================
-export async function getProposalList(network = "mainnet"): Promise<{ proposals: Proposal[]; total: number; }> {
+export async function getProposalList(network = "mainnet"): Promise<{ proposals: Proposal[]; total: number; failedProposals?: number[]; }> {
   try {
-    // --- 1. 优先尝试从链上获取最新 20 条提案 ---
+    // --- 1. Prefer fetching the latest 20 proposals from on-chain ---
     const tronWeb = getTronWeb(network);
     const addresses = getJustLendAddresses(network);
     const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
@@ -98,23 +98,26 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
 
     const proposalList: Proposal[] = [];
     const startId = count;
-    // 限制最多一次拉取 20 条，避免节点限流或超时
+    // Cap at 20 per fetch to avoid node rate-limiting or timeouts
     const endId = Math.max(1, count - 19);
 
-    // 并发请求提案状态，大幅提升链上查询速度
+    // Fetch proposal states concurrently to greatly speed up on-chain queries
     const statePromises = [];
     for (let pId = startId; pId >= endId; pId--) {
       statePromises.push(
         contract.methods.state(pId).call()
           .then((stateBigInt: any) => ({ pId, stateNum: Number(stateBigInt.toString()) }))
-          .catch(() => ({ pId, stateNum: -1 })) // 忽略错误项
+          .catch(() => ({ pId, stateNum: -1 })) // ignore failed items
       );
     }
 
     const states = await Promise.all(statePromises);
 
+    // Collect proposals whose state() read failed so the caller can distinguish
+    // "no such proposal" from "read failed" (instead of silently dropping them).
+    const failedProposals: number[] = [];
     for (const { pId, stateNum } of states) {
-      if (stateNum === -1) continue;
+      if (stateNum === -1) { failedProposals.push(pId); continue; }
       const hardcoded = HARDCODED_PROPOSALS[pId];
 
       proposalList.push({
@@ -123,20 +126,27 @@ export async function getProposalList(network = "mainnet"): Promise<{ proposals:
         stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
         title: hardcoded?.title || `[Proposal #${pId}]`,
         content: hardcoded?.content || "Details fetched directly from on-chain contract.",
-        forVotes: "0",      // 若需精准票数需补充 proposals(id) 调用，目前占位处理
+        forVotes: "0",      // placeholder; exact vote counts need an extra proposals(id) call
         againstVotes: "0",
         abstainVotes: "0",
       });
     }
 
-    // 按 ID 倒序
+    // Sort by ID descending
     proposalList.sort((a, b) => b.proposalId - a.proposalId);
-    return { proposals: proposalList, total: count };
+    if (failedProposals.length > 0) {
+      console.warn(`[getProposalList] ${failedProposals.length} proposal(s) failed state() read and were omitted from the list: ${failedProposals.join(", ")}`);
+    }
+    return {
+      proposals: proposalList,
+      total: count,
+      ...(failedProposals.length > 0 ? { failedProposals } : {}),
+    };
 
   } catch (error: any) {
     console.warn(`[API Fallback] On-chain proposal query failed, falling back to API: ${error?.message ?? error}`);
 
-    // --- 2. 链上失败时，兜底请求后端 API ---
+    // --- 2. On-chain failure: fall back to the backend API ---
     const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/proposalList?block=${block}`;
@@ -191,7 +201,7 @@ export async function getUserVoteStatus(
   network = "mainnet",
 ): Promise<{ statusList: UserVoteStatus[]; votedProposals: number[]; withdrawableProposals: UserVoteStatus[]; failedProposals?: number[]; }> {
   try {
-    // --- 1. 优先尝试从链上获取用户最近 20 条提案的投票状态 ---
+    // --- 1. Prefer fetching the user's vote status for the latest 20 proposals from on-chain ---
     const tronWeb = getTronWeb(network);
     const addresses = getJustLendAddresses(network);
     const contract = tronWeb.contract(GOVERNOR_ALPHA_ABI, addresses.governorAlpha);
@@ -221,7 +231,7 @@ export async function getUserVoteStatus(
             forVotes: support === 1 ? votesFmt : "0",
             againstVotes: support === 0 ? votesFmt : "0",
             abstainVotes: support === 2 ? votesFmt : "0",
-            canWithdraw: stateNum !== 1, // 非活跃状态即可提取
+            canWithdraw: stateNum !== 1, // withdrawable once not in the active state
             state: stateNum,
             stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,
           });
@@ -247,7 +257,7 @@ export async function getUserVoteStatus(
   } catch (error: any) {
     console.error(`[API Fallback] On-chain user vote query failed, falling back to API: ${error?.message ?? error}`);
 
-    // --- 2. 链上失败时，兜底请求后端 API ---
+    // --- 2. On-chain failure: fall back to the backend API ---
     const host = getApiHost(network);
     const block = await getCurrentBlock(network);
     const url = `${host}/justlend/gov/voteStatus?account=${encodeURIComponent(address)}&block=${block}`;
