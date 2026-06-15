@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getJTokenInfo } from "../chains.js";
 import * as services from "../services/index.js";
 import { utils } from "../services/utils.js";
-import { sanitizeError, tronAddress, amountString, amountOrMaxString } from "./shared.js";
+import { tronAddress, amountString, amountOrMaxString, toolError } from "./shared.js";
 
 /**
  * Helper: check resource sufficiency and return warning object for tool responses.
@@ -94,7 +94,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -128,7 +128,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -160,7 +160,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -195,7 +195,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -257,7 +257,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -290,7 +290,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -338,7 +338,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -374,7 +374,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -405,7 +405,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -451,7 +451,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

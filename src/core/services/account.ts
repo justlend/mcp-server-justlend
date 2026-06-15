@@ -299,7 +299,7 @@ export async function getAccountTRXBalance(address: string, network = "mainnet")
 /**
  * Get TRC20 token balance for an address.
  */
-export async function getTokenBalance(address: string, tokenAddress: string, network = "mainnet"): Promise<{ balance: string; symbol: string; decimals: number }> {
+export async function getTokenBalance(address: string, tokenAddress: string, network = "mainnet"): Promise<{ balance: string; symbol: string; decimals: number; raw: string }> {
   const tronWeb = getTronWeb(network);
   const token = tronWeb.contract(TRC20_ABI, tokenAddress);
   const [raw, symbol, decimals] = await Promise.all([
@@ -312,6 +312,8 @@ export async function getTokenBalance(address: string, tokenAddress: string, net
     balance: formatDisplayUnits(BigInt(raw), dec),
     symbol: String(symbol),
     decimals: dec,
+    // Raw base-unit balance, so callers can build a self-describing amount without re-deriving it.
+    raw: BigInt(raw).toString(),
   };
 }
 

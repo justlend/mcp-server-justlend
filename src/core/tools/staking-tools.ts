@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError, tronAddress, amountString } from "./shared.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerStakingTools(server: McpServer) {
 
@@ -25,7 +25,7 @@ export function registerStakingTools(server: McpServer) {
         const dashboard = await services.getStrxDashboard(network);
         return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -48,7 +48,7 @@ export function registerStakingTools(server: McpServer) {
         const account = await services.getStrxStakeAccount(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -76,7 +76,7 @@ export function registerStakingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -99,7 +99,7 @@ export function registerStakingTools(server: McpServer) {
         const eligibility = await services.checkWithdrawalEligibility(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(eligibility, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -127,7 +127,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.stakeTrxToStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -151,7 +151,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.unstakeStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -173,7 +173,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.claimStrxRewards(network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

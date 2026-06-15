@@ -8,7 +8,7 @@ import * as services from "../services/index.js";
 import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { describeAmount } from "../services/bigint-math.js";
-import { sanitizeError, tronAddress, amountString } from "./shared.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerMarketTools(server: McpServer) {
 
@@ -60,7 +60,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -96,7 +96,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -129,7 +129,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -148,7 +148,7 @@ export function registerMarketTools(server: McpServer) {
         const summary = await services.getProtocolSummary(network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -176,7 +176,7 @@ export function registerMarketTools(server: McpServer) {
         const summary = await services.getAccountSummary(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -221,7 +221,7 @@ export function registerMarketTools(server: McpServer) {
 
         return { content: [{ type: "text", text: JSON.stringify({ ...result, ...sufficiency }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -247,7 +247,7 @@ export function registerMarketTools(server: McpServer) {
           amount: describeAmount(balance.wei, 6, "TRX"),
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -289,12 +289,14 @@ export function registerMarketTools(server: McpServer) {
               symbol: result.symbol,
               _unit: result.symbol,
               decimals: result.decimals,
+              // Self-describing amount (raw + _unit + decimals + display) so agents never re-apply decimals.
+              amount: describeAmount(result.raw, result.decimals, result.symbol),
               tokenAddress: resolvedAddress,
             }, null, 2)
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -351,7 +353,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -376,7 +378,7 @@ export function registerMarketTools(server: McpServer) {
         const rewards = await services.getMiningRewardsFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(rewards, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -395,7 +397,7 @@ export function registerMarketTools(server: McpServer) {
         const config = await services.getUSDDMiningConfig(network);
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -412,7 +414,7 @@ export function registerMarketTools(server: McpServer) {
         const config = services.getWBTCMiningConfig();
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

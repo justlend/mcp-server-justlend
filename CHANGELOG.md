@@ -8,7 +8,20 @@ approximate, derived from git history; see the repository log for exact commits.
 
 ## [Unreleased]
 
+### Added
+- **Structured, self-healing tool errors**: every tool now returns errors via `toolError()`
+  (`core/tools/shared.ts`) as JSON `{ error, errorCode?, hint? }` instead of a bare `Error: <msg>`
+  string. `classifyError()` maps common failures (insufficient allowance/balance, wallet not
+  configured, execution reverted, market not found, invalid address) to a machine-readable
+  `errorCode` and an actionable `hint` (e.g. "Raise the allowance with approve_underlying first,
+  then retry"), so an agent can self-heal without parsing prose. `isError: true` is preserved.
+
 ### Changed
+- **`get_token_balance` returns a self-describing `amount`**: in addition to the formatted
+  `balance` string, the tool now emits `amount: { raw, decimals, _unit, display }` (via
+  `describeAmount`), matching `get_trx_balance`. `services.getTokenBalance` now also returns the
+  raw base-unit balance. (Broader rollout of self-describing amounts to the remaining numeric
+  outputs is tracked separately.)
 - **Hardened tool input schemas**: TRON address parameters now validate against the Base58
   format (`/^T[1-9A-HJ-NP-Za-km-z]{33}$/`) and human-readable amount parameters against a
   decimal-string format (`/^\d+(\.\d+)?$/`, or `…|max` for tools that accept a full-balance

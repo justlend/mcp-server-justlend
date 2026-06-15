@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError, tronAddress, amountString, amountOrMaxString } from "./shared.js";
+import { tronAddress, amountString, amountOrMaxString, toolError } from "./shared.js";
 
 export function registerVotingTools(server: McpServer) {
 
@@ -32,7 +32,7 @@ export function registerVotingTools(server: McpServer) {
           ...(data.failedProposals ? { failedProposals: data.failedProposals } : {}),
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -53,7 +53,7 @@ export function registerVotingTools(server: McpServer) {
         const data = await services.getUserVoteStatus(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -89,7 +89,7 @@ export function registerVotingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -111,7 +111,7 @@ export function registerVotingTools(server: McpServer) {
         const data = await services.getLockedVotes(userAddress, proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -132,7 +132,7 @@ export function registerVotingTools(server: McpServer) {
         const data = await services.checkJSTAllowanceForVoting(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, ...data }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -156,7 +156,7 @@ export function registerVotingTools(server: McpServer) {
         const result = await services.approveJSTForVoting(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -180,7 +180,7 @@ export function registerVotingTools(server: McpServer) {
         const result = await services.depositJSTForVotes(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -203,7 +203,7 @@ export function registerVotingTools(server: McpServer) {
         const result = await services.withdrawVotesToJST(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -229,7 +229,7 @@ export function registerVotingTools(server: McpServer) {
         const result = await services.castVote(proposalId, support, votes, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -253,7 +253,7 @@ export function registerVotingTools(server: McpServer) {
         const result = await services.withdrawVotesFromProposal(proposalId, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

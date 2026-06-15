@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError, tronAddress } from "./shared.js";
+import { tronAddress, toolError } from "./shared.js";
 
 export function registerEnergyTools(server: McpServer) {
 
@@ -25,7 +25,7 @@ export function registerEnergyTools(server: McpServer) {
         const dashboard = await services.getEnergyRentalDashboard(network);
         return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -46,7 +46,7 @@ export function registerEnergyTools(server: McpServer) {
         const params = await services.getEnergyRentalParams(network);
         return { content: [{ type: "text", text: JSON.stringify(params, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -127,7 +127,7 @@ export function registerEnergyTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -149,7 +149,7 @@ export function registerEnergyTools(server: McpServer) {
         const rate = await services.getRentalRate(trxAmount, network);
         return { content: [{ type: "text", text: JSON.stringify(rate, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -175,7 +175,7 @@ export function registerEnergyTools(server: McpServer) {
         const orders = await services.getUserRentalOrders(addr, type, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify(orders, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -199,7 +199,7 @@ export function registerEnergyTools(server: McpServer) {
         const info = await services.getRentInfo(renter, receiverAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -224,7 +224,7 @@ export function registerEnergyTools(server: McpServer) {
         const info = await services.getReturnRentalInfo(renter, receiverAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -258,7 +258,7 @@ export function registerEnergyTools(server: McpServer) {
         const result = await services.rentEnergy(receiverAddress, energyAmount, durationSeconds, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -283,7 +283,7 @@ export function registerEnergyTools(server: McpServer) {
         const result = await services.returnEnergyRental(counterpartyAddress, endOrderType, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

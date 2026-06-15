@@ -5,7 +5,7 @@ import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { getWalletMode, setWalletMode } from "../services/global.js";
 import { getBrowserSigner } from "../services/wallet.js";
-import { sanitizeError, tronAddress, amountString } from "./shared.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerWalletTools(server: McpServer) {
 
@@ -87,7 +87,7 @@ export function registerWalletTools(server: McpServer) {
           tip: "For better security, consider using connect_browser_wallet to sign with TronLink instead.",
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -109,7 +109,7 @@ export function registerWalletTools(server: McpServer) {
           message: status.message,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -174,7 +174,7 @@ export function registerWalletTools(server: McpServer) {
       } catch (error: any) {
         // Revert to agent mode on failure
         setWalletMode("agent");
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -224,7 +224,7 @@ export function registerWalletTools(server: McpServer) {
             : "Switched to agent wallet mode.",
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -279,7 +279,7 @@ export function registerWalletTools(server: McpServer) {
         services.setGlobalNetwork(network);
         return { content: [{ type: "text", text: `Successfully switched global default network to: ${network}` }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -326,7 +326,7 @@ export function registerWalletTools(server: McpServer) {
           network,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -383,7 +383,7 @@ export function registerWalletTools(server: McpServer) {
           network,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
