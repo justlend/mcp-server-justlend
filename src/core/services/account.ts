@@ -10,6 +10,7 @@ import {
   MANTISSA_18, USD_PRICE_SCALE, USD_VALUE_SCALE,
   divRound, formatScaled, formatDisplayUnits,
   formatUsdCents, formatRatio, priceNumberToRaw, amountToUsdCents,
+  describeAmount, type DescribedAmount,
 } from "./bigint-math.js";
 
 export interface AccountPosition {
@@ -22,6 +23,12 @@ export interface AccountPosition {
   supplyBalance: string;
   /** Borrow balance in underlying token units */
   borrowBalance: string;
+  /** Self-describing supply balance: { raw, decimals, _unit, display } in underlying units. */
+  supplyBalanceAmount: DescribedAmount;
+  /** Self-describing borrow balance: { raw, decimals, _unit, display } in underlying units. */
+  borrowBalanceAmount: DescribedAmount;
+  /** Self-describing jToken balance: { raw, decimals, _unit, display } in jToken units (8 decimals). */
+  jTokenBalanceAmount: DescribedAmount;
   /** Whether this market is used as collateral */
   isCollateral: boolean;
   /** Exchange rate at time of query */
@@ -205,6 +212,9 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
       jTokenBalance: formatDisplayUnits(jTokenBalance, info.decimals),
       supplyBalance: formatDisplayUnits(supplyBalanceRaw, info.underlyingDecimals),
       borrowBalance: formatDisplayUnits(borrowBalance, info.underlyingDecimals),
+      supplyBalanceAmount: describeAmount(supplyBalanceRaw, info.underlyingDecimals, info.underlyingSymbol),
+      borrowBalanceAmount: describeAmount(borrowBalance, info.underlyingDecimals, info.underlyingSymbol),
+      jTokenBalanceAmount: describeAmount(jTokenBalance, info.decimals, info.symbol),
       isCollateral: collateralSet.has(info.address.toLowerCase()),
       exchangeRate: formatScaled(exchangeRateMantissa, 18, 10),
       underlyingPriceUSD: formatScaled(priceRaw, USD_PRICE_SCALE - info.underlyingDecimals, 6),

@@ -8,7 +8,7 @@ import { JTOKEN_ABI, COMPTROLLER_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { fetchPriceFromAPI } from "./price.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
-import { formatDisplayUnits, formatRatio, formatPercentRatio, formatScaled, normalizeDecimalString, divRound, pow10, MANTISSA_18 } from "./bigint-math.js";
+import { formatDisplayUnits, formatRatio, formatPercentRatio, formatScaled, normalizeDecimalString, divRound, pow10, MANTISSA_18, describeAmount, describeFromDisplay, type DescribedAmount } from "./bigint-math.js";
 import { utils } from "./utils.js";
 
 const BLOCKS_PER_YEAR = 10_512_000;
@@ -26,6 +26,11 @@ export interface MarketData {
   totalBorrows: string;
   totalReserves: string;
   availableLiquidity: string;
+  /** Self-describing amounts: { raw, decimals, _unit, display }. totalSupply is in jToken units (8 decimals); the rest are in underlying units. */
+  totalSupplyAmount: DescribedAmount;
+  totalBorrowsAmount: DescribedAmount;
+  totalReservesAmount: DescribedAmount;
+  availableLiquidityAmount: DescribedAmount;
   exchangeRate: string;
   collateralFactor: number;
   reserveFactor: number;
@@ -148,6 +153,10 @@ export async function getMarketData(jTokenInfo: JTokenInfo, network = "mainnet")
     totalBorrows: formatDisplayUnits(totalBorrowsBig, jTokenInfo.underlyingDecimals),
     totalReserves: formatDisplayUnits(totalReservesBig, jTokenInfo.underlyingDecimals),
     availableLiquidity: formatDisplayUnits(cashBig, jTokenInfo.underlyingDecimals),
+    totalSupplyAmount: describeAmount(totalSupplyBig, jTokenInfo.decimals, jTokenInfo.symbol),
+    totalBorrowsAmount: describeAmount(totalBorrowsBig, jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
+    totalReservesAmount: describeAmount(totalReservesBig, jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
+    availableLiquidityAmount: describeAmount(cashBig, jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
     exchangeRate: exchangeRateStr,
     collateralFactor,
     reserveFactor,
@@ -234,6 +243,10 @@ async function getMarketDataFromAPIByToken(jTokenInfo: JTokenInfo, network = "ma
     totalBorrows: m.totalBorrow || "0",
     totalReserves: m.totalReserves || "0",
     availableLiquidity: m.availableLiquidity || "0",
+    totalSupplyAmount: describeAmount(totalSupplyRaw, jTokenInfo.decimals, jTokenInfo.symbol),
+    totalBorrowsAmount: describeFromDisplay(m.totalBorrow || "0", jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
+    totalReservesAmount: describeFromDisplay(m.totalReserves || "0", jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
+    availableLiquidityAmount: describeFromDisplay(m.availableLiquidity || "0", jTokenInfo.underlyingDecimals, jTokenInfo.underlyingSymbol),
     exchangeRate: exchangeRateRaw > 0n ? formatRatio(exchangeRateRaw, MANTISSA_18, 10) : "0",
     collateralFactor: Math.round(parseFloat(m.collateralFactor || "0") / 1e16 * 100) / 100,
     reserveFactor: Math.round(parseFloat(m.reserveFactor || "0") / 1e16 * 100) / 100,

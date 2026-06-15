@@ -17,11 +17,19 @@ approximate, derived from git history; see the repository log for exact commits.
   then retry"), so an agent can self-heal without parsing prose. `isError: true` is preserved.
 
 ### Changed
-- **`get_token_balance` returns a self-describing `amount`**: in addition to the formatted
-  `balance` string, the tool now emits `amount: { raw, decimals, _unit, display }` (via
-  `describeAmount`), matching `get_trx_balance`. `services.getTokenBalance` now also returns the
-  raw base-unit balance. (Broader rollout of self-describing amounts to the remaining numeric
-  outputs is tracked separately.)
+- **Self-describing amounts across the core read paths**: token-unit amount fields now carry a
+  `{ raw, decimals, _unit, display }` object alongside the existing display string, so agents
+  never re-apply decimals:
+    - `get_token_balance` → `amount` (and `services.getTokenBalance` returns the raw balance);
+    - `get_account_summary` positions → `supplyBalanceAmount`, `borrowBalanceAmount`,
+      `jTokenBalanceAmount` (built from on-chain raw + per-market decimals in the service);
+    - `get_market_data` / `get_all_markets` → `totalSupplyAmount`, `totalBorrowsAmount`,
+      `totalReservesAmount`, `availableLiquidityAmount`.
+  All existing string fields are unchanged (additive). New `describeFromDisplay()` helper in
+  `core/services/bigint-math.ts` reconstructs raw exactly from a de-scaled display string for
+  API-fallback paths that only expose the human-readable value. USD-value and rate/APY fields are
+  already self-describing by field name and are intentionally left as-is. (Remaining lower-frequency
+  outputs — sTRX dashboard, energy rates, vote tallies, mining USD — are tracked separately.)
 - **Hardened tool input schemas**: TRON address parameters now validate against the Base58
   format (`/^T[1-9A-HJ-NP-Za-km-z]{33}$/`) and human-readable amount parameters against a
   decimal-string format (`/^\d+(\.\d+)?$/`, or `…|max` for tools that accept a full-balance

@@ -116,6 +116,32 @@ export function describeAmount(
   };
 }
 
+/**
+ * Build a self-describing amount from an already-de-scaled **display** string
+ * (e.g. `"5000.12"`) plus its `decimals` — for sources that only expose the
+ * human-readable value (no raw base units). Reconstructs `raw` exactly via
+ * string math (no float), so `display` round-trips the input.
+ */
+export function describeFromDisplay(
+  display: string,
+  decimals: number,
+  unit: string,
+): DescribedAmount {
+  const s = normalizeDecimalString(display ?? "0").trim();
+  const negative = s.startsWith("-");
+  const body = negative ? s.slice(1) : s;
+  const [intPart = "0", fracPart = ""] = body.split(".");
+  const frac = (fracPart + "0".repeat(decimals)).slice(0, decimals);
+  let rawBig = BigInt((intPart || "0") + (decimals > 0 ? frac : ""));
+  if (negative) rawBig = -rawBig;
+  return {
+    raw: rawBig.toString(),
+    decimals,
+    _unit: unit,
+    display: formatDisplayUnits(rawBig, decimals),
+  };
+}
+
 // ============================================================================
 // USD helpers
 // ============================================================================
