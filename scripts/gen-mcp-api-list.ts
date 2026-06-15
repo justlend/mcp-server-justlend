@@ -128,6 +128,19 @@ function describeField(zt: z.ZodTypeAny): {
       .join(", ");
     if (bounds) type = `number (${bounds})`;
   }
+  if (tn === "ZodString") {
+    const checks = t._def.checks ?? [];
+    const parts = checks
+      .map((c: any) => {
+        if (c.kind === "regex") return `pattern ${String(c.regex)}`;
+        if (c.kind === "min") return `min len ${c.value}`;
+        if (c.kind === "max") return `max len ${c.value}`;
+        if (c.kind === "length") return `len ${c.value}`;
+        return null;
+      })
+      .filter(Boolean);
+    if (parts.length) type = `string (${parts.join(", ")})`;
+  }
   return { type, required, def, description: (description || "").replace(/\s*\n\s*/g, " ").trim() };
 }
 

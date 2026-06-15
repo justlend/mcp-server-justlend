@@ -8,7 +8,7 @@ import * as services from "../services/index.js";
 import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { describeAmount } from "../services/bigint-math.js";
-import { sanitizeError } from "./shared.js";
+import { sanitizeError, tronAddress, amountString } from "./shared.js";
 
 export function registerMarketTools(server: McpServer) {
 
@@ -165,7 +165,7 @@ export function registerMarketTools(server: McpServer) {
         "IMPORTANT: Returns a snapshot tied to a specific block. " +
         "You MUST call this again after any transaction (supply, withdraw, etc.) to get updated balances and health factor.",
       inputSchema: {
-        address: z.string().describe("TRON address (Base58 T... format) to check. Leave empty to use configured wallet.").optional(),
+        address: tronAddress("TRON address (Base58 T... format) to check. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Account Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -191,8 +191,8 @@ export function registerMarketTools(server: McpServer) {
         "Compare it directly with the amount the user wants to supply/repay. 'allowanceUnit' indicates the token symbol.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT')"),
-        amount: z.string().optional().describe("Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient."),
-        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        amount: amountString("Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient.").optional(),
+        address: tronAddress("Address to check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Check Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -231,7 +231,7 @@ export function registerMarketTools(server: McpServer) {
     {
       description: "Get TRX balance for an address.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get TRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -263,8 +263,8 @@ export function registerMarketTools(server: McpServer) {
         "The returned balance is already formatted in human-readable token units (decimals already applied). Do NOT divide the balance by decimals again.",
       inputSchema: {
         token: z.string().optional().describe("Token symbol (e.g. 'USDD', 'USDT', 'TRX', 'ETH', 'BTC', 'SUN', 'JST', 'WIN', 'BTT', 'NFT', 'TUSD', 'WBTC', 'USD1', 'wstUSDT', 'sTRX'). Preferred over tokenAddress."),
-        tokenAddress: z.string().optional().describe("TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible."),
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        tokenAddress: tronAddress("TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible.").optional(),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Token Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -315,7 +315,7 @@ export function registerMarketTools(server: McpServer) {
             "List of token symbols to check (e.g. ['USDT', 'USDD', 'ETH', 'BTC']). " +
             "Defaults to all TRC20 underlying tokens across all JustLend markets.",
           ),
-        address: z.string().optional().describe("TRON wallet address. Default: configured wallet"),
+        address: tronAddress("TRON wallet address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Wallet Token Balances (Batch)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -365,7 +365,7 @@ export function registerMarketTools(server: McpServer) {
     {
       description: "Get mining rewards for supply markets (USDD, WBTC, etc.). Returns unclaimed rewards, mining APY, and reward breakdown from API.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Leave empty to use configured wallet."),
+        address: tronAddress("TRON address. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Mining Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },

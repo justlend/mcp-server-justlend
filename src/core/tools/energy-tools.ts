@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { sanitizeError, tronAddress } from "./shared.js";
 
 export function registerEnergyTools(server: McpServer) {
 
@@ -64,7 +64,7 @@ export function registerEnergyTools(server: McpServer) {
       inputSchema: {
         energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
         durationHours: z.coerce.number().min(0).optional().describe("Rental duration in hours. Required for new rentals (minimum 1). Optional for renewals (default 0 = no additional time)."),
-        receiverAddress: z.string().optional().describe("Receiver address. If provided, checks for existing rental to calculate renewal cost."),
+        receiverAddress: tronAddress("Receiver address. If provided, checks for existing rental to calculate renewal cost.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Calculate Energy Rental Price", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -161,7 +161,7 @@ export function registerEnergyTools(server: McpServer) {
         "Get a user's energy rental orders from JustLend. Can filter by role: " +
         "'renter' (orders where user is renting out), 'receiver' (orders where user receives energy), or 'all'.",
       inputSchema: {
-        address: z.string().optional().describe("Address to query. Default: configured wallet"),
+        address: tronAddress("Address to query. Default: configured wallet").optional(),
         type: z.enum(["renter", "receiver", "all"]).optional().describe("Filter by role. Default: all"),
         page: z.number().optional().describe("Page number (0-indexed). Default: 0"),
         pageSize: z.number().optional().describe("Results per page. Default: 10"),
@@ -187,8 +187,8 @@ export function registerEnergyTools(server: McpServer) {
         "Get on-chain energy rental info for a specific renter-receiver pair. " +
         "Returns security deposit, rent balance, and whether an active rental exists.",
       inputSchema: {
-        renterAddress: z.string().optional().describe("Renter address. Default: configured wallet"),
-        receiverAddress: z.string().describe("Receiver address"),
+        renterAddress: tronAddress("Renter address. Default: configured wallet").optional(),
+        receiverAddress: tronAddress("Receiver address"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Energy Rent Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -212,8 +212,8 @@ export function registerEnergyTools(server: McpServer) {
         "Shows how much TRX would be refunded (estimatedRefundTrx), remaining rent, " +
         "security deposit, usage rental cost, unrecovered energy, and daily rent cost.",
       inputSchema: {
-        renterAddress: z.string().optional().describe("Renter address. Default: configured wallet"),
-        receiverAddress: z.string().describe("Receiver address"),
+        renterAddress: tronAddress("Renter address. Default: configured wallet").optional(),
+        receiverAddress: tronAddress("Receiver address"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Return Rental Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -244,7 +244,7 @@ export function registerEnergyTools(server: McpServer) {
         "the remaining duration from the existing order is used automatically. Minimum energy for renewal is 50,000. " +
         "Pre-checks: rental not paused, amount within limits, sufficient TRX balance.",
       inputSchema: {
-        receiverAddress: z.string().describe("Address that will receive the energy"),
+        receiverAddress: tronAddress("Address that will receive the energy"),
         energyAmount: z.coerce.number().min(50000).describe("Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal)"),
         durationHours: z.coerce.number().min(1).optional().describe("Rental duration in hours (minimum 1 hour). Required for new rentals. Ignored for renewals (uses existing order's remaining duration)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
@@ -271,7 +271,7 @@ export function registerEnergyTools(server: McpServer) {
         "As a receiver, provide the renter address. " +
         "Pre-checks: active rental must exist between the two addresses.",
       inputSchema: {
-        counterpartyAddress: z.string().describe("The other party's address (receiver if you are renter, renter if you are receiver)"),
+        counterpartyAddress: tronAddress("The other party's address (receiver if you are renter, renter if you are receiver)"),
         endOrderType: z.enum(["renter", "receiver"]).optional().describe("Your role: 'renter' (default) or 'receiver'"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },

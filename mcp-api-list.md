@@ -50,7 +50,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | Required TRON address (T...). If set, the user must connect this exact address. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Required TRON address (T...). If set, the user must connect this exact address. |
 
 ### `set_wallet_mode`
 
@@ -99,8 +99,8 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `to` | string | ✅ |  | Recipient TRON address (Base58 T... format) |
-| `amount` | string | ✅ |  | Amount of TRX to transfer (e.g. '1', '10.5') |
+| `to` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Recipient TRON address (Base58 T... format) |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of TRX to transfer (e.g. '1', '10.5') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `transfer_trc20`
@@ -112,10 +112,10 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `to` | string | ✅ |  | Recipient TRON address (Base58 T... format) |
-| `amount` | string | ✅ |  | Amount to transfer in human-readable units (e.g. '100' for 100 USDT) |
+| `to` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Recipient TRON address (Base58 T... format) |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount to transfer in human-readable units (e.g. '100' for 100 USDT) |
 | `token` | string | — |  | Token symbol (e.g. 'USDT', 'JST', 'SUN'). Preferred over tokenAddress. |
-| `tokenAddress` | string | — |  | TRC20 token contract address. Use 'token' parameter instead when possible. |
+| `tokenAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRC20 token contract address. Use 'token' parameter instead when possible. |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ## Market Data (13)
@@ -182,7 +182,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address (Base58 T... format) to check. Leave empty to use configured wallet. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address (Base58 T... format) to check. Leave empty to use configured wallet. |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `check_allowance`
@@ -195,8 +195,8 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT') |
-| `amount` | string | — |  | Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient. |
-| `address` | string | — |  | Address to check. Default: configured wallet |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | — |  | Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Address to check. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_trx_balance`
@@ -208,7 +208,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_token_balance`
@@ -221,8 +221,8 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `token` | string | — |  | Token symbol (e.g. 'USDD', 'USDT', 'TRX', 'ETH', 'BTC', 'SUN', 'JST', 'WIN', 'BTT', 'NFT', 'TUSD', 'WBTC', 'USD1', 'wstUSDT', 'sTRX'). Preferred over tokenAddress. |
-| `tokenAddress` | string | — |  | TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible. |
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `tokenAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_wallet_balances`
@@ -235,7 +235,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `tokens` | string[] | — |  | List of token symbols to check (e.g. ['USDT', 'USDD', 'ETH', 'BTC']). Defaults to all TRC20 underlying tokens across all JustLend markets. |
-| `address` | string | — |  | TRON wallet address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON wallet address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_mining_rewards`
@@ -247,7 +247,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Leave empty to use configured wallet. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Leave empty to use configured wallet. |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_usdd_mining_config`
@@ -281,7 +281,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT', 'jTRX') |
-| `amount` | string | ✅ |  | Amount of underlying to supply (e.g. '1000' for 1000 USDT) |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of underlying to supply (e.g. '1000' for 1000 USDT) |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `withdraw`
@@ -294,7 +294,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT', 'jTRX') |
-| `amount` | string | ✅ |  | Amount of underlying to withdraw (e.g. '500') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of underlying to withdraw (e.g. '500') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `withdraw_all`
@@ -319,7 +319,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT', 'jTRX') |
-| `amount` | string | ✅ |  | Amount of underlying to borrow (e.g. '500') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of underlying to borrow (e.g. '500') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `repay`
@@ -332,7 +332,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT', 'jTRX') |
-| `amount` | string | ✅ |  | Amount to repay (e.g. '500'), or 'max' for full repayment |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Amount to repay (e.g. '500'), or 'max' for full repayment |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `enter_market`
@@ -369,7 +369,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT') |
-| `amount` | string | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `claim_rewards`
@@ -394,9 +394,9 @@
 |-------|------|:--------:|---------|-------------|
 | `operation` | enum(supply | withdraw | withdraw_all | borrow | repay | approve | enter_market | exit_market | claim_rewards) | ✅ |  | The operation to estimate resources for |
 | `market` | string | ✅ |  | jToken symbol (e.g. 'jUSDT', 'jTRX', 'jUSDD'). Required for all operations except claim_rewards. |
-| `amount` | string | — |  | Amount in underlying token units (e.g. '100'). Default: '1'. Not needed for enter_market, exit_market, approve, withdraw_all, claim_rewards. |
-| `spender` | string | — |  | Custom spender address for approve operation. Default: jToken contract address. Only used when operation is 'approve'. |
-| `address` | string | — |  | TRON address for simulation. Default: configured wallet |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | — |  | Amount in underlying token units (e.g. '100'). Default: '1'. Not needed for enter_market, exit_market, approve, withdraw_all, claim_rewards. |
+| `spender` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Custom spender address for approve operation. Default: jToken contract address. Only used when operation is 'approve'. |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address for simulation. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ## JST Voting / Governance (10)
@@ -422,7 +422,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_vote_info`
@@ -434,7 +434,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_locked_votes`
@@ -447,7 +447,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `proposalId` | number | ✅ |  | The proposal ID to check |
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `check_jst_allowance_for_voting`
@@ -459,7 +459,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `approve_jst_for_voting`
@@ -471,7 +471,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `amount` | string | ✅ |  | Exact amount to approve (e.g. '1000'), or 'max' for unlimited (NOT recommended; user must opt in). |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Exact amount to approve (e.g. '1000'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `deposit_jst_for_votes`
@@ -483,7 +483,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `amount` | string | ✅ |  | Amount of JST to deposit (e.g. '1000') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of JST to deposit (e.g. '1000') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `withdraw_votes_to_jst`
@@ -495,7 +495,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `amount` | string | ✅ |  | Amount of votes/WJST to withdraw back to JST (e.g. '1000') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of votes/WJST to withdraw back to JST (e.g. '1000') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `cast_vote`
@@ -509,7 +509,7 @@
 |-------|------|:--------:|---------|-------------|
 | `proposalId` | number | ✅ |  | The proposal ID to vote on |
 | `support` | boolean | ✅ |  | true = vote FOR the proposal, false = vote AGAINST |
-| `votes` | string | ✅ |  | Amount of votes to cast (e.g. '1000') |
+| `votes` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of votes to cast (e.g. '1000') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `withdraw_votes_from_proposal`
@@ -559,7 +559,7 @@
 |-------|------|:--------:|---------|-------------|
 | `energyAmount` | number (min 50000) | ✅ |  | Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal) |
 | `durationHours` | number (min 0) | — |  | Rental duration in hours. Required for new rentals (minimum 1). Optional for renewals (default 0 = no additional time). |
-| `receiverAddress` | string | — |  | Receiver address. If provided, checks for existing rental to calculate renewal cost. |
+| `receiverAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Receiver address. If provided, checks for existing rental to calculate renewal cost. |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_energy_rental_rate`
@@ -583,7 +583,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | Address to query. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Address to query. Default: configured wallet |
 | `type` | enum(renter | receiver | all) | — |  | Filter by role. Default: all |
 | `page` | number | — |  | Page number (0-indexed). Default: 0 |
 | `pageSize` | number | — |  | Results per page. Default: 10 |
@@ -598,8 +598,8 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `renterAddress` | string | — |  | Renter address. Default: configured wallet |
-| `receiverAddress` | string | ✅ |  | Receiver address |
+| `renterAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Renter address. Default: configured wallet |
+| `receiverAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Receiver address |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_return_rental_info`
@@ -611,8 +611,8 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `renterAddress` | string | — |  | Renter address. Default: configured wallet |
-| `receiverAddress` | string | ✅ |  | Receiver address |
+| `renterAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Renter address. Default: configured wallet |
+| `receiverAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Receiver address |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `rent_energy`
@@ -624,7 +624,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `receiverAddress` | string | ✅ |  | Address that will receive the energy |
+| `receiverAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Address that will receive the energy |
 | `energyAmount` | number (min 50000) | ✅ |  | Amount of energy to rent (minimum 300,000 for new rental, minimum 50,000 for renewal) |
 | `durationHours` | number (min 1) | — |  | Rental duration in hours (minimum 1 hour). Required for new rentals. Ignored for renewals (uses existing order's remaining duration). |
 | `network` | string | — |  | Network. Default: mainnet |
@@ -638,7 +638,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `counterpartyAddress` | string | ✅ |  | The other party's address (receiver if you are renter, renter if you are receiver) |
+| `counterpartyAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | The other party's address (receiver if you are renter, renter if you are receiver) |
 | `endOrderType` | enum(renter | receiver) | — |  | Your role: 'renter' (default) or 'receiver' |
 | `network` | string | — |  | Network. Default: mainnet |
 
@@ -664,7 +664,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | Address to query. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Address to query. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_strx_balance`
@@ -676,7 +676,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | Address to check. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Address to check. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `check_strx_withdrawal_eligibility`
@@ -688,7 +688,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | Address to check. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Address to check. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `stake_trx_to_strx`
@@ -700,7 +700,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `amount` | string | ✅ |  | Amount of TRX to stake (human-readable decimal string, e.g. '1' or '10.5') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of TRX to stake (human-readable decimal string, e.g. '1' or '10.5') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `unstake_strx`
@@ -712,7 +712,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `amount` | string | ✅ |  | Amount of sTRX to unstake (human-readable decimal string, e.g. '1' or '10.5') |
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of sTRX to unstake (human-readable decimal string, e.g. '1' or '10.5') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `claim_strx_rewards`

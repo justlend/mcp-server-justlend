@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
 approximate, derived from git history; see the repository log for exact commits.
 
+## [Unreleased]
+
+### Changed
+- **Hardened tool input schemas**: TRON address parameters now validate against the Base58
+  format (`/^T[1-9A-HJ-NP-Za-km-z]{33}$/`) and human-readable amount parameters against a
+  decimal-string format (`/^\d+(\.\d+)?$/`, or `…|max` for tools that accept a full-balance
+  `max` sentinel), via shared `tronAddress` / `amountString` / `amountOrMaxString` builders in
+  `core/tools/shared.ts`. Previously these were bare `z.string()` with the format only hinted in
+  the description. Agents that pass a malformed address or amount now get a schema-level rejection
+  instead of a deeper runtime error. Tools accepting either a symbol **or** an address (e.g.
+  `market`) are intentionally left unconstrained. Tool surface unchanged (59 tools).
+- **`mcp-api-list.md` surfaces input constraints**: the catalog generator
+  (`scripts/gen-mcp-api-list.ts`) now introspects string `regex` / `min` / `max` checks (in
+  addition to the existing numeric bounds and enums), so the offline tool catalog shows the exact
+  format an agent must send (e.g. `string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)`).
+
 ## [1.0.8] - 2026-06-10
 
 Security-hardening release: addresses the 2026-06-03 **and** 2026-06-09 full-audit

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { sanitizeError, tronAddress, amountString, amountOrMaxString } from "./shared.js";
 
 export function registerVotingTools(server: McpServer) {
 
@@ -42,7 +42,7 @@ export function registerVotingTools(server: McpServer) {
     {
       description: "Get a user's voting status across all governance proposals. Shows which proposals the user has voted on, their vote amounts (for/against/abstain), and which proposals have withdrawable votes.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get User Vote Status", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -65,7 +65,7 @@ export function registerVotingTools(server: McpServer) {
         "Get voting power info for a user: JST wallet balance, available (surplus) votes, total deposited votes, and votes currently cast in proposals. " +
         "This is the key tool to check before voting — it shows how many votes are available to use.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Vote Info", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -100,7 +100,7 @@ export function registerVotingTools(server: McpServer) {
       description: "Get the number of votes a user has locked in a specific proposal.",
       inputSchema: {
         proposalId: z.number().describe("The proposal ID to check"),
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Locked Votes", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -121,7 +121,7 @@ export function registerVotingTools(server: McpServer) {
     {
       description: "Check if JST has been approved for the WJST voting contract. Must be approved before depositing JST to get votes.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Check JST Voting Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -145,7 +145,7 @@ export function registerVotingTools(server: McpServer) {
         "Pass the EXACT amount you intend to deposit (recommended). " +
         "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the WJST contract spend the user's entire JST balance, present and future, until revoked.",
       inputSchema: {
-        amount: z.string().describe("Exact amount to approve (e.g. '1000'), or 'max' for unlimited (NOT recommended; user must opt in)."),
+        amount: amountOrMaxString("Exact amount to approve (e.g. '1000'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve JST for Voting", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -169,7 +169,7 @@ export function registerVotingTools(server: McpServer) {
         "Requires prior approval of JST for the WJST contract (use approve_jst_for_voting first). " +
         "1 JST = 1 Vote. Deposited JST can be withdrawn back after voting.",
       inputSchema: {
-        amount: z.string().describe("Amount of JST to deposit (e.g. '1000')"),
+        amount: amountString("Amount of JST to deposit (e.g. '1000')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Deposit JST for Votes", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -192,7 +192,7 @@ export function registerVotingTools(server: McpServer) {
         "Withdraw WJST back to JST. Can only withdraw votes that are not currently locked in active proposals. " +
         "Use get_vote_info to check your surplus (available) votes before withdrawing.",
       inputSchema: {
-        amount: z.string().describe("Amount of votes/WJST to withdraw back to JST (e.g. '1000')"),
+        amount: amountString("Amount of votes/WJST to withdraw back to JST (e.g. '1000')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Withdraw Votes to JST", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -218,7 +218,7 @@ export function registerVotingTools(server: McpServer) {
       inputSchema: {
         proposalId: z.number().describe("The proposal ID to vote on"),
         support: z.boolean().describe("true = vote FOR the proposal, false = vote AGAINST"),
-        votes: z.string().describe("Amount of votes to cast (e.g. '1000')"),
+        votes: amountString("Amount of votes to cast (e.g. '1000')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Cast Vote", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
