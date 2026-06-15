@@ -9,6 +9,7 @@ import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { GOVERNOR_ALPHA_ABI, WJST_ABI, POLY_ABI, TRC20_ABI } from "../abis.js";
 import { utils } from "./utils.js";
 import { fetchWithTimeout } from "./http.js";
+import { describeAmount, type DescribedAmount } from "./bigint-math.js";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 const JST_DECIMALS = 18;
@@ -188,6 +189,8 @@ export interface UserVoteStatus {
   forVotes: string;
   againstVotes: string;
   abstainVotes: string;
+  /** Self-describing vote weight cast by this user: { raw, decimals, _unit, display } (JST-weighted, 18 decimals). Present on the on-chain path. */
+  votesAmount?: DescribedAmount;
   canWithdraw: boolean;
   state: number;
   stateText: string;
@@ -231,6 +234,7 @@ export async function getUserVoteStatus(
             forVotes: support === 1 ? votesFmt : "0",
             againstVotes: support === 0 ? votesFmt : "0",
             abstainVotes: support === 2 ? votesFmt : "0",
+            votesAmount: describeAmount(votesRaw, JST_DECIMALS, "votes"),
             canWithdraw: stateNum !== 1, // withdrawable once not in the active state
             state: stateNum,
             stateText: PROPOSAL_STATES[stateNum] || `Unknown(${stateNum})`,

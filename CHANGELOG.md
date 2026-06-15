@@ -24,12 +24,15 @@ approximate, derived from git history; see the repository log for exact commits.
     - `get_account_summary` positions → `supplyBalanceAmount`, `borrowBalanceAmount`,
       `jTokenBalanceAmount` (built from on-chain raw + per-market decimals in the service);
     - `get_market_data` / `get_all_markets` → `totalSupplyAmount`, `totalBorrowsAmount`,
-      `totalReservesAmount`, `availableLiquidityAmount`.
+      `totalReservesAmount`, `availableLiquidityAmount`;
+    - sTRX stake account → `strxBalanceAmount`, `accountSupplyAmount` (both API and on-chain paths);
+    - user vote status → `votesAmount` (on-chain path, the cast vote weight);
+    - energy rental info → `rentBalanceAmount`, `securityDepositAmount`.
   All existing string fields are unchanged (additive). New `describeFromDisplay()` helper in
   `core/services/bigint-math.ts` reconstructs raw exactly from a de-scaled display string for
-  API-fallback paths that only expose the human-readable value. USD-value and rate/APY fields are
-  already self-describing by field name and are intentionally left as-is. (Remaining lower-frequency
-  outputs — sTRX dashboard, energy rates, vote tallies, mining USD — are tracked separately.)
+  paths that only expose the human-readable value. USD-value and rate/APY fields are already
+  self-describing by field name and are intentionally left as-is; mining rewards are USD-denominated
+  and similarly need no change.
 - **Hardened tool input schemas**: TRON address parameters now validate against the Base58
   format (`/^T[1-9A-HJ-NP-Za-km-z]{33}$/`) and human-readable amount parameters against a
   decimal-string format (`/^\d+(\.\d+)?$/`, or `…|max` for tools that accept a full-balance
