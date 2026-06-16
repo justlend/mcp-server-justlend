@@ -76,9 +76,20 @@ export class TronWalletSigner {
   /**
    * Sign an unsigned transaction via the browser wallet.
    * The caller is responsible for broadcasting.
+   *
+   * `description` is a human-readable summary built by `safeSend` /
+   * `buildTransactionDescription`. `tronlink-signer` does not accept metadata
+   * to forward to the TronLink UI, so we surface the description on stderr
+   * (the standard MCP log channel) just before signing. The user still has to
+   * approve the raw calldata in TronLink, but the server log carries the
+   * higher-level intent for audit and debugging.
    */
-  async signTransaction(unsignedTx: unknown, _description?: string, network?: string): Promise<SignTransactionResult> {
+  async signTransaction(unsignedTx: unknown, description?: string, network?: string): Promise<SignTransactionResult> {
     await this.start();
+
+    if (description) {
+      console.error(`[browser-sign] ${description}`);
+    }
 
     const { signedTransaction } = await this._signer.signTransaction(
       unsignedTx as Record<string, unknown>,

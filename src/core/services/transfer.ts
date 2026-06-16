@@ -4,6 +4,13 @@ import { checkResourceSufficiency } from "./lending.js";
 import { safeSend, resolveBroadcastResult, type BroadcastResponse } from "./contracts.js";
 import { TRC20_ABI } from "../abis.js";
 
+function validateTronAddress(_tronWeb: any, address: string, label: string): string {
+  if (!utils.isAddress(address)) {
+    throw new Error(`Invalid TRON ${label} address`);
+  }
+  return address;
+}
+
 /**
  * Transfer TRX to an address.
  * @param amount - Amount in TRX (not Sun).
@@ -14,6 +21,7 @@ export async function transferTRX(
   network = "mainnet",
 ) {
   const tronWeb = await getSigningClient(network);
+  validateTronAddress(tronWeb, to, "recipient");
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const amountSun = utils.toSun(amount as any);
 
@@ -58,6 +66,8 @@ export async function transferTRC20(
   const tronWeb = await getSigningClient(network);
 
   try {
+    validateTronAddress(tronWeb, tokenAddress, "token");
+    validateTronAddress(tronWeb, to, "recipient");
     const contract = await tronWeb.contract().at(tokenAddress);
 
     // Check token balance before transfer
@@ -104,7 +114,10 @@ export async function approveTRC20(
   amount: string,
   network = "mainnet",
 ) {
+  const tronWeb = await getSigningClient(network);
   try {
+    validateTronAddress(tronWeb, tokenAddress, "token");
+    validateTronAddress(tronWeb, spenderAddress, "spender");
     const { txID: txId } = await safeSend({
       address: tokenAddress,
       abi: TRC20_ABI,

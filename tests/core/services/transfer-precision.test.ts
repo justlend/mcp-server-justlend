@@ -7,6 +7,15 @@ const mockSafeSend = vi.fn();
 const mockTrxBalance = vi.fn();
 const mockSendTrx = vi.fn();
 const mockCheckResourceSufficiency = vi.fn();
+const mockIsAddress = vi.fn();
+
+vi.mock("tronweb", () => ({
+  TronWeb: {
+    isAddress: (address: string) => mockIsAddress(address),
+    toSun: (value: any) => String(Math.trunc(Number(value) * 1_000_000)),
+    fromSun: (value: any) => String(Number(value) / 1_000_000),
+  },
+}));
 
 vi.mock("../../../src/core/services/wallet.js", () => ({
   getSigningClient: vi.fn(async () => ({
@@ -38,11 +47,12 @@ vi.mock("../../../src/core/services/lending.js", () => ({
   checkResourceSufficiency: (...args: any[]) => mockCheckResourceSufficiency(...args),
 }));
 
-import { transferTRC20, transferTRX } from "../../../src/core/services/transfer.js";
+import { approveTRC20, transferTRC20, transferTRX } from "../../../src/core/services/transfer.js";
 
 describe("transfer precision", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsAddress.mockReturnValue(true);
     mockSafeSend.mockResolvedValue({ txID: "0xtransfer" });
     mockTrxBalance.mockResolvedValue("999999999999999999999999");
     mockCheckResourceSufficiency.mockResolvedValue({
@@ -90,5 +100,23 @@ describe("transfer precision", () => {
       transferTRX("TRecipient", "10000000000", "mainnet"),
     ).rejects.toThrow("TRX transfer amount exceeds the safe SDK limit");
     expect(mockSendTrx).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid TRC20 transfer addresses before loading contracts", async () => {
+    mockIsAddress.mockImplementation((address: string) => address !== "bad-token");
+
+    await expect(
+      transferTRC20("bad-token", "TRecipient", "1", "mainnet"),
+    ).rejects.toThrow("Invalid TRON token address");
+    expect(mockSafeSend).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid TRC20 approval spenders before signing", async () => {
+    mockIsAddress.mockImplementation((address: string) => address !== "bad-spender");
+
+    await expect(
+      approveTRC20("TToken", "bad-spender", "1", "mainnet"),
+    ).rejects.toThrow("Invalid TRON spender address");
+    expect(mockSafeSend).not.toHaveBeenCalled();
   });
 });

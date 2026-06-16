@@ -41,9 +41,11 @@ vi.mock("../../../src/core/services/clients.js", () => ({
   getTronWeb: vi.fn(() => mockTronWeb),
 }));
 
+const signTransactionWithWalletMock = vi.fn(async (tx: any, _description?: string, _network?: string) => ({ ...tx, signature: ["0xsig"] }));
+
 vi.mock("../../../src/core/services/wallet.js", () => ({
   getSigningClient: vi.fn(async () => mockTronWeb),
-  signTransactionWithWallet: vi.fn(async (tx: any) => ({ ...tx, signature: ["0xsig"] })),
+  signTransactionWithWallet: signTransactionWithWalletMock,
 }));
 
 vi.mock("../../../src/core/services/resource-prices.js", () => ({
@@ -120,5 +122,32 @@ describe("safeSend — REVERT pre-flight fix", () => {
     expect(result.txID).toBe("broadcasted");
     expect(triggerSmartContract).toHaveBeenCalledTimes(1);
     expect(sendRawTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a deterministic transaction summary to the wallet signer", async () => {
+    triggerConstantContract.mockResolvedValue({ result: { result: true }, energy_used: 10 });
+
+    const { safeSend } = await import("../../../src/core/services/contracts.js");
+
+    await safeSend(
+      {
+        address: "TTokenContract000000000000000000000",
+        abi: ERC20_TRANSFER_ABI,
+        functionName: "transfer",
+        args: ["TRecipient00000000000000000000000000", "123"],
+        callValue: "0",
+        feeLimit: 123_000_000,
+      },
+      "nile",
+    );
+
+    expect(signTransactionWithWalletMock).toHaveBeenCalledWith(
+      { txID: "unsigned" },
+      expect.stringContaining("transfer(address,uint256)"),
+      "nile",
+    );
+    expect(signTransactionWithWalletMock.mock.calls[0][1]).toContain("TTokenContract000000000000000000000");
+    expect(signTransactionWithWalletMock.mock.calls[0][1]).toContain("TRecipient00000000000000000000000000");
+    expect(signTransactionWithWalletMock.mock.calls[0][1]).toContain("feeLimit=123000000");
   });
 });

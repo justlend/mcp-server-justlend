@@ -122,7 +122,10 @@ export const NETWORKS: Record<TronNetwork, NetworkConfig> = {
  * All addresses below are for JustLend V1 protocol.
  *
  * jToken list sourced from JustLend official docs & TronScan verified contracts.
- * All 24 V1 jToken markets are included (synced from justlend-app config.js).
+ * 23 V1 jToken markets total: 17 active + 6 paused/legacy.
+ * Markets tagged `*OLD` or known to be paused: jUSDJ, jSUNOLD, jWBTT, jUSDCOLD,
+ * jUSDD_OLD, jBUSDOLD — closed to new supply/borrow, still queryable so existing
+ * positions can be unwound.
  */
 export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
   [TronNetwork.Mainnet]: {
@@ -323,6 +326,14 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         underlyingSymbol: "WBTC",
         decimals: 8,
         underlyingDecimals: 8,
+      },
+      jHTX: {
+        address: "TDA1mWPyAjTRATMGA55UTswGAHhV2itEXR",
+        underlying: "TUPM7K8REVzD2UdV4R5fe5M8XbnR2DdoJ6",
+        symbol: "jHTX",
+        underlyingSymbol: "HTX",
+        decimals: 8,
+        underlyingDecimals: 18,
       },
     },
     moolah: {

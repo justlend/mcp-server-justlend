@@ -146,8 +146,8 @@ describe("getStrxStakeAccount fallback", () => {
 
     const result = await getStrxStakeAccount(TEST_ADDR, "mainnet");
     expect(result.source).toBe("contract");
-    expect(result.accountSupply).toBeGreaterThanOrEqual(0);
-    expect(result.strxBalance).toBeGreaterThanOrEqual(0);
+    expect(result.accountSupply).toBe("1050");
+    expect(result.strxBalance).toBe("1000");
     expect(result.accountIncome).toBeNull();
     expect(result.accountCanClaimAmount).toBeNull();
     expect(result.note).toContain("API down");

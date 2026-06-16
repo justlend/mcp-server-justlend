@@ -52,6 +52,8 @@ vi.mock("fs", async (importOriginal) => {
 describe("importWallet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Allow the legacy auto-generated runtime-secret path exercised by these tests.
+    process.env.ALLOW_INSECURE_RUNTIME_SECRETS = "true";
     listWalletsMock.mockReturnValue([["imported", { type: "local_secure" }, true]]);
     hasRuntimeSecretsMock.mockReturnValue(true);
     getActiveIdMock.mockReturnValue("existing");

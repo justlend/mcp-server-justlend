@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getJTokenInfo } from "../chains.js";
 import * as services from "../services/index.js";
 import { utils } from "../services/utils.js";
-import { sanitizeError } from "./shared.js";
+import { tronAddress, amountString, amountOrMaxString, toolError } from "./shared.js";
 
 /**
  * Helper: check resource sufficiency and return warning object for tool responses.
@@ -47,7 +47,7 @@ export function registerLendingTools(server: McpServer) {
         "Use estimate_lending_energy tool for precise estimates before executing.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT', 'jTRX')"),
-        amount: z.string().describe("Amount of underlying to supply (e.g. '1000' for 1000 USDT)"),
+        amount: amountString("Amount of underlying to supply (e.g. '1000' for 1000 USDT)"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Supply Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -94,7 +94,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -108,7 +108,7 @@ export function registerLendingTools(server: McpServer) {
         "Typical cost: ~90,000 energy + ~300 bandwidth.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT', 'jTRX')"),
-        amount: z.string().describe("Amount of underlying to withdraw (e.g. '500')"),
+        amount: amountString("Amount of underlying to withdraw (e.g. '500')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Withdraw Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -128,7 +128,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -160,7 +160,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -175,7 +175,7 @@ export function registerLendingTools(server: McpServer) {
         "Typical cost: ~100,000 energy + ~313 bandwidth.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT', 'jTRX')"),
-        amount: z.string().describe("Amount of underlying to borrow (e.g. '500')"),
+        amount: amountString("Amount of underlying to borrow (e.g. '500')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Borrow Assets", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -195,7 +195,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -210,7 +210,7 @@ export function registerLendingTools(server: McpServer) {
         "Typical cost: ~80,000~90,000 energy + ~280~320 bandwidth (TRX costs less than TRC20).",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT', 'jTRX')"),
-        amount: z.string().describe("Amount to repay (e.g. '500'), or 'max' for full repayment"),
+        amount: amountOrMaxString("Amount to repay (e.g. '500'), or 'max' for full repayment"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Repay Borrow", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -257,7 +257,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -290,7 +290,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -338,7 +338,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -354,7 +354,7 @@ export function registerLendingTools(server: McpServer) {
         "Typical cost: ~23,000 energy + ~265 bandwidth.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT')"),
-        amount: z.string().describe("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
+        amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve Underlying Token", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -374,7 +374,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -405,7 +405,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -429,9 +429,9 @@ export function registerLendingTools(server: McpServer) {
         operation: z.enum(["supply", "withdraw", "withdraw_all", "borrow", "repay", "approve", "enter_market", "exit_market", "claim_rewards"])
           .describe("The operation to estimate resources for"),
         market: z.string().describe("jToken symbol (e.g. 'jUSDT', 'jTRX', 'jUSDD'). Required for all operations except claim_rewards."),
-        amount: z.string().optional().describe("Amount in underlying token units (e.g. '100'). Default: '1'. Not needed for enter_market, exit_market, approve, withdraw_all, claim_rewards."),
-        spender: z.string().optional().describe("Custom spender address for approve operation. Default: jToken contract address. Only used when operation is 'approve'."),
-        address: z.string().optional().describe("TRON address for simulation. Default: configured wallet"),
+        amount: amountString("Amount in underlying token units (e.g. '100'). Default: '1'. Not needed for enter_market, exit_market, approve, withdraw_all, claim_rewards.").optional(),
+        spender: tronAddress("Custom spender address for approve operation. Default: jToken contract address. Only used when operation is 'approve'.").optional(),
+        address: tronAddress("TRON address for simulation. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Estimate Operation Resources", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -451,7 +451,7 @@ export function registerLendingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

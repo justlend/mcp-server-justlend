@@ -18,9 +18,26 @@ import { checkResourceSufficiency } from "./lending.js";
 import { safeSend } from "./contracts.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout } from "./http.js";
+import { utils } from "./utils.js";
+import { describeFromDisplay } from "./bigint-math.js";
 
-const TRX_PRECISION = 1e6;
-const TOKEN_PRECISION = 1e18;
+/** Attach self-describing amounts to the known token-amount fields of a stake-account object (additive). */
+function enrichStrxAccount<T extends Record<string, any>>(data: T): T {
+  if (data && typeof data === "object") {
+    const sb = (data as any).strxBalance;
+    if (typeof sb === "string" || typeof sb === "number")
+      (data as any).strxBalanceAmount = describeFromDisplay(String(sb), STRX_DECIMALS, "sTRX");
+    const supply = (data as any).accountSupply;
+    if (typeof supply === "string" || typeof supply === "number")
+      (data as any).accountSupplyAmount = describeFromDisplay(String(supply), TRX_DECIMALS, "TRX");
+  }
+  return data;
+}
+
+const TRX_DECIMALS = 6;
+const STRX_DECIMALS = 18;
+const TRX_PRECISION = 1_000_000n;
+const TOKEN_PRECISION = 1_000_000_000_000_000_000n;
 const DEFAULT_FEE_LIMIT = 200_000_000; // 200 TRX
 const STRX_DASHBOARD_TTL_MS = 60_000; // 60s
 
@@ -31,6 +48,32 @@ function validateTronAddress(address: string, label = "address"): string {
     throw new Error(`Invalid TRON ${label} format`);
   }
   return address;
+}
+
+function formatRawUnits(value: bigint | string | number, decimals: number, displayDecimals?: number): string {
+  let raw = BigInt(value.toString());
+  const negative = raw < 0n;
+  if (negative) raw = -raw;
+  const scale = 10n ** BigInt(decimals);
+  const integer = raw / scale;
+  let fraction = (raw % scale).toString().padStart(decimals, "0");
+  if (displayDecimals !== undefined) {
+    fraction = fraction.slice(0, displayDecimals).padEnd(displayDecimals, "0");
+  } else {
+    fraction = fraction.replace(/0+$/, "");
+  }
+  const formatted = fraction ? `${integer.toString()}.${fraction}` : integer.toString();
+  return negative ? `-${formatted}` : formatted;
+}
+
+function parseTrxToSun(amountTrx: string | number): bigint {
+  return utils.parseUnits(String(amountTrx), TRX_DECIMALS);
+}
+
+function formatRatio(numerator: bigint, denominator: bigint, decimals = 6): string {
+  if (denominator === 0n) return "0";
+  const scale = 10n ** BigInt(decimals);
+  return formatRawUnits((numerator * scale) / denominator, decimals, decimals);
 }
 
 // ============================================================================
@@ -66,8 +109,8 @@ export async function getStrxDashboard(network = "mainnet") {
       energyStakePerTrx: data.energyStakePerTrx,
       jstAmountRewardRentPerTrx: data.jstAmountRewardRentPerTrx,
       jstPrice: data.jstPrice,
-      sTrx1Trx: (1e18 / Number(data.exchangeRate)).toFixed(6),
-      trx1sTrx: (Number(data.exchangeRate) / 1e18).toFixed(6),
+      sTrx1Trx: formatRatio(TOKEN_PRECISION, BigInt(data.exchangeRate)),
+      trx1sTrx: formatRatio(BigInt(data.exchangeRate), TOKEN_PRECISION),
     };
     cacheSet(cacheKey, result, STRX_DASHBOARD_TTL_MS);
     return result;
@@ -87,9 +130,10 @@ export async function getStrxDashboard(network = "mainnet") {
     contract.methods.getUnfreezeDelayDays().call(),
   ]);
 
-  const exchangeRate = BigInt(exchangeRateRaw).toString();
-  const totalSupply = (Number(totalSupplyRaw) / TOKEN_PRECISION).toString();
-  const totalUnfreezable = (Number(totalUnfreezableRaw) / TRX_PRECISION).toString();
+  const exchangeRateBig = BigInt(exchangeRateRaw);
+  const exchangeRate = exchangeRateBig.toString();
+  const totalSupply = formatRawUnits(totalSupplyRaw, STRX_DECIMALS);
+  const totalUnfreezable = formatRawUnits(totalUnfreezableRaw, TRX_DECIMALS);
 
   const result = {
     trxPrice: null,
@@ -102,8 +146,8 @@ export async function getStrxDashboard(network = "mainnet") {
     energyStakePerTrx: null,
     jstAmountRewardRentPerTrx: null,
     jstPrice: null,
-    sTrx1Trx: (1e18 / Number(exchangeRate)).toFixed(6),
-    trx1sTrx: (Number(exchangeRate) / 1e18).toFixed(6),
+    sTrx1Trx: formatRatio(TOKEN_PRECISION, exchangeRateBig),
+    trx1sTrx: formatRatio(exchangeRateBig, TOKEN_PRECISION),
     source: "contract",
     note: "APY, price, and reward data unavailable (API down). Exchange rate and supply data from on-chain.",
   };
@@ -129,7 +173,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
     const json = await resp.json();
 
     if (json.code === 0 && json.data) {
-      return json.data;
+      return enrichStrxAccount(json.data);
     }
   } catch {
     // API unavailable, fallback to on-chain
@@ -145,10 +189,10 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
     contract.methods.viewBalanceOfUnderlying(address).call(),
   ]);
 
-  const strxBalance = Number(balanceRaw) / TOKEN_PRECISION;
-  const underlyingTrx = Number(underlyingRaw) / TRX_PRECISION;
+  const strxBalance = formatRawUnits(balanceRaw, STRX_DECIMALS);
+  const underlyingTrx = formatRawUnits(underlyingRaw, TRX_DECIMALS);
 
-  return {
+  return enrichStrxAccount({
     accountSupply: underlyingTrx,
     accountIncome: null,
     accountCanClaimAmount: null,
@@ -159,7 +203,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
     rewardMap: {},
     source: "contract",
     note: "Income and reward data unavailable (API down). Supply data from on-chain balanceOf/viewBalanceOfUnderlying.",
-  };
+  });
 }
 
 /**
@@ -173,7 +217,7 @@ export async function getStrxBalance(address: string, network = "mainnet") {
   const balance = await contract.methods.balanceOf(address).call();
   return {
     raw: BigInt(balance.toString()),
-    formatted: (Number(balance) / TOKEN_PRECISION).toFixed(6),
+    formatted: formatRawUnits(balance, STRX_DECIMALS, 6),
     symbol: "sTRX",
     decimals: 18,
   };
@@ -190,7 +234,7 @@ export async function getStrxBalance(address: string, network = "mainnet") {
  * 1. Check TRX balance is sufficient (amount + gas)
  */
 export async function stakeTrxToStrx(
-  amountTrx: number,
+  amountTrx: string | number,
   network = "mainnet",
 ) {
   const tronWeb = await getSigningClient(network);
@@ -199,21 +243,24 @@ export async function stakeTrxToStrx(
 
   // Check TRX balance with dynamic gas estimation
   // Typical stake tx: ~80k energy, ~300 bandwidth
-  const balanceSun = await tronWeb.trx.getBalance(walletAddress);
-  const balanceTrx = Number(balanceSun) / TRX_PRECISION;
+  const balanceSun = BigInt(await tronWeb.trx.getBalance(walletAddress));
+  const amountSun = parseTrxToSun(amountTrx);
+  if (amountSun <= 0n) throw new Error("Stake amount must be greater than 0 TRX");
   const STAKE_ENERGY_ESTIMATE = 80000;
   const STAKE_BANDWIDTH_ESTIMATE = 300;
   const resourceCheck = await checkResourceSufficiency(walletAddress, STAKE_ENERGY_ESTIMATE, STAKE_BANDWIDTH_ESTIMATE, network);
-  const gasTrx = parseFloat(resourceCheck.energyBurnTRX) + parseFloat(resourceCheck.bandwidthBurnTRX);
-  const totalNeeded = amountTrx + gasTrx;
+  const gasSun = parseTrxToSun(
+    (parseFloat(resourceCheck.energyBurnTRX) + parseFloat(resourceCheck.bandwidthBurnTRX)).toString(),
+  );
+  const totalNeededSun = amountSun + gasSun;
 
-  if (balanceTrx < totalNeeded) {
+  if (balanceSun < totalNeededSun) {
     throw new Error(
-      `Insufficient TRX balance for staking. Need ~${totalNeeded.toFixed(2)} TRX (stake: ${amountTrx} TRX + gas: ${gasTrx.toFixed(2)} TRX)`,
+      `Insufficient TRX balance for staking. Need ~${formatRawUnits(totalNeededSun, TRX_DECIMALS)} TRX ` +
+      `(stake: ${String(amountTrx)} TRX + gas: ${formatRawUnits(gasSun, TRX_DECIMALS)} TRX)`,
     );
   }
 
-  const amountSun = BigInt(Math.floor(amountTrx * TRX_PRECISION));
   const contract = tronWeb.contract(STRX_ABI, addrs.strx.proxy);
 
   const { txID: txId } = await safeSend({
@@ -228,9 +275,9 @@ export async function stakeTrxToStrx(
   let estimatedStrx: string | undefined;
   try {
     const dashboard = await getStrxDashboard(network);
-    const exchangeRate = Number(dashboard.exchangeRate) / TOKEN_PRECISION;
-    if (exchangeRate > 0) {
-      estimatedStrx = (amountTrx / (1 / exchangeRate)).toFixed(6);
+    const exchangeRate = BigInt(dashboard.exchangeRate);
+    if (exchangeRate > 0n) {
+      estimatedStrx = formatRawUnits((amountSun * TOKEN_PRECISION) / exchangeRate, STRX_DECIMALS, 6);
     }
   } catch {
     // Non-critical, skip
@@ -238,7 +285,7 @@ export async function stakeTrxToStrx(
 
   return {
     txId,
-    stakedTrx: amountTrx,
+    stakedTrx: String(amountTrx),
     estimatedStrx,
     wallet: walletAddress,
   };
@@ -252,7 +299,7 @@ export async function stakeTrxToStrx(
  * Note: Unstaked TRX has an unbonding period before it can be withdrawn
  */
 export async function unstakeStrx(
-  amountStrx: number | string,
+  amountStrx: string,
   network = "mainnet",
 ) {
   const tronWeb = await getSigningClient(network);
@@ -261,8 +308,7 @@ export async function unstakeStrx(
 
   // Check sTRX balance (compare in BigInt to avoid precision loss for large holdings)
   const strxBalance = await getStrxBalance(walletAddress, network);
-  const amountWeiStr = tronWeb.toBigNumber(amountStrx).times(TOKEN_PRECISION).integerValue().toString(10);
-  const amountWei = BigInt(amountWeiStr);
+  const amountWei = utils.parseUnits(amountStrx, STRX_DECIMALS);
 
   if (strxBalance.raw < amountWei) {
     throw new Error(
@@ -284,9 +330,9 @@ export async function unstakeStrx(
   let unfreezeDelayDays: number | undefined;
   try {
     const dashboard = await getStrxDashboard(network);
-    const exchangeRate = Number(dashboard.exchangeRate) / TOKEN_PRECISION;
-    if (exchangeRate > 0) {
-      estimatedTrx = (Number(amountStrx) * (1 / exchangeRate)).toFixed(6);
+    const exchangeRate = BigInt(dashboard.exchangeRate);
+    if (exchangeRate > 0n) {
+      estimatedTrx = formatRawUnits((amountWei * exchangeRate) / TOKEN_PRECISION, TRX_DECIMALS, 6);
     }
     unfreezeDelayDays = dashboard.unfreezeDelayDays;
   } catch {

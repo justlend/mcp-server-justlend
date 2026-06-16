@@ -149,10 +149,10 @@ describe("stakeTrxToStrx (write — skipped by default)", () => {
     "should stake TRX and return tx hash",
     async () => {
       // Stake minimum 1 TRX on nile testnet
-      const result = await stakeTrxToStrx(1, "nile");
+      const result = await stakeTrxToStrx("1", "nile");
       expect(result.txId).toBeDefined();
       expect(typeof result.txId).toBe("string");
-      expect(result.stakedTrx).toBe(1);
+      expect(result.stakedTrx).toBe("1");
       console.error(`Stake TX: ${result.txId}`);
     },
     120_000,

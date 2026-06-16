@@ -7,7 +7,8 @@ import {
 import * as services from "../services/index.js";
 import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
-import { sanitizeError } from "./shared.js";
+import { describeAmount } from "../services/bigint-math.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerMarketTools(server: McpServer) {
 
@@ -59,7 +60,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -95,7 +96,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -128,7 +129,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -147,7 +148,7 @@ export function registerMarketTools(server: McpServer) {
         const summary = await services.getProtocolSummary(network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -164,7 +165,7 @@ export function registerMarketTools(server: McpServer) {
         "IMPORTANT: Returns a snapshot tied to a specific block. " +
         "You MUST call this again after any transaction (supply, withdraw, etc.) to get updated balances and health factor.",
       inputSchema: {
-        address: z.string().describe("TRON address (Base58 T... format) to check. Leave empty to use configured wallet.").optional(),
+        address: tronAddress("TRON address (Base58 T... format) to check. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Account Summary", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -175,7 +176,7 @@ export function registerMarketTools(server: McpServer) {
         const summary = await services.getAccountSummary(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -190,8 +191,8 @@ export function registerMarketTools(server: McpServer) {
         "Compare it directly with the amount the user wants to supply/repay. 'allowanceUnit' indicates the token symbol.",
       inputSchema: {
         market: z.string().describe("jToken symbol (e.g. 'jUSDT')"),
-        amount: z.string().optional().describe("Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient."),
-        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        amount: amountString("Amount to check sufficiency against (human-readable, e.g. '0.5'). If provided, returns whether allowance is sufficient.").optional(),
+        address: tronAddress("Address to check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Check Allowance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -220,7 +221,7 @@ export function registerMarketTools(server: McpServer) {
 
         return { content: [{ type: "text", text: JSON.stringify({ ...result, ...sufficiency }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -230,7 +231,7 @@ export function registerMarketTools(server: McpServer) {
     {
       description: "Get TRX balance for an address.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get TRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -239,9 +240,14 @@ export function registerMarketTools(server: McpServer) {
       try {
         const userAddress = address || await services.getWalletAddress();
         const balance = await services.getTRXBalance(userAddress, network);
-        return { content: [{ type: "text", text: JSON.stringify({ address: userAddress, balance: `${balance.formatted} TRX` }, null, 2) }] };
+        return { content: [{ type: "text", text: JSON.stringify({
+          address: userAddress,
+          balance: `${balance.formatted} TRX`,
+          // Self-describing amount (raw + _unit + decimals + display) so agents never re-apply decimals.
+          amount: describeAmount(balance.wei, 6, "TRX"),
+        }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -257,8 +263,8 @@ export function registerMarketTools(server: McpServer) {
         "The returned balance is already formatted in human-readable token units (decimals already applied). Do NOT divide the balance by decimals again.",
       inputSchema: {
         token: z.string().optional().describe("Token symbol (e.g. 'USDD', 'USDT', 'TRX', 'ETH', 'BTC', 'SUN', 'JST', 'WIN', 'BTT', 'NFT', 'TUSD', 'WBTC', 'USD1', 'wstUSDT', 'sTRX'). Preferred over tokenAddress."),
-        tokenAddress: z.string().optional().describe("TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible."),
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        tokenAddress: tronAddress("TRC20 token contract address. Use 'token' parameter with a symbol name instead when possible.").optional(),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Token Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -281,13 +287,16 @@ export function registerMarketTools(server: McpServer) {
               balance: result.balance,
               balanceNote: "This balance is already in human-readable token units (decimals already applied). Do not divide again.",
               symbol: result.symbol,
+              _unit: result.symbol,
               decimals: result.decimals,
+              // Self-describing amount (raw + _unit + decimals + display) so agents never re-apply decimals.
+              amount: describeAmount(result.raw, result.decimals, result.symbol),
               tokenAddress: resolvedAddress,
             }, null, 2)
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -308,7 +317,7 @@ export function registerMarketTools(server: McpServer) {
             "List of token symbols to check (e.g. ['USDT', 'USDD', 'ETH', 'BTC']). " +
             "Defaults to all TRC20 underlying tokens across all JustLend markets.",
           ),
-        address: z.string().optional().describe("TRON wallet address. Default: configured wallet"),
+        address: tronAddress("TRON wallet address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Wallet Token Balances (Batch)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -344,7 +353,7 @@ export function registerMarketTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -358,7 +367,7 @@ export function registerMarketTools(server: McpServer) {
     {
       description: "Get mining rewards for supply markets (USDD, WBTC, etc.). Returns unclaimed rewards, mining APY, and reward breakdown from API.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Leave empty to use configured wallet."),
+        address: tronAddress("TRON address. Leave empty to use configured wallet.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Mining Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -369,7 +378,7 @@ export function registerMarketTools(server: McpServer) {
         const rewards = await services.getMiningRewardsFromAPI(userAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(rewards, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -388,7 +397,7 @@ export function registerMarketTools(server: McpServer) {
         const config = await services.getUSDDMiningConfig(network);
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -405,7 +414,7 @@ export function registerMarketTools(server: McpServer) {
         const config = services.getWBTCMiningConfig();
         return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
