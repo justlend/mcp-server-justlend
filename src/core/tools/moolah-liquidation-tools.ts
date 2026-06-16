@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
 
 export function registerMoolahLiquidationTools(server: McpServer) {
 
@@ -33,7 +33,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
         );
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -74,7 +74,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -102,7 +102,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
         );
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -119,7 +119,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
         "Use get_moolah_liquidation_quote first to estimate the required loan token amount.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
-        borrower: z.string().describe("Address of the borrower to liquidate (Base58)"),
+        borrower: tronAddress("Address of the borrower to liquidate (Base58)"),
         seizedAssets: z.string().optional().describe("Collateral units to seize (raw). Provide this OR repaidShares."),
         repaidShares: z.string().optional().describe("Borrow shares to repay (raw). Provide this OR seizedAssets."),
         network: z.string().optional().describe("Network. Default: mainnet"),
@@ -131,7 +131,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
         const result = await services.moolahLiquidate({ marketId, borrower, seizedAssets, repaidShares, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -141,22 +141,24 @@ export function registerMoolahLiquidationTools(server: McpServer) {
     {
       description:
         "Approve loan token spending for the Moolah public liquidator contract. " +
-        "Required before calling moolah_liquidate. Use amount='max' for unlimited approval.",
+        "Required before calling moolah_liquidate. Pass the EXACT amount you intend to use (recommended). " +
+        "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the liquidator " +
+        "contract spend the user's entire balance, present and future, until revoked (amount='0').",
       inputSchema: {
-        tokenAddress: z.string().describe("Loan token contract address (Base58)"),
+        tokenAddress: tronAddress("Loan token contract address (Base58)"),
         tokenSymbol: z.string().describe("Token symbol for display (e.g. 'USDT')"),
         tokenDecimals: z.number().describe("Token decimals (e.g. 6 for USDT)"),
-        amount: z.string().optional().describe("Amount to approve, or 'max' for unlimited. Default: max"),
+        amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve Liquidator Token", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ tokenAddress, tokenSymbol, tokenDecimals, amount = "max", network = services.getGlobalNetwork() }) => {
+    async ({ tokenAddress, tokenSymbol, tokenDecimals, amount, network = services.getGlobalNetwork() }) => {
       try {
         const result = await services.approveLiquidatorToken({ tokenAddress, tokenSymbol, tokenDecimals, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

@@ -6,8 +6,16 @@
  *   { code: 0, data: { items, pageNum, pageSize, totalCount, [unReadCount] } }
  */
 import { fetchWithTimeout } from "./http.js";
+import { utils } from "./utils.js";
 
 const LABC_HOST = "https://labc.ablesdxd.link";
+
+/** Reject malformed addresses before building a records URL (defense-in-depth; tool layer also validates). */
+function requireValidAddress(addr: string): void {
+  if (!utils.isAddress(addr)) {
+    throw new Error(`Invalid TRON address: ${addr}`);
+  }
+}
 
 // ── Shared envelope ──────────────────────────────────────────────────────────
 
@@ -25,6 +33,7 @@ async function fetchRecords<T>(
   page: number,
   pageSize: number,
 ): Promise<RecordsPage<T>> {
+  requireValidAddress(addr);
   const url = `${LABC_HOST}${path}?addr=${encodeURIComponent(addr)}&page=${page}&pageSize=${pageSize}`;
   const res = await fetchWithTimeout(url);
   if (!res.ok) {
@@ -261,6 +270,7 @@ export async function fetchClaimableRewards(
   network = "mainnet",
 ): Promise<ClaimableRewardsResponse> {
   requireMainnet(network);
+  requireValidAddress(address);
   const url = `${LABC_HOST}/sunProject/getAllUnClaimedAirDrop?addr=${encodeURIComponent(address)}`;
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`Rewards API ${res.status} ${res.statusText}`);

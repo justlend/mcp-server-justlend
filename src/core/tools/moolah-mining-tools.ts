@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress } from "./shared.js";
 
 /**
  * JustLend V2 (Moolah) — Mining rewards.
@@ -25,7 +25,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         "and total (encoded as a fraction, e.g. 0.123 = 12.3%). enabled=true means the " +
         "vault is active in mining and qualifies for the fire-icon UI hint.",
       inputSchema: {
-        vaultAddress: z.string().describe("Vault contract address (Base58 T...)"),
+        vaultAddress: tronAddress("Vault contract address (Base58 T...)"),
         network:      z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Moolah Vault Mining APY", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -35,7 +35,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         const res = await services.getMoolahVaultMiningApy(vaultAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -57,7 +57,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         const res = await services.getMoolahMiningResolver(network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -72,7 +72,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         "excluded otherwise so it doesn't double-count with already-published merkle airdrops. " +
         "globalSettlementStatus=true means the backend reports any token in flux; treat per-token amounts as provisional.",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Moolah Mining Accruing", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -83,7 +83,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         const res = await services.getMoolahAccruingMining(userAddr, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -98,7 +98,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         "to submit the on-chain multiClaim. Set includeClaimed=true to also return rounds the indexer " +
         "marks as already claimed (default false matches the rewards card behaviour).",
       inputSchema: {
-        address: z.string().optional().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet").optional(),
         includeClaimed: z.boolean().optional().describe("Include rounds the backend marks as claimed. Default: false"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
@@ -110,7 +110,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         const res = await services.getMoolahPendingMiningPeriods(userAddr, { includeClaimed, network });
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, count: res.periods.length, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -132,7 +132,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         index:       z.union([z.string(), z.number()]).optional().describe("Override: leaf index inside the tree"),
         amounts:     z.array(z.union([z.string(), z.number()])).optional().describe("Override: token amounts in raw units, slot-aligned with the tree's tokenAddress[]"),
         proof:       z.array(z.string()).optional().describe("Override: merkle proof (bytes32[])"),
-        address:     z.string().optional().describe("Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet"),
+        address:     tronAddress("Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet").optional(),
         network:     z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Claim Moolah Mining Period", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -150,7 +150,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

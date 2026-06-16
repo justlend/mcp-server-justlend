@@ -19,8 +19,17 @@ export async function approveLiquidatorToken(params: {
   tokenDecimals: number;
   amount?: string;
   network?: string;
-}): Promise<{ txID: string; message: string }> {
-  const { tokenAddress, tokenSymbol, tokenDecimals, amount = "max", network = "mainnet" } = params;
+}): Promise<{ txID: string; message: string; warning?: string }> {
+  const { tokenAddress, tokenSymbol, tokenDecimals, amount, network = "mainnet" } = params;
+  if (!utils.isAddress(tokenAddress)) {
+    throw new Error(`Invalid TRON token address: ${tokenAddress}`);
+  }
+  if (amount === undefined || amount === null || amount === "") {
+    throw new Error(
+      `approve_liquidator_token requires an explicit amount. Pass the exact value you intend to use ` +
+      `(e.g. amount='100'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
+    );
+  }
   const { publicLiquidatorProxy } = getMoolahAddresses(network);
   const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
@@ -43,10 +52,17 @@ export async function approveLiquidatorToken(params: {
     },
     network,
   );
-  return {
+  const result: { txID: string; message: string; warning?: string } = {
     txID,
     message: `Approved ${isMax ? "unlimited" : amount} ${tokenSymbol} for Moolah liquidator. TX: ${txID}`,
   };
+  if (isMax) {
+    result.warning =
+      `⚠️ UNLIMITED APPROVAL granted. The Moolah public liquidator contract can now spend your entire ` +
+      `${tokenSymbol} balance — present and future — without further confirmation. ` +
+      `If you no longer need this, revoke with: approve_liquidator_token tokenAddress='${tokenAddress}' amount='0'.`;
+  }
+  return result;
 }
 
 // ── Liquidate ─────────────────────────────────────────────────────────────────
@@ -74,6 +90,10 @@ export async function moolahLiquidate(params: {
   message: string;
 }> {
   const { marketId, borrower, seizedAssets, repaidShares, network = "mainnet" } = params;
+
+  if (!utils.isAddress(borrower)) {
+    throw new Error(`Invalid TRON borrower address: ${borrower}`);
+  }
 
   const seizedBig = BigInt(seizedAssets);
   const repaidBig = BigInt(repaidShares);

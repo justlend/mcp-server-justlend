@@ -750,7 +750,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `vaultSymbol` | string | ✅ |  | Vault symbol: 'TRX', 'USDT', or 'USDD' |
-| `address` | string | — |  | User address to include share balance. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | User address to include share balance. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `approve_moolah_vault`
@@ -758,12 +758,12 @@
 **Approve Moolah Vault**  
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Approve TRC20 token spending for a Moolah vault before depositing. Not needed for TRX vaults. Use amount='max' for unlimited approval.
+- **Description**: Approve TRC20 token spending for a Moolah vault before depositing. Not needed for TRX vaults. Pass the EXACT amount you intend to deposit (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the vault contract spend the user's entire balance, present and future, until revoked (amount='0').
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `vaultSymbol` | string | ✅ |  | Vault symbol: 'USDT' or 'USDD' |
-| `amount` | string | — |  | Amount to approve, or 'max' for unlimited. Default: max |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `moolah_vault_deposit`
@@ -843,7 +843,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `marketId` | string | ✅ |  | Market ID (bytes32 hex) |
-| `address` | string | — |  | User address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | User address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `approve_moolah_proxy`
@@ -851,14 +851,14 @@
 **Approve Moolah Proxy**  
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Approve TRC20 token spending for the Moolah core contract before supplying collateral or repaying. Not needed for TRX operations. Use amount='max' for unlimited approval.
+- **Description**: Approve TRC20 token spending for the Moolah core contract before supplying collateral or repaying. Not needed for TRX operations. Pass the EXACT amount you intend to use (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the Moolah proxy spend the user's entire balance, present and future, until revoked (amount='0').
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `tokenAddress` | string | ✅ |  | TRC20 contract address (Base58) |
+| `tokenAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRC20 contract address (Base58) |
 | `tokenSymbol` | string | ✅ |  | Token symbol for display (e.g. 'USDT') |
 | `tokenDecimals` | number | ✅ |  | Token decimals (e.g. 6 for USDT) |
-| `amount` | string | — |  | Amount to approve, or 'max' for unlimited. Default: max |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `moolah_supply_collateral`
@@ -973,7 +973,7 @@
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `marketId` | string | ✅ |  | Market ID (bytes32 hex) |
-| `borrower` | string | ✅ |  | Address of the borrower to liquidate (Base58) |
+| `borrower` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Address of the borrower to liquidate (Base58) |
 | `seizedAssets` | string | — |  | Collateral units to seize (raw). Provide this OR repaidShares. |
 | `repaidShares` | string | — |  | Borrow shares to repay (raw). Provide this OR seizedAssets. |
 | `network` | string | — |  | Network. Default: mainnet |
@@ -983,14 +983,14 @@
 **Approve Liquidator Token**  
 - **Side effect**: 🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm
 - **annotations**: idempotent: true · openWorld: true
-- **Description**: Approve loan token spending for the Moolah public liquidator contract. Required before calling moolah_liquidate. Use amount='max' for unlimited approval.
+- **Description**: Approve loan token spending for the Moolah public liquidator contract. Required before calling moolah_liquidate. Pass the EXACT amount you intend to use (recommended). Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the liquidator contract spend the user's entire balance, present and future, until revoked (amount='0').
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `tokenAddress` | string | ✅ |  | Loan token contract address (Base58) |
+| `tokenAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Loan token contract address (Base58) |
 | `tokenSymbol` | string | ✅ |  | Token symbol for display (e.g. 'USDT') |
 | `tokenDecimals` | number | ✅ |  | Token decimals (e.g. 6 for USDT) |
-| `amount` | string | — |  | Amount to approve, or 'max' for unlimited. Default: max |
+| `amount` | string (pattern /^(\d+(\.\d+)?|max)$/) | ✅ |  | Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in). |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ## JustLend V2 (Moolah) — Dashboard & History (6)
@@ -1004,7 +1004,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | User address to include V2 position summary. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | User address to include V2 position summary. Default: configured wallet |
 | `depositToken` | string | — |  | Filter vaults and markets by deposit token symbol |
 | `collateralToken` | string | — |  | Filter markets by collateral token symbol |
 | `network` | string | — |  | Network. Default: mainnet |
@@ -1018,7 +1018,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | User address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | User address. Default: configured wallet |
 | `timeFilter` | enum(ONE_DAY | ONE_WEEK | ONE_MONTH) | — |  | History time range. Default: ONE_WEEK |
 | `network` | string | — |  | Network. Default: mainnet |
 
@@ -1031,7 +1031,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | User address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | User address. Default: configured wallet |
 | `pageNo` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Network. Default: mainnet |
@@ -1045,7 +1045,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `vaultAddress` | string | ✅ |  | Vault contract address (Base58 T...) |
+| `vaultAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Vault contract address (Base58 T...) |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `estimate_moolah_energy`
@@ -1059,7 +1059,7 @@
 |-------|------|:--------:|---------|-------------|
 | `operation` | enum(vault_deposit | vault_withdraw | vault_redeem | approve_vault | supply_collateral | withdraw_collateral | borrow | repay | approve_proxy | liquidate | approve_liquidator) | ✅ |  | Moolah operation to estimate |
 | `isTRX` | boolean | — |  | Whether the route uses native TRX (via TrxProviderProxy). Default: false |
-| `address` | string | — |  | Owner address for resource-sufficiency check. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Owner address for resource-sufficiency check. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_moolah_market_history`
@@ -1085,7 +1085,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `vaultAddress` | string | ✅ |  | Vault contract address (Base58 T...) |
+| `vaultAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Vault contract address (Base58 T...) |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_moolah_mining_resolver`
@@ -1108,7 +1108,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_moolah_pending_mining_periods`
@@ -1120,7 +1120,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | — |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | TRON address. Default: configured wallet |
 | `includeClaimed` | boolean | — |  | Include rounds the backend marks as claimed. Default: false |
 | `network` | string | — |  | Network. Default: mainnet |
 
@@ -1138,7 +1138,7 @@
 | `index` | union | — |  | Override: leaf index inside the tree |
 | `amounts` | union[] | — |  | Override: token amounts in raw units, slot-aligned with the tree's tokenAddress[] |
 | `proof` | string[] | — |  | Override: merkle proof (bytes32[]) |
-| `address` | string | — |  | Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ## Historical Records (7)
@@ -1152,7 +1152,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address (T...). Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address (T...). Default: configured wallet |
 | `page` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |
@@ -1166,7 +1166,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address. Default: configured wallet |
 | `page` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |
@@ -1180,7 +1180,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address. Default: configured wallet |
 | `page` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |
@@ -1194,7 +1194,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address. Default: configured wallet |
 | `page` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |
@@ -1208,7 +1208,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address. Default: configured wallet |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |
 
 ### `claim_v1_mining_period`
@@ -1227,9 +1227,9 @@
 | `proof` | string[] | — |  | Override: merkle proof (bytes32[]) |
 | `tokenAddress` | union | — |  | Override: token address(es) used for routing when the entry is single-token |
 | `tokenSymbol` | union | — |  | Override: token symbol(s); useful when tokenAddress is missing |
-| `distributor` | string | — |  | Force a specific distributor address. Set with `selector` to bypass routing. |
+| `distributor` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Force a specific distributor address. Set with `selector` to bypass routing. |
 | `selector` | enum(single | multi) | — |  | Force a selector. 'single' = (uint256,uint256,uint256,bytes32[])[]; 'multi' = (uint256,uint256,uint256[],bytes32[])[] |
-| `address` | string | — |  | Owner address used to refetch the airdrop entry when key is supplied. Default: signing wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Owner address used to refetch the airdrop entry when key is supplied. Default: signing wallet |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ### `get_liquidation_records`
@@ -1241,7 +1241,7 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
-| `address` | string | ✅ |  | TRON address. Default: configured wallet |
+| `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | TRON address. Default: configured wallet |
 | `page` | number | — |  | Page number, 1-indexed. Default: 1 |
 | `pageSize` | number | — |  | Records per page. Default: 20 |
 | `network` | string | — |  | Must be 'mainnet'. Default: mainnet |

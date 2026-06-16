@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as services from "../services/index.js";
 import { getMoolahAddresses } from "../chains.js";
 import { TRC20_ABI } from "../abis.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
 
 /** Returns true when moolahProxy TRC20 allowance is sufficient for the given amount. */
 async function hasProxyAllowance(
@@ -45,7 +45,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const res = await services.fetchMoolahMarketList({ deposit: depositToken, collateral: collateralToken, pageSize }, network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -71,7 +71,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         ]);
         return { content: [{ type: "text", text: JSON.stringify({ market: info, supplyingVaults: vaults }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -84,7 +84,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         "risk close to 1.0 means the position is near liquidation — consider repaying or adding collateral.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
-        address: z.string().optional().describe("User address. Default: configured wallet"),
+        address: tronAddress("User address. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Moolah User Position", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -95,7 +95,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const position = await services.fetchMoolahUserMarketPosition(marketId, userAddr, network);
         return { content: [{ type: "text", text: JSON.stringify(position, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -107,22 +107,24 @@ export function registerMoolahMarketTools(server: McpServer) {
     {
       description:
         "Approve TRC20 token spending for the Moolah core contract before supplying collateral or repaying. " +
-        "Not needed for TRX operations. Use amount='max' for unlimited approval.",
+        "Not needed for TRX operations. Pass the EXACT amount you intend to use (recommended). " +
+        "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the Moolah " +
+        "proxy spend the user's entire balance, present and future, until revoked (amount='0').",
       inputSchema: {
-        tokenAddress: z.string().describe("TRC20 contract address (Base58)"),
+        tokenAddress: tronAddress("TRC20 contract address (Base58)"),
         tokenSymbol: z.string().describe("Token symbol for display (e.g. 'USDT')"),
         tokenDecimals: z.number().describe("Token decimals (e.g. 6 for USDT)"),
-        amount: z.string().optional().describe("Amount to approve, or 'max' for unlimited. Default: max"),
+        amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve Moolah Proxy", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ tokenAddress, tokenSymbol, tokenDecimals, amount = "max", network = services.getGlobalNetwork() }) => {
+    async ({ tokenAddress, tokenSymbol, tokenDecimals, amount, network = services.getGlobalNetwork() }) => {
       try {
         const result = await services.approveMoolahProxy({ tokenAddress, tokenSymbol, tokenDecimals, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -146,7 +148,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const result = await services.moolahSupplyCollateral({ marketId, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -170,7 +172,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const result = await services.moolahWithdrawCollateral({ marketId, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -213,7 +215,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const result = await services.moolahBorrow({ marketId, amount: borrowAmount!, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -238,7 +240,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         const result = await services.moolahRepay({ marketId, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

@@ -595,7 +595,7 @@ ${vaultSymbol ? `User has chosen the **${vaultSymbol}** vault. Proceed to Step 3
 
 ## Step 4 — Approval (TRC20 vaults only, skip for TRX)
 For USDT or USDD vaults:
-- Call \`approve_moolah_vault\` with vaultSymbol and amount='max'
+- Call \`approve_moolah_vault\` with vaultSymbol and the EXACT deposit amount (e.g. amount='${amount ?? "<user amount>"}'). Use amount='max' for unlimited approval ONLY if the user explicitly opts in (it can be revoked later with amount='0').
 - Wait for the approval transaction to confirm before proceeding
 
 ## Step 5 — Deposit

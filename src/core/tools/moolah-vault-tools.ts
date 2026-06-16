@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as services from "../services/index.js";
 import { getMoolahVaultInfo } from "../chains.js";
 import { TRC20_ABI } from "../abis.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
 
 /** Returns true when the vault's TRC20 allowance is already sufficient. */
 async function hasVaultAllowance(
@@ -43,7 +43,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         const res = await services.fetchMoolahVaultList({ deposit: depositToken, pageSize: 20 }, network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -56,7 +56,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         "vaultSymbol is 'TRX', 'USDT', or 'USDD'.",
       inputSchema: {
         vaultSymbol: z.string().describe("Vault symbol: 'TRX', 'USDT', or 'USDD'"),
-        address: z.string().optional().describe("User address to include share balance. Default: configured wallet"),
+        address: tronAddress("User address to include share balance. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Moolah Vault", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -83,7 +83,7 @@ export function registerMoolahVaultTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -95,20 +95,22 @@ export function registerMoolahVaultTools(server: McpServer) {
     {
       description:
         "Approve TRC20 token spending for a Moolah vault before depositing. " +
-        "Not needed for TRX vaults. Use amount='max' for unlimited approval.",
+        "Not needed for TRX vaults. Pass the EXACT amount you intend to deposit (recommended). " +
+        "Pass amount='max' for unlimited approval ONLY when the user explicitly opts in — it lets the vault " +
+        "contract spend the user's entire balance, present and future, until revoked (amount='0').",
       inputSchema: {
         vaultSymbol: z.string().describe("Vault symbol: 'USDT' or 'USDD'"),
-        amount: z.string().optional().describe("Amount to approve, or 'max' for unlimited. Default: max"),
+        amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Approve Moolah Vault", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ vaultSymbol, amount = "max", network = services.getGlobalNetwork() }) => {
+    async ({ vaultSymbol, amount, network = services.getGlobalNetwork() }) => {
       try {
         const result = await services.approveMoolahVault({ vaultSymbol, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -147,7 +149,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         const result = await services.moolahVaultDeposit({ vaultSymbol, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -170,7 +172,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         const result = await services.moolahVaultWithdraw({ vaultSymbol, amount, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -193,7 +195,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         const result = await services.moolahVaultRedeem({ vaultSymbol, shares, network });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

@@ -92,7 +92,7 @@ export async function getTRC20TokenInfo(
       contract.methods.totalSupply().call(),
     ]), undefined, "Timed out while reading TRC20 token metadata");
 
-    const decimalsNum = Number(decimals);
+    const decimalsNum = utils.assertValidDecimals(Number(decimals), "TRC20");
     const totalSupplyBigInt = BigInt(totalSupply.toString());
     const formattedTotalSupply = utils.formatUnits(totalSupplyBigInt, decimalsNum);
 

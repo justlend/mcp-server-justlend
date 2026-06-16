@@ -12,6 +12,7 @@ import { safeSend, toSafeCallValueNumber } from "./contracts.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
+import { addressesEqual } from "./address.js";
 import { fetchWithTimeout } from "./http.js";
 import { getResourcePrices, type ResourcePrices } from "./resource-prices.js";
 import {
@@ -555,7 +556,7 @@ export async function exitMarket(
       totalAdjustedCollateralCents += adjustedValueCents;
       totalBorrowCents += borrowBalanceCents;
 
-      if (asset.toLowerCase() === info.address.toLowerCase()) {
+      if (addressesEqual(asset, info.address)) {
         removedCollateralCents = adjustedValueCents;
       }
     } catch (err: any) {

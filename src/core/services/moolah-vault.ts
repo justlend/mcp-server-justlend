@@ -177,13 +177,20 @@ export async function moolahVaultRedeem(params: {
 
 export async function approveMoolahVault(params: {
   vaultSymbol: string;
-  amount?: string;   // default: "max" (MAX_UINT256)
+  amount?: string;
   network?: string;
-}): Promise<{ txID: string; message: string }> {
-  const { vaultSymbol, amount = "max", network = "mainnet" } = params;
+}): Promise<{ txID: string; message: string; warning?: string }> {
+  const { vaultSymbol, amount, network = "mainnet" } = params;
   const vault = getMoolahVaultInfo(vaultSymbol, network);
   if (!vault.underlying) {
     return { txID: "", message: `${vaultSymbol} vault uses native TRX — no token approval needed.` };
+  }
+
+  if (amount === undefined || amount === null || amount === "") {
+    throw new Error(
+      `approve_moolah_vault requires an explicit amount. Pass the exact value you intend to deposit ` +
+      `(e.g. amount='100'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
+    );
   }
 
   const tronWeb = await getSigningClient(network);
@@ -207,8 +214,15 @@ export async function approveMoolahVault(params: {
     },
     network,
   );
-  return {
+  const result: { txID: string; message: string; warning?: string } = {
     txID,
     message: `Approved ${isMax ? "unlimited" : amount} ${vault.underlyingSymbol} for ${vaultSymbol} vault. TX: ${txID}`,
   };
+  if (isMax) {
+    result.warning =
+      `⚠️ UNLIMITED APPROVAL granted. The ${vaultSymbol} vault contract can now spend your entire ` +
+      `${vault.underlyingSymbol} balance — present and future — without further confirmation. ` +
+      `If you no longer need this, revoke with: approve_moolah_vault vaultSymbol='${vaultSymbol}' amount='0'.`;
+  }
+  return result;
 }

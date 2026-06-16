@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress } from "./shared.js";
 
 /**
  * Historical transaction records (paginated REST).
@@ -22,7 +22,7 @@ export function registerRecordsTools(server: McpServer) {
         "Paginated. Each record includes actionType (1-11), actionName (human-readable), token, amount, USD value, and txId. " +
         "Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address (T...). Default: configured wallet"),
+        address: tronAddress("TRON address (T...). Default: configured wallet"),
         page: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -35,7 +35,7 @@ export function registerRecordsTools(server: McpServer) {
         const res = await services.fetchLendingRecords(userAddr, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -47,7 +47,7 @@ export function registerRecordsTools(server: McpServer) {
         "Get a user's sTRX staking history: stake, unstake, withdraw (after unbonding), and sTRX transfers. " +
         "Each record has opType (1-6) and a human-readable opName. Paginated. Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet"),
         page: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -60,7 +60,7 @@ export function registerRecordsTools(server: McpServer) {
         const res = await services.fetchStrxRecords(userAddr, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -73,7 +73,7 @@ export function registerRecordsTools(server: McpServer) {
         "vote withdrawals, and JST conversions back. Each record has opType (1-6), opName, amount, and proposalId " +
         "(for votes and withdrawals). Use get_user_vote_status for real-time current voting power. Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet"),
         page: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -86,7 +86,7 @@ export function registerRecordsTools(server: McpServer) {
         const res = await services.fetchVoteRecords(userAddr, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -99,7 +99,7 @@ export function registerRecordsTools(server: McpServer) {
         "Distinct from get_user_energy_rental_orders which returns current active on-chain orders — " +
         "this one returns the full historical action log. Paginated. Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet"),
         page: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -112,7 +112,7 @@ export function registerRecordsTools(server: McpServer) {
         const res = await services.fetchEnergyRentalRecords(userAddr, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -125,7 +125,7 @@ export function registerRecordsTools(server: McpServer) {
         "round; each entry includes the merkleIndex, index, amount(s), token symbol/address, and proof. " +
         "Feed any returned key into claim_v1_mining_period to submit the on-chain multiClaim. Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
       },
       annotations: { title: "Get Claimable Rewards", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -149,7 +149,7 @@ export function registerRecordsTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -170,9 +170,9 @@ export function registerRecordsTools(server: McpServer) {
         proof:        z.array(z.string()).optional().describe("Override: merkle proof (bytes32[])"),
         tokenAddress: z.union([z.string(), z.array(z.string())]).optional().describe("Override: token address(es) used for routing when the entry is single-token"),
         tokenSymbol:  z.union([z.string(), z.array(z.string())]).optional().describe("Override: token symbol(s); useful when tokenAddress is missing"),
-        distributor:  z.string().optional().describe("Force a specific distributor address. Set with `selector` to bypass routing."),
+        distributor:  tronAddress("Force a specific distributor address. Set with `selector` to bypass routing.").optional(),
         selector:     z.enum(["single", "multi"]).optional().describe("Force a selector. 'single' = (uint256,uint256,uint256,bytes32[])[]; 'multi' = (uint256,uint256,uint256[],bytes32[])[]"),
-        address:      z.string().optional().describe("Owner address used to refetch the airdrop entry when key is supplied. Default: signing wallet"),
+        address:      tronAddress("Owner address used to refetch the airdrop entry when key is supplied. Default: signing wallet").optional(),
         network:      z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Claim V1 Mining Period", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -194,7 +194,7 @@ export function registerRecordsTools(server: McpServer) {
         });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -206,7 +206,7 @@ export function registerRecordsTools(server: McpServer) {
         "Get a user's V1 JustLend liquidation history — both positions the user liquidated and positions where the user was liquidated. " +
         "Distinct from get_moolah_liquidation_records which covers V2 Moolah liquidations. Paginated. Mainnet-only.",
       inputSchema: {
-        address: z.string().describe("TRON address. Default: configured wallet"),
+        address: tronAddress("TRON address. Default: configured wallet"),
         page: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Must be 'mainnet'. Default: mainnet"),
@@ -219,7 +219,7 @@ export function registerRecordsTools(server: McpServer) {
         const res = await services.fetchLiquidationRecords(userAddr, page, pageSize, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

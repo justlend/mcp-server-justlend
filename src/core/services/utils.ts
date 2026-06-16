@@ -63,6 +63,21 @@ export const utils = {
   isAddress: (address: string): boolean => TronWeb.isAddress(address),
 
   /**
+   * Validate a TRC20 `decimals()` value before using it to scale amounts.
+   * Rejects NaN / Infinity / non-integer / out-of-range (valid range [0, 38]),
+   * so a malformed or malicious token contract can't poison `parseUnits`/`formatUnits`.
+   */
+  assertValidDecimals: (decimals: number, context = "token"): number => {
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 38) {
+      throw new Error(
+        `Invalid ${context} decimals: ${decimals}. Expected an integer in [0, 38] — ` +
+        `the token contract may be malformed. Pass a known token symbol or verify the address.`,
+      );
+    }
+    return decimals;
+  },
+
+  /**
    * Format a raw BigInt/string amount into a human-readable decimal string.
    * Inverse of parseUnits. Example: formatUnits("1500000000000000000", 18) => "1.5"
    */

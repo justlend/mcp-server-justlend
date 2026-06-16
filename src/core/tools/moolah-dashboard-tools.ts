@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { toolError, tronAddress } from "./shared.js";
 
 export function registerMoolahDashboardTools(server: McpServer) {
 
@@ -12,7 +12,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         "JustLend V2 (Moolah) protocol overview: top vaults (APY, TVL) and top markets (borrow/supply rates). " +
         "If address is provided, also includes the user's aggregated V2 position (total supply, borrow, health factor).",
       inputSchema: {
-        address: z.string().optional().describe("User address to include V2 position summary. Default: configured wallet"),
+        address: tronAddress("User address to include V2 position summary. Default: configured wallet").optional(),
         depositToken: z.string().optional().describe("Filter vaults and markets by deposit token symbol"),
         collateralToken: z.string().optional().describe("Filter markets by collateral token symbol"),
         network: z.string().optional().describe("Network. Default: mainnet"),
@@ -37,7 +37,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -49,7 +49,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         "Get a user's JustLend V2 position history (net worth, supply, borrow over time) " +
         "and recent transaction records (supply, borrow, repay, etc.).",
       inputSchema: {
-        address: z.string().optional().describe("User address. Default: configured wallet"),
+        address: tronAddress("User address. Default: configured wallet").optional(),
         timeFilter: z.enum(["ONE_DAY", "ONE_WEEK", "ONE_MONTH"]).optional().describe("History time range. Default: ONE_WEEK"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
@@ -69,7 +69,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
           }],
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -82,7 +82,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         "Distinct from get_moolah_history (which returns position curves + a small recent-txs preview) — this one is the " +
         "full paginated record list. Works on both mainnet and nile.",
       inputSchema: {
-        address: z.string().optional().describe("User address. Default: configured wallet"),
+        address: tronAddress("User address. Default: configured wallet").optional(),
         pageNo: z.number().optional().describe("Page number, 1-indexed. Default: 1"),
         pageSize: z.number().optional().describe("Records per page. Default: 20"),
         network: z.string().optional().describe("Network. Default: mainnet"),
@@ -95,7 +95,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         const res = await services.fetchMoolahUserRecords(userAddr, { pageNo, pageSize }, network);
         return { content: [{ type: "text", text: JSON.stringify({ address: userAddr, ...res }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -108,7 +108,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         "Returns currentSupplyUsd, supplyBaseApy, supplyMiningApy, and a historyRecords array. " +
         "Use vaultAddress from get_moolah_vaults or chains.ts vault map.",
       inputSchema: {
-        vaultAddress: z.string().describe("Vault contract address (Base58 T...)"),
+        vaultAddress: tronAddress("Vault contract address (Base58 T...)"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Moolah Vault History", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -118,7 +118,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         const res = await services.fetchMoolahVaultApyHistory(vaultAddress, network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -139,7 +139,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
           "liquidate", "approve_liquidator",
         ]).describe("Moolah operation to estimate"),
         isTRX: z.boolean().optional().describe("Whether the route uses native TRX (via TrxProviderProxy). Default: false"),
-        address: z.string().optional().describe("Owner address for resource-sufficiency check. Default: configured wallet"),
+        address: tronAddress("Owner address for resource-sufficiency check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Estimate Moolah Energy", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -150,7 +150,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         const res = await services.estimateMoolahEnergy({ operation, isTRX, ownerAddress: owner, network });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -173,7 +173,7 @@ export function registerMoolahDashboardTools(server: McpServer) {
         const res = await services.fetchMoolahMarketApyHistory(marketId, network);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

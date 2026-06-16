@@ -50,8 +50,17 @@ export async function approveMoolahProxy(params: {
   tokenDecimals: number;
   amount?: string;
   network?: string;
-}): Promise<{ txID: string; message: string }> {
-  const { tokenAddress, tokenSymbol, tokenDecimals, amount = "max", network = "mainnet" } = params;
+}): Promise<{ txID: string; message: string; warning?: string }> {
+  const { tokenAddress, tokenSymbol, tokenDecimals, amount, network = "mainnet" } = params;
+  if (!utils.isAddress(tokenAddress)) {
+    throw new Error(`Invalid TRON token address: ${tokenAddress}`);
+  }
+  if (amount === undefined || amount === null || amount === "") {
+    throw new Error(
+      `approve_moolah_proxy requires an explicit amount. Pass the exact value you intend to use ` +
+      `(e.g. amount='100'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
+    );
+  }
   const { moolahProxy } = getMoolahAddresses(network);
   const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
@@ -74,10 +83,17 @@ export async function approveMoolahProxy(params: {
     },
     network,
   );
-  return {
+  const result: { txID: string; message: string; warning?: string } = {
     txID,
     message: `Approved ${isMax ? "unlimited" : amount} ${tokenSymbol} for Moolah. TX: ${txID}`,
   };
+  if (isMax) {
+    result.warning =
+      `⚠️ UNLIMITED APPROVAL granted. The Moolah proxy contract can now spend your entire ` +
+      `${tokenSymbol} balance — present and future — without further confirmation. ` +
+      `If you no longer need this, revoke with: approve_moolah_proxy tokenAddress='${tokenAddress}' amount='0'.`;
+  }
+  return result;
 }
 
 // ── Supply Collateral ─────────────────────────────────────────────────────────

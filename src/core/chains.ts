@@ -7,6 +7,7 @@
  * VERSION: JustLend V1
  * All contract addresses, ABIs, and calculation logic in this file are for JustLend V1.
  */
+import { addressesEqual } from "./services/address.js";
 
 export enum TronNetwork {
   Mainnet = "mainnet",
@@ -699,7 +700,7 @@ export function getJTokenInfo(symbolOrAddress: string, network: string = DEFAULT
   if (bySymbol) return bySymbol;
   // Search by address
   return Object.values(addresses.jTokens).find(
-    (t) => t.address.toLowerCase() === symbolOrAddress.toLowerCase(),
+    (t) => addressesEqual(t.address, symbolOrAddress),
   );
 }
 
