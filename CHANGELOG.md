@@ -2,7 +2,7 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
-## [1.1.0] — 2026-04-17 (unreleased)
+## [1.1.0] — 2026-06-16
 
 **Theme**: JustLend V2 (Moolah) protocol support + historical records + gas estimation, plus AI-agent ergonomics (structured self-healing errors, self-describing amounts, hardened input schemas).
 
@@ -212,6 +212,7 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
   Staking, Transfers, and general TRON utilities. Dual-mode signing (browser TronLink via
   TIP-6963 or encrypted `@bankofai/agent-wallet`). stdio and HTTP/SSE transports.
 
+[1.1.0]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.1.0
 [1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
 [1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
 [1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6
