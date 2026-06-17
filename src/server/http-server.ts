@@ -1,13 +1,13 @@
 import express from "express";
 import cors from "cors";
 import { rateLimit } from "express-rate-limit";
-import { timingSafeEqual } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import startServer from "./server.js";
 import { createSessionState, runWithSessionState, type SessionState } from "../core/services/global.js";
 import { shutdownBrowserSignerForSession } from "../core/services/wallet.js";
 import { SERVER_VERSION } from "./version.js";
+import { authHeaderMatches } from "./auth.js";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 const HOST = process.env.MCP_HOST || "127.0.0.1";
@@ -71,16 +71,11 @@ async function main() {
   // H-3: Body size limit
   app.use(express.json({ limit: "1mb" }));
 
-  // H-1: API key authentication (constant-time comparison to avoid timing side-channels)
-  const expectedAuth = Buffer.from(`Bearer ${API_KEY}`);
+  // H-1: API key authentication (constant-time comparison)
+  const expectedAuth = `Bearer ${API_KEY}`;
   app.use((req, res, next) => {
     if (req.path === "/health") return next();
-    const provided = req.headers.authorization ?? "";
-    const providedBuf = Buffer.from(provided);
-    const ok =
-      providedBuf.length === expectedAuth.length &&
-      timingSafeEqual(providedBuf, expectedAuth);
-    if (!ok) {
+    if (!authHeaderMatches(req.headers.authorization, expectedAuth)) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }

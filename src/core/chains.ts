@@ -7,6 +7,7 @@
  * VERSION: JustLend V1
  * All contract addresses, ABIs, and calculation logic in this file are for JustLend V1.
  */
+import { addressesEqual } from "./services/address.js";
 
 export enum TronNetwork {
   Mainnet = "mainnet",
@@ -32,9 +33,9 @@ export interface NetworkConfig {
  */
 export interface JustLendAddresses {
   comptroller: string; // Unitroller (proxy for Comptroller)
-  priceOracle: string; // Price oracle used by Comptroller
-  lens: string; // CompoundLens helper (batch reads)
-  maximillion: string; // Helper for repaying TRX borrows
+  priceOracle: string; // Price oracle used by Comptroller — may be empty on networks where the live oracle is fetched dynamically via comptroller.oracle()
+  lens?: string; // CompoundLens helper (batch reads) — not deployed on all networks
+  maximillion?: string; // Helper for repaying TRX borrows — not deployed on all networks
   governorAlpha: string; // Governance contract
   jst: string; // JST token address
   wjst: string; // Wrapped JST for governance
@@ -46,6 +47,12 @@ export interface JustLendAddresses {
     strx: string; // sTRX rewards
     multi: string; // Multi-token rewards
   };
+  /**
+   * V2 (Moolah) merkle distributor — multi-token leaves claimed via
+   * multiClaim((uint256,uint256,uint256[],bytes32[])[]). Empty string when not
+   * yet deployed on the network (mainnet placeholder until contracts ship).
+   */
+  merkleDistributorV2: string;
   /** sTRX staking related contracts */
   strx: {
     proxy: string; // sTRX proxy contract
@@ -57,6 +64,8 @@ export interface JustLendAddresses {
   multicall3?: string;
   /** Map of symbol → jToken address */
   jTokens: Record<string, JTokenInfo>;
+  /** JustLend V2 (Moolah) protocol addresses */
+  moolah?: MoolahAddresses;
 }
 
 export interface JTokenInfo {
@@ -66,6 +75,28 @@ export interface JTokenInfo {
   underlyingSymbol: string; // e.g. "TRX"
   decimals: number; // jToken decimals (usually 8)
   underlyingDecimals: number; // underlying token decimals
+}
+
+// ── JustLend V2 (Moolah) ─────────────────────────────────────────────────────
+
+/** ERC4626 Vault entry for a single Moolah vault (TRX / USDT / USDD). */
+export interface VaultInfo {
+  address: string;
+  underlyingSymbol: string;
+  underlying: string;         // TRC20 contract address; "" for native TRX
+  underlyingDecimals: number;
+  sharesDecimals: number;
+}
+
+/** Moolah V2 core contract addresses for a given network. */
+export interface MoolahAddresses {
+  moolahProxy: string;           // Core lending protocol
+  trxProviderProxy: string;      // Native TRX wrapper for Moolah operations
+  publicLiquidatorProxy: string; // Public liquidation executor
+  wtrxProxy: string;             // Wrapped TRX (WTRX) contract
+  resilientOracleProxy: string;  // Price oracle
+  irmProxy: string;              // Interest rate model
+  vaults: Record<string, VaultInfo>; // key: "TRX" | "USDT" | "USDD"
 }
 
 export const NETWORKS: Record<TronNetwork, NetworkConfig> = {
@@ -113,6 +144,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       strx: "TKQ5VVJPsoZDD7NqQ8ffhFwzeRp45XLSGt",
       multi: "TUsyCPRyQdMsn9WnJcssBFXtzg6bUVbty6",
     },
+    merkleDistributorV2: "",
     strx: {
       proxy: "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5",
       market: "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",
@@ -305,12 +337,42 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         underlyingDecimals: 18,
       },
     },
+    moolah: {
+      moolahProxy:           "TDH4dhmVQQNc1ZNudJwWzBcs2h6ahhWrpp",
+      trxProviderProxy:      "TMDENHFSiRzmJNSEBAFmrDbLkQ672iPN8H",
+      publicLiquidatorProxy: "TGDuQaHtvadVL5z9PMM874CaehQnwf3qJi",
+      wtrxProxy:             "TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR",
+      resilientOracleProxy:  "TUDXEUA6hNiWPm54cMifoxCZU28zRu6bPc",
+      irmProxy:              "TSsuwbvUKAVgRmSghXT7i38PgHWpW12wQ1",
+      vaults: {
+        TRX: {
+          address:            "THpxp8RpCUGk55dV7oL1LfxDeP9QvouxmM",
+          underlyingSymbol:   "TRX",
+          underlying:         "",
+          underlyingDecimals: 6,
+          sharesDecimals:     6,
+        },
+        USDT: {
+          address:            "TXejU9jmd1ooQyY3Zmpo15yN7MjSFYUESg",
+          underlyingSymbol:   "USDT",
+          underlying:         "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+          underlyingDecimals: 6,
+          sharesDecimals:     6,
+        },
+        USDD: {
+          address:            "TA3q7XjdBQWb4qFxaPULUsnjvVZGgC9Brz",
+          underlyingSymbol:   "USDD",
+          underlying:         "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz",
+          underlyingDecimals: 18,
+          sharesDecimals:     18,
+        },
+      },
+    },
   },
   [TronNetwork.Nile]: {
     comptroller: "TJUCStq3WqfKqZLuZje5v7z6Ua6iBry1P6",
-    priceOracle: "TTestPriceOracleNileXXXXXXXXXXXXXX",
-    lens: "TTestLensNileXXXXXXXXXXXXXXXXXXXXX",
-    maximillion: "TTestMaximillionNileXXXXXXXXXXXXXX",
+    priceOracle: "", // Resolved dynamically via comptroller.oracle() in account.ts; no static address on nile
+    // lens and maximillion: not deployed on nile; consumers must treat these fields as optional
     governorAlpha: "TYCNENqt2oJK7eiwubi6YXXt8RHR1BnzBs",
     jst: "TJqk3ChKSjmpoNm3gaqSEatNsueD37NGDK",
     wjst: "TCxA1eNhsAV3gvUwLjLtREW9f775V4h1h7",
@@ -321,6 +383,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       strx: "TZETgfTfiPdGm1HkoBktAnpWNjNx4c4did",
       multi: "TQvh3Q94PchENyF2iM7uJH338CcWUfHxMG",
     },
+    merkleDistributorV2: "TLSPGyZRYeoZsPX2V9tpGYKF85zFyUAb1u",
     strx: {
       proxy: "TZ8du1HkatTWDbS6FLZei4dQfjfpSm9mxp",
       market: "TSos1xxjqMrGKBxycVmtgrnFvv9M6FDFUX",
@@ -567,6 +630,46 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         underlyingDecimals: 18,
       },
     },
+    // Nile addresses sourced from front-app/src/config/v2config.js (env === 'test').
+    //
+    // ⚠️ Deployment status (verified 2026-04-17 via `wallet/getcontract` on
+    // https://nile.trongrid.io):
+    //   DEPLOYED:     moolahProxy, trxProviderProxy, publicLiquidatorProxy,
+    //                 wtrxProxy, resilientOracleProxy, irmProxy, and the
+    //                 USDT TRC20 underlying at TPYwA...
+    //   NOT DEPLOYED: the two vault addresses (WTRX vault TWxWVx..., USDT
+    //                 vault TXfQWr...). Front-app v2config.js lists them but
+    //                 no bytecode is present on-chain as of this check.
+    //
+    // The vault addresses are kept in the map for forward-compat — when a
+    // nile vault deploys to one of these addresses, no code change is needed.
+    // Until then, any vault-level call on nile will fail at the chain layer.
+    // See forTest/docs/v1.1.0/nile-write-path-runbook.md for the runbook and
+    // tests/integration/moolah-writes.nile.test.ts for an env-gated probe.
+    moolah: {
+      moolahProxy:           "TFgrgsd8c37ByaZx1YxpBzazJS8bHsoP5c",
+      trxProviderProxy:      "TMRZwenUVHPvnxhwDDQLY4SEmmwXvtKRjz",
+      publicLiquidatorProxy: "TLvPrXHVQCA54gLQjLfoNi5XQ6WqhXCEps",
+      wtrxProxy:             "TYsbWxNnyTgsZaTFaue9hqpxkU3Fkco94a",
+      resilientOracleProxy:  "TFYLvDFSEW6dKSnWb3mt76hkHAgxPktrnG",
+      irmProxy:              "TQYeFiTVNfJ6jfqjyfL2s93VLG1huaMEzC",
+      vaults: {
+        TRX: {
+          address:            "TWxWVxUv6FvJtWELhLmdKWQRf9eMoVs2ki",  // not yet deployed — see note above
+          underlyingSymbol:   "TRX",
+          underlying:         "",
+          underlyingDecimals: 6,
+          sharesDecimals:     6,
+        },
+        USDT: {
+          address:            "TXfQWrF4mkq5XFaoRYv3crdhjiKkhdMEx5",  // not yet deployed — see note above
+          underlyingSymbol:   "USDT",
+          underlying:         "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",  // deployed
+          underlyingDecimals: 6,
+          sharesDecimals:     6,
+        },
+      },
+    },
   },
 };
 
@@ -597,7 +700,7 @@ export function getJTokenInfo(symbolOrAddress: string, network: string = DEFAULT
   if (bySymbol) return bySymbol;
   // Search by address
   return Object.values(addresses.jTokens).find(
-    (t) => t.address.toLowerCase() === symbolOrAddress.toLowerCase(),
+    (t) => addressesEqual(t.address, symbolOrAddress),
   );
 }
 
@@ -619,4 +722,53 @@ export function getApiHost(network: string = DEFAULT_NETWORK): string {
   if (n === "mainnet" || n === "tron" || n === "trx") return JUSTLEND_API_HOSTS.mainnet;
   if (n === "nile" || n === "testnet") return JUSTLEND_API_HOSTS.nile;
   return JUSTLEND_API_HOSTS.mainnet;
+}
+
+// ── Moolah V2 helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Moolah V2 backend API host.
+ *
+ * Only mainnet is supported: the V2 REST backend does not index nile data
+ * (requests with nile addresses return all-null payloads), so exposing a
+ * nile URL would be misleading. Callers that want nile data must go through
+ * the on-chain reads in `moolah-query.ts` instead.
+ */
+const MOOLAH_API_HOSTS: Record<string, string> = {
+  mainnet: "https://zenvora.ablesdxd.link",
+};
+
+export function getMoolahApiHost(network: string = DEFAULT_NETWORK): string {
+  const n = network.toLowerCase();
+  if (n === "mainnet" || n === "tron" || n === "trx") return MOOLAH_API_HOSTS.mainnet;
+  throw new Error(
+    `Moolah V2 REST backend is only available on mainnet (got "${network}"). ` +
+    `Use the on-chain reads in moolah-query.ts for other networks.`,
+  );
+}
+
+/**
+ * Returns Moolah V2 addresses for the given network.
+ * Throws if the network has no Moolah config (should not happen for supported networks).
+ */
+export function getMoolahAddresses(network: string = DEFAULT_NETWORK): MoolahAddresses {
+  const addresses = getJustLendAddresses(network);
+  if (!addresses.moolah) {
+    throw new Error(`Moolah V2 addresses not configured for network: ${network}`);
+  }
+  return addresses.moolah;
+}
+
+/**
+ * Returns the VaultInfo for a given vault symbol (e.g. "TRX", "USDT", "USDD").
+ * Throws if the symbol is not found.
+ */
+export function getMoolahVaultInfo(vaultSymbol: string, network: string = DEFAULT_NETWORK): VaultInfo {
+  const moolah = getMoolahAddresses(network);
+  const info = moolah.vaults[vaultSymbol.toUpperCase()] ?? moolah.vaults[vaultSymbol];
+  if (!info) {
+    const available = Object.keys(moolah.vaults).join(", ");
+    throw new Error(`Unknown Moolah vault: ${vaultSymbol}. Available: ${available}`);
+  }
+  return info;
 }

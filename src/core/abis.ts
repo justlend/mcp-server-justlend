@@ -447,3 +447,304 @@ export const INTEREST_RATE_MODEL_ABI = [
     stateMutability: "view",
   },
 ];
+
+// ============================================================================
+// JustLend V2 (Moolah) ABIs
+// ============================================================================
+
+// Shared MarketParams struct components reused across all Moolah write/read calls.
+// On-chain type: struct MarketParams { address loanToken; address collateralToken;
+//   address oracle; address irm; uint256 lltv; }
+// lltv is stored as lltv * 1e18 (e.g. 75% = 750000000000000000).
+const MARKET_PARAMS_COMPONENTS = [
+  { name: "loanToken",       type: "address" },
+  { name: "collateralToken", type: "address" },
+  { name: "oracle",          type: "address" },
+  { name: "irm",             type: "address" },
+  { name: "lltv",            type: "uint256" },
+];
+
+// ── Moolah Core (MoolahProxy) ─────────────────────────────────────────────────
+export const MOOLAH_CORE_ABI = [
+  // --- Write ---
+  {
+    type: "function", name: "supply", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "shares",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "data",     type: "bytes"   },
+    ],
+    outputs: [{ name: "assetsSupplied", type: "uint256" }, { name: "sharesSupplied", type: "uint256" }],
+  },
+  {
+    type: "function", name: "withdraw", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "shares",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "receiver", type: "address" },
+    ],
+    outputs: [{ name: "assetsWithdrawn", type: "uint256" }, { name: "sharesWithdrawn", type: "uint256" }],
+  },
+  {
+    type: "function", name: "supplyCollateral", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "data",     type: "bytes"   },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function", name: "withdrawCollateral", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "receiver", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function", name: "borrow", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "shares",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "receiver", type: "address" },
+    ],
+    outputs: [{ name: "assetsBorrowed", type: "uint256" }, { name: "sharesBorrowed", type: "uint256" }],
+  },
+  {
+    type: "function", name: "repay", stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",   type: "uint256" },
+      { name: "shares",   type: "uint256" },
+      { name: "onBehalf", type: "address" },
+      { name: "data",     type: "bytes"   },
+    ],
+    outputs: [{ name: "assetsRepaid", type: "uint256" }, { name: "sharesRepaid", type: "uint256" }],
+  },
+  // --- Read ---
+  {
+    type: "function", name: "market", stateMutability: "view",
+    inputs:  [{ name: "id", type: "bytes32" }],
+    outputs: [
+      { name: "totalSupplyAssets", type: "uint128" },
+      { name: "totalSupplyShares", type: "uint128" },
+      { name: "totalBorrowAssets", type: "uint128" },
+      { name: "totalBorrowShares", type: "uint128" },
+      { name: "lastUpdate",        type: "uint128" },
+      { name: "fee",               type: "uint128" },
+    ],
+  },
+  {
+    type: "function", name: "position", stateMutability: "view",
+    inputs:  [{ name: "id", type: "bytes32" }, { name: "user", type: "address" }],
+    outputs: [
+      { name: "supplyShares", type: "uint256" },
+      { name: "borrowShares", type: "uint128" },
+      { name: "collateral",   type: "uint128" },
+    ],
+  },
+  {
+    type: "function", name: "idToMarketParams", stateMutability: "view",
+    inputs:  [{ name: "id", type: "bytes32" }],
+    outputs: [{ name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS }],
+  },
+  {
+    type: "function", name: "isHealthy", stateMutability: "view",
+    inputs:  [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "user",         type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+];
+
+// ── TrxProvider (native TRX → Moolah operations) ─────────────────────────────
+// All deposit / supplyCollateral / repay functions are payable; pass callValue = amount in sun.
+export const TRX_PROVIDER_ABI = [
+  {
+    type: "function", name: "deposit", stateMutability: "payable",
+    inputs:  [{ name: "vault",    type: "address" }, { name: "receiver", type: "address" }],
+    outputs: [{ name: "shares",   type: "uint256" }],
+  },
+  {
+    type: "function", name: "withdraw", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "vault",    type: "address" },
+      { name: "assets",   type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner",    type: "address" },
+    ],
+    outputs: [{ name: "shares", type: "uint256" }],
+  },
+  {
+    type: "function", name: "redeem", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "vault",    type: "address" },
+      { name: "shares",   type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner",    type: "address" },
+    ],
+    outputs: [{ name: "assets", type: "uint256" }],
+  },
+  {
+    type: "function", name: "supplyCollateral", stateMutability: "payable",
+    inputs:  [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "onBehalf",     type: "address" },
+      { name: "data",         type: "bytes"   },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function", name: "withdrawCollateral", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",       type: "uint256" },
+      { name: "onBehalf",     type: "address" },
+      { name: "receiver",     type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function", name: "borrow", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",       type: "uint256" },
+      { name: "shares",       type: "uint256" },
+      { name: "onBehalf",     type: "address" },
+      { name: "receiver",     type: "address" },
+    ],
+    outputs: [{ name: "assetsBorrowed", type: "uint256" }, { name: "sharesBorrowed", type: "uint256" }],
+  },
+  {
+    type: "function", name: "repay", stateMutability: "payable",
+    inputs:  [
+      { name: "marketParams", type: "tuple", components: MARKET_PARAMS_COMPONENTS },
+      { name: "assets",       type: "uint256" },
+      { name: "shares",       type: "uint256" },
+      { name: "onBehalf",     type: "address" },
+      { name: "data",         type: "bytes"   },
+    ],
+    outputs: [{ name: "assetsRepaid", type: "uint256" }, { name: "sharesRepaid", type: "uint256" }],
+  },
+];
+
+// ── Moolah Vault (ERC4626) ────────────────────────────────────────────────────
+export const MOOLAH_VAULT_ABI = [
+  // --- Write ---
+  {
+    type: "function", name: "deposit", stateMutability: "nonpayable",
+    inputs:  [{ name: "assets",   type: "uint256" }, { name: "receiver", type: "address" }],
+    outputs: [{ name: "shares",   type: "uint256" }],
+  },
+  {
+    type: "function", name: "withdraw", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "assets",   type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner",    type: "address" },
+    ],
+    outputs: [{ name: "shares", type: "uint256" }],
+  },
+  {
+    type: "function", name: "redeem", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "shares",   type: "uint256" },
+      { name: "receiver", type: "address" },
+      { name: "owner",    type: "address" },
+    ],
+    outputs: [{ name: "assets", type: "uint256" }],
+  },
+  // --- Read ---
+  { type: "function", name: "totalAssets",     stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "totalSupply",     stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  {
+    type: "function", name: "balanceOf",        stateMutability: "view",
+    inputs:  [{ name: "account", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function", name: "maxWithdraw",      stateMutability: "view",
+    inputs:  [{ name: "owner",   type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function", name: "convertToAssets",  stateMutability: "view",
+    inputs:  [{ name: "shares",  type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function", name: "convertToShares",  stateMutability: "view",
+    inputs:  [{ name: "assets",  type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+];
+
+// ── Public Liquidator ─────────────────────────────────────────────────────────
+// Provide either seizedAssets (collateral to seize) OR repaidShares (borrow shares to repay),
+// setting the other to 0. Do NOT provide both non-zero.
+export const PUBLIC_LIQUIDATOR_ABI = [
+  {
+    type: "function", name: "liquidate", stateMutability: "nonpayable",
+    inputs:  [
+      { name: "marketId",     type: "bytes32" },
+      { name: "borrower",     type: "address" },
+      { name: "seizedAssets", type: "uint256" },
+      { name: "repaidShares", type: "uint256" },
+    ],
+    outputs: [
+      { name: "seizedAssets", type: "uint256" },
+      { name: "repaidShares", type: "uint256" },
+    ],
+  },
+  {
+    type: "function", name: "loanTokenAmountNeed", stateMutability: "view",
+    inputs:  [
+      { name: "marketId",     type: "bytes32" },
+      { name: "seizedAssets", type: "uint256" },
+      { name: "repaidShares", type: "uint256" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+];
+
+// ── V2 Merkle Distributor (multi-token mining airdrop) ───────────────────────
+// Each leaf encodes (uint256 index, address account, uint256[] amounts) — slot
+// order matches the round's tokenAddress[] from /v2/getAllUnClaimedAirDrop.
+const MERKLE_V2_CLAIM_TUPLE = [
+  { name: "merkleIndex", type: "uint256"   },
+  { name: "index",       type: "uint256"   },
+  { name: "amounts",     type: "uint256[]" },
+  { name: "merkleProof", type: "bytes32[]" },
+];
+
+export const MERKLE_DISTRIBUTOR_V2_ABI = [
+  {
+    type: "function", name: "multiClaim", stateMutability: "nonpayable",
+    inputs: [{ name: "claims", type: "tuple[]", components: MERKLE_V2_CLAIM_TUPLE }],
+    outputs: [],
+  },
+  {
+    type: "function", name: "merkleRoots", stateMutability: "view",
+    inputs:  [{ name: "merkleIndex", type: "uint256" }],
+    outputs: [{ type: "bytes32" }],
+  },
+  {
+    type: "function", name: "isClaimed", stateMutability: "view",
+    inputs:  [
+      { name: "merkleIndex", type: "uint256" },
+      { name: "index",       type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+];

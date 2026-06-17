@@ -1,10 +1,122 @@
 # Changelog
 
-All notable changes to `@justlend/mcp-server-justlend` are documented here.
+All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
-project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Dates are
-approximate, derived from git history; see the repository log for exact commits.
+## [1.1.0] — 2026-06-16
+
+**Theme**: JustLend V2 (Moolah) protocol support + historical records + gas estimation, plus AI-agent ergonomics (structured self-healing errors, self-describing amounts, hardened input schemas).
+
+### Added — JustLend V2 (Moolah) core (M1)
+
+- **Service layer** (6 modules, 42 exported functions):
+  - `moolah-backend.ts` — REST wrapper for `zenvora.ablesdxd.link` (16 functions covering vault / market / position / liquidation / records / token endpoints)
+  - `moolah-query.ts` — on-chain view reads: `getMoolahMarketState`, `getMoolahUserPosition`, `getMoolahMarketParams`, `isMoolahPositionHealthy`, vault totalAssets / maxWithdraw / convertToShares+Assets, and liquidation quote helper
+  - `moolah-vault.ts` — ERC4626 vault write ops (deposit / withdraw / redeem / approve)
+  - `moolah-market.ts` — supplyCollateral / withdrawCollateral / borrow / repay / composite supplyCollateralAndBorrow / approveMoolahProxy
+  - `moolah-liquidation.ts` — `moolahLiquidate` + `approveLiquidatorToken`
+  - `moolah-dashboard.ts` — `getMoolahDashboard`, `getMoolahUserSummary`, V2 vault/market history helpers
+- **Contract ABIs** (4 new): `MOOLAH_CORE_ABI`, `TRX_PROVIDER_ABI`, `MOOLAH_VAULT_ABI`, `PUBLIC_LIQUIDATOR_ABI`
+- **Contract addresses**: mainnet + nile Moolah core addresses (MoolahProxy, TrxProviderProxy, PublicLiquidatorProxy, WTRX, ResilientOracle, IRM) plus vault registry. Nile is missing USDD vault (not deployed there); only TRX and USDT vaults are registered.
+- **MCP tools** (21 new):
+  - Vault (6): `get_moolah_vault`, `get_moolah_vaults`, `approve_moolah_vault`, `moolah_vault_deposit`, `moolah_vault_withdraw`, `moolah_vault_redeem`
+  - Market (8): `get_moolah_market`, `get_moolah_markets`, `get_moolah_user_position`, `approve_moolah_proxy`, `moolah_supply_collateral`, `moolah_withdraw_collateral`, `moolah_borrow`, `moolah_repay`
+  - Liquidation (5): `get_moolah_pending_liquidations`, `get_moolah_liquidation_quote`, `get_moolah_liquidation_records`, `approve_liquidator_token`, `moolah_liquidate`
+  - Dashboard (2): `get_moolah_dashboard`, `get_moolah_history`
+- **AI prompts** (4 new): `moolah_supply`, `moolah_borrow`, `moolah_liquidate`, `moolah_portfolio`
+
+### Added — historical records (M2, +6 tools)
+
+- New service module `records.ts` wrapping the paginated history endpoints on `labc.ablesdxd.link` (mainnet-only):
+  - `get_lending_records` → `/justlend/record/depositBorrow` (11 V1 action types)
+  - `get_strx_records` → `/justlend/record/strx`
+  - `get_vote_records` → `/justlend/record/vote`
+  - `get_energy_rental_records` → `/justlend/record/rent`
+  - `get_liquidation_records` → `/justlend/record/liquidate` (V1 liquidations)
+- Plus V2 Moolah records: `get_moolah_records` → `/record/lend`
+- Each service function enriches numeric action/op codes with human-readable names (`actionName` / `opName`) so callers don't need a local lookup table.
+
+### Added — history time series + airdrop rewards (M3, +3 tools)
+
+- `get_moolah_vault_history` → `/vault/history-data` (APY / TVL curves)
+- `get_moolah_market_history` → `/market/history-data` (borrow/supply APY + utilization curves)
+- `get_claimable_rewards` → `/sunProject/getAllUnClaimedAirDrop` (scans all JustLend merkle distributors; read-only — the write path `multiClaim()` is deferred until the live response's merkle-proof fields are verified against a real airdropped address)
+
+### Added — Moolah gas estimator (M4, +1 tool)
+
+- `estimate_moolah_energy` + `moolah-estimate.ts` service module. Returns historical typical values for all 11 Moolah write operations with TRX vs TRC20 route differentiation. On-chain simulation for Moolah's tuple-args ops is not yet wired (typical values used as fallback; status exposed via `source: "typical"`).
+
+### Added — AI-agent ergonomics
+
+- **Structured, self-healing tool errors**: every tool now returns errors via `toolError()`
+  (`core/tools/shared.ts`) as JSON `{ error, errorCode?, hint? }` instead of a bare `Error: <msg>`
+  string. `classifyError()` maps common failures (insufficient allowance/balance, wallet not
+  configured, execution reverted, market not found, invalid address) to a machine-readable
+  `errorCode` and an actionable `hint` (e.g. "Raise the allowance with approve_underlying first,
+  then retry"), so an agent can self-heal without parsing prose. `isError: true` is preserved.
+
+### Changed — AI-agent ergonomics
+
+- **Self-describing amounts across the core read paths**: token-unit amount fields now carry a
+  `{ raw, decimals, _unit, display }` object alongside the existing display string, so agents
+  never re-apply decimals:
+    - `get_token_balance` → `amount` (and `services.getTokenBalance` returns the raw balance);
+    - `get_account_summary` positions → `supplyBalanceAmount`, `borrowBalanceAmount`,
+      `jTokenBalanceAmount` (built from on-chain raw + per-market decimals in the service);
+    - `get_market_data` / `get_all_markets` → `totalSupplyAmount`, `totalBorrowsAmount`,
+      `totalReservesAmount`, `availableLiquidityAmount`;
+    - sTRX stake account → `strxBalanceAmount`, `accountSupplyAmount` (both API and on-chain paths);
+    - user vote status → `votesAmount` (on-chain path, the cast vote weight);
+    - energy rental info → `rentBalanceAmount`, `securityDepositAmount`.
+  All existing string fields are unchanged (additive). New `describeFromDisplay()` helper in
+  `core/services/bigint-math.ts` reconstructs raw exactly from a de-scaled display string for
+  paths that only expose the human-readable value. USD-value and rate/APY fields are already
+  self-describing by field name and are intentionally left as-is; mining rewards are USD-denominated
+  and similarly need no change.
+- **Hardened tool input schemas**: TRON address parameters now validate against the Base58
+  format (`/^T[1-9A-HJ-NP-Za-km-z]{33}$/`) and human-readable amount parameters against a
+  decimal-string format (`/^\d+(\.\d+)?$/`, or `…|max` for tools that accept a full-balance
+  `max` sentinel), via shared `tronAddress` / `amountString` / `amountOrMaxString` builders in
+  `core/tools/shared.ts`. Previously these were bare `z.string()` with the format only hinted in
+  the description. Agents that pass a malformed address or amount now get a schema-level rejection
+  instead of a deeper runtime error. Tools accepting either a symbol **or** an address (e.g.
+  `market`) are intentionally left unconstrained. The hardening adds no tools.
+- **`mcp-api-list.md` surfaces input constraints**: the catalog generator
+  (`scripts/gen-mcp-api-list.ts`) now introspects string `regex` / `min` / `max` checks (in
+  addition to the existing numeric bounds and enums), so the offline tool catalog shows the exact
+  format an agent must send (e.g. `string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/)`).
+
+### Fixed — HIGH-severity audit findings
+
+- **`Number(callValue)` precision**: all TRX-payable broadcast paths (`writeContract`, `safeSend`, and both `estimateEnergy` fallbacks) now go through a new exported `callValueToSafeNumber()` helper that rejects amounts above `Number.MAX_SAFE_INTEGER` (~9.007×10¹⁵ sun / ~9 B TRX) and negative values. Mirrors the existing guard in `transfer.ts`.
+- **HTTP Bearer-token timing leak**: API-key comparison in `http-server.ts` is now routed through `crypto.timingSafeEqual` via a new `src/server/auth.ts` helper. Equal-length buffers only; short-circuit and length-difference leakages removed.
+
+### Changed — backend type alignment
+
+- Rewrote every interface in `moolah-backend.ts` after verifying real API response shapes against the live endpoints (the first-pass types were extrapolated from front-end store field names that differ from the wire format). All fields marked optional since `/index/vault/list` and `/vault/info` use different field names for the same vault data (`vaultAddress` vs `address`, `assetDecimals` plural vs `assetDecimal` singular, etc.).
+- `fetchMoolahVaultList` and `fetchMoolahMarketList` flatten the nested `allVaults.list` / `allMarkets` envelopes into a consistent `{ list, total, userList, userTotal, ... }` shape for downstream consumers.
+- `getMoolahDashboard` now enforces the requested `pageSize` client-side because `/index/market/list` ignores the server-side `pageSize` parameter.
+- AI prompt copy: every reference to non-existent fields (`safePercent`, `healthFactor`, `maxBorrowableUSD`) replaced with the real `risk` (0–1 ratio) and `lltv` fields.
+
+### Tests
+
+- New files:
+  - `moolah-config.test.ts` — chains.ts + helper validation (no network)
+  - `moolah-query.test.ts` — mainnet on-chain reads (skipOn429)
+  - `moolah-backend.test.ts` — mainnet REST reachability + shape (skipOn429)
+  - `moolah-dashboard.test.ts` — dashboard composition (skipOn429)
+  - `moolah-liquidation-logic.test.ts` — mocked input validation
+  - `moolah-estimate.test.ts` — typical-resources table coverage
+  - `records.test.ts` — all 5 V1 record endpoints + nile rejection
+  - `describe-amount.test.ts` — self-describing amount construction / round-trip
+  - `strx-precision.test.ts` — sTRX BigInt precision paths
+  - `wallet-signature-validation.test.ts` — wallet signature validation coverage
+
+### Docs
+
+- `forTest/docs/v1.1.0/v1.1.0-development-plan.md` and `m1-moolah-dev-steps.md` revised to match shipped reality and annotated with a "分支代码落地情况" section that cross-checks plan against code via `grep`/`git log`/`npm test`.
+- `forTest/audit/mcp-server-justlend-audit-report-v1.1.0-20260417.md` + 修改版 variant documenting the security audit and HIGH fixes.
+
+---
 
 ## [1.0.8] - 2026-06-10
 
@@ -40,7 +152,7 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
   blocks process exit.
 
 ### Added
-- `mcp-api-list.md` — machine-readable, offline-loadable catalog of all 59 tools (input
+- `mcp-api-list.md` — machine-readable, offline-loadable catalog of all tools (input
   schemas, side-effect class, HITL guidance), generated from source via
   `npm run gen:api-list` (`scripts/gen-mcp-api-list.ts`).
 - Self-describing units (`_unit` / `decimals` / `raw`) on the core balance tools.
@@ -83,6 +195,8 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
 ## [1.0.3]
 
 ### Changed
+- Browser-wallet signing via TronLink (sign-only mode); dual wallet mode: `browser`
+  (recommended) or `agent` (encrypted local storage).
 - Maintenance and dependency updates.
 
 ## [1.0.1]
@@ -98,6 +212,7 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
   Staking, Transfers, and general TRON utilities. Dual-mode signing (browser TronLink via
   TIP-6963 or encrypted `@bankofai/agent-wallet`). stdio and HTTP/SSE transports.
 
+[1.1.0]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.1.0
 [1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
 [1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
 [1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6

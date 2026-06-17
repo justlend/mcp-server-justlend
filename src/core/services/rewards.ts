@@ -13,32 +13,66 @@
  * - Handles mining status (1=ongoing, 2=paused, 3=ended)
  */
 
-import { getTronWeb } from "./clients.js";
 import { getJustLendAddresses, getApiHost } from "../chains.js";
 import { getJTokenDetailsFromAPI } from "./markets.js";
 import { fetchWithTimeout } from "./http.js";
+import { safeSend } from "./contracts.js";
+import { getSigningClient } from "./wallet.js";
+import { fetchClaimableRewards, type ClaimableReward } from "./records.js";
 
-// Merkle Distributor ABI (simplified)
-const MERKLE_DISTRIBUTOR_ABI = [
+// V1 merkle distributor ABIs.
+//
+// Two selectors exist for multiClaim — front-app's Reward.jsx routes between
+// them based on whether the airdrop entry's `amount` is an array:
+//   • single-token leaves (main + USDDNEW): (uint256,uint256,uint256,bytes32[])[]
+//   • multi-token leaves  (multiMerkleDistributor): (uint256,uint256,uint256[],bytes32[])[]
+// safeSend can't disambiguate two functions with the same name and arity, so
+// we keep one ABI per selector.
+
+const V1_SINGLE_CLAIM_TUPLE = [
+  { name: "merkleIndex", type: "uint256" },
+  { name: "index",       type: "uint256" },
+  { name: "amount",      type: "uint256" },
+  { name: "merkleProof", type: "bytes32[]" },
+];
+
+const V1_MULTI_CLAIM_TUPLE = [
+  { name: "merkleIndex", type: "uint256"   },
+  { name: "index",       type: "uint256"   },
+  { name: "amounts",     type: "uint256[]" },
+  { name: "merkleProof", type: "bytes32[]" },
+];
+
+const V1_SINGLE_DISTRIBUTOR_ABI = [
   {
-    "name": "claim",
-    "inputs": [
-      { "name": "index", "type": "uint256" },
-      { "name": "account", "type": "address" },
-      { "name": "amount", "type": "uint256" },
-      { "name": "merkleProof", "type": "bytes32[]" }
-    ],
-    "outputs": [],
-    "stateMutability": "Nonpayable",
-    "type": "Function"
+    type: "function", name: "multiClaim", stateMutability: "nonpayable",
+    inputs: [{ name: "claims", type: "tuple[]", components: V1_SINGLE_CLAIM_TUPLE }],
+    outputs: [],
   },
   {
-    "name": "isClaimed",
-    "inputs": [{ "name": "index", "type": "uint256" }],
-    "outputs": [{ "name": "", "type": "bool" }],
-    "stateMutability": "View",
-    "type": "Function"
-  }
+    type: "function", name: "isClaimed", stateMutability: "view",
+    inputs: [
+      { name: "merkleIndex", type: "uint256" },
+      { name: "index",       type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+];
+
+const V1_MULTI_DISTRIBUTOR_ABI = [
+  {
+    type: "function", name: "multiClaim", stateMutability: "nonpayable",
+    inputs: [{ name: "claims", type: "tuple[]", components: V1_MULTI_CLAIM_TUPLE }],
+    outputs: [],
+  },
+  {
+    type: "function", name: "isClaimed", stateMutability: "view",
+    inputs: [
+      { name: "merkleIndex", type: "uint256" },
+      { name: "index",       type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
 ];
 
 /**
@@ -245,79 +279,184 @@ export async function getMiningRewardsFromAPI(address: string, network = "mainne
   }
 }
 
+// ── V1 merkle airdrop claim ─────────────────────────────────────────────────
+//
+// /sunProject/getAllUnClaimedAirDrop returns a map keyed per round; each entry
+// carries either a single-token reward (amount: string, tokenAddress: string)
+// or a multi-token reward (amount: string[], tokenAddress: string[]).
+// Front-app's Reward.jsx routes claims like this:
+//   • amount is array        → multiMerkleDistributor + array-amount selector
+//   • amount single + USDD   → merkleDistributorNEWUSDD (USDDNEW distributor)
+//   • amount single + other  → main merkleDistributor
+// All paths submit multiClaim() with a single-leaf array. We mirror that.
+
+export type V1DistributorType = "main" | "usdd-new" | "multi";
+
+export interface V1ClaimRoute {
+  distributor: string;
+  type:        V1DistributorType;
+  selector:    "single" | "multi";
+}
+
+const toArray = <T>(v: T | T[] | undefined | null): T[] =>
+  Array.isArray(v) ? v : v == null ? [] : [v];
+
 /**
- * Check if user has claimable rewards for a specific distributor
+ * Decide which distributor + selector to use for a V1 airdrop entry,
+ * mirroring the routing logic in front-app's Reward.jsx.
  */
-export async function checkClaimableRewards(
-  userAddress: string,
-  distributorType: "main" | "usdd" | "strx" | "multi",
-  network = "mainnet"
-): Promise<{ hasRewards: boolean; isClaimed: boolean }> {
-  const tronWeb = getTronWeb(network);
+export function routeV1ClaimEntry(
+  entry: ClaimableReward,
+  network = "mainnet",
+): V1ClaimRoute {
   const addresses = getJustLendAddresses(network);
+  const isMultiToken = Array.isArray(entry.amount);
+  if (isMultiToken) {
+    const distributor = addresses.merkleDistributors.multi;
+    if (!distributor) throw new Error(`V1 multi merkle distributor not configured on ${network}`);
+    return { distributor, type: "multi", selector: "multi" };
+  }
 
-  const distributorAddress = addresses.merkleDistributors[distributorType];
-  const distributor = tronWeb.contract(MERKLE_DISTRIBUTOR_ABI, distributorAddress);
+  // The redeployed USDDNEW distributor (chains.ts: merkleDistributors.usdd)
+  // handles the live USDD token. Match by tokenAddress against the USDD
+  // jToken's underlying when available, falling back to symbol when the
+  // backend omits the address. The symbol-only path tolerates "USDD",
+  // "USDDNEW", and "USDDOLD" — front-app's filterReward labels old/new
+  // similarly when the symbol is absent.
+  const tokenAddr = toArray<string>(entry.tokenAddress)[0] ?? null;
+  const tokenSymbol = toArray<string>(entry.tokenSymbol)[0] ?? "";
+  const usddUnderlying = addresses.jTokens["jUSDD"]?.underlying ?? null;
+  const looksLikeUsdd =
+    (tokenAddr && usddUnderlying && tokenAddr === usddUnderlying) ||
+    tokenSymbol === "USDD" || tokenSymbol === "USDDNEW";
 
-  // Note: This is a simplified check. Real implementation would need:
-  // 1. Fetch merkle proof data from API or backend
-  // 2. Check if index is claimed
-  // For now, we recommend using the API method getMiningRewardsFromAPI
+  if (looksLikeUsdd) {
+    const distributor = addresses.merkleDistributors.usdd;
+    if (!distributor) throw new Error(`V1 USDD merkle distributor not configured on ${network}`);
+    return { distributor, type: "usdd-new", selector: "single" };
+  }
 
-  return {
-    hasRewards: false,
-    isClaimed: false,
-  };
+  const distributor = addresses.merkleDistributors.main;
+  if (!distributor) throw new Error(`V1 main merkle distributor not configured on ${network}`);
+  return { distributor, type: "main", selector: "single" };
+}
+
+const normalizeAmount = (amount: ClaimableReward["amount"]): string | string[] => {
+  if (Array.isArray(amount)) return amount.map(a => String(a));
+  return String(amount ?? "0");
+};
+
+const normalizeProof = (entry: ClaimableReward): string[] => {
+  if (Array.isArray(entry.merkleProof)) return entry.merkleProof;
+  if (Array.isArray((entry as any).proof)) return (entry as any).proof;
+  return [];
+};
+
+export interface ClaimV1MiningPeriodResult {
+  txID:        string;
+  key:         string;
+  distributor: string;
+  type:        V1DistributorType;
+  message:     string;
 }
 
 /**
- * Claim mining rewards using V1 merkle distributor (requires merkle proof from API/backend).
+ * Submit multiClaim() for a single V1 airdrop round. Either pass `key`
+ * (resolved from get_claimable_rewards) or supply the raw fields directly.
  *
- * VERSION: V1 - Uses JustLend V1 Merkle Distributor contracts
- *
- * NOTE: This function requires merkle proof data which is typically
- * provided by the JustLend backend API. Users should:
- * 1. Check rewards via getMiningRewardsFromAPI()
- * 2. Get merkle proof from JustLend API
- * 3. Call this function with the proof data
+ * Mirrors the front-app routing exactly: amount-shape decides whether to use
+ * the single-token or multi-token selector and which distributor receives
+ * the call.
  */
-export async function claimMiningRewards(
-  index: number,
-  amount: string,
-  merkleProof: string[],
-  distributorType: "main" | "usdd" | "strx" | "multi" = "main",
-  network = "mainnet"
-): Promise<{ txid: string; success: boolean }> {
-  const tronWeb = getTronWeb(network);
-  const addresses = getJustLendAddresses(network);
-  const userAddress = tronWeb.defaultAddress.base58;
+export async function claimV1MiningPeriod(params: {
+  address?:    string;
+  key?:        string;                  // round key from /sunProject/getAllUnClaimedAirDrop
+  merkleIndex?: number | string;
+  index?:       number | string;
+  amount?:      string | number | Array<string | number>;
+  tokenAddress?: string | string[];
+  tokenSymbol?:  string | string[];
+  proof?:       string[];
+  distributor?: string;                 // explicit override
+  selector?:    "single" | "multi";     // explicit override
+  network?:     string;
+}): Promise<ClaimV1MiningPeriodResult> {
+  const network = params.network ?? "mainnet";
 
-  if (!userAddress) {
-    throw new Error("No wallet address configured. Run `npx agent-wallet init` or use the get_wallet_address tool.");
+  let merkleIndex = params.merkleIndex;
+  let index = params.index;
+  let amount: string | string[] | undefined =
+    params.amount === undefined ? undefined :
+    Array.isArray(params.amount) ? params.amount.map(a => String(a)) : String(params.amount);
+  let proof = params.proof;
+  let tokenAddress = params.tokenAddress;
+  let tokenSymbol = params.tokenSymbol;
+  let key = params.key ?? "";
+
+  if (merkleIndex === undefined || index === undefined || amount === undefined || !proof) {
+    if (!params.key) {
+      throw new Error("Either key or full claim fields (merkleIndex, index, amount, proof) must be provided");
+    }
+    const tronWeb = await getSigningClient(network);
+    const owner = params.address ?? (tronWeb.defaultAddress.base58 as string);
+    if (!owner) throw new Error("Wallet not configured — cannot resolve airdrop entries");
+    const { merkleRewards } = await fetchClaimableRewards(owner, network);
+    const entry = merkleRewards?.[params.key];
+    if (!entry) {
+      throw new Error(`No claimable airdrop entry '${params.key}' found for ${owner}`);
+    }
+    merkleIndex = entry.merkleIndex ?? merkleIndex;
+    index = entry.index ?? index;
+    amount = normalizeAmount(entry.amount);
+    proof = normalizeProof(entry);
+    tokenAddress = entry.tokenAddress;
+    tokenSymbol = entry.tokenSymbol;
+    key = params.key;
   }
 
-  const distributorAddress = addresses.merkleDistributors[distributorType];
-  const distributor = tronWeb.contract(MERKLE_DISTRIBUTOR_ABI, distributorAddress);
-
-  try {
-    const tx = await distributor.methods.claim(
-      index,
-      userAddress,
-      amount,
-      merkleProof
-    ).send({
-      feeLimit: 100_000_000, // 100 TRX
-      callValue: 0,
-      shouldPollResponse: true,
-    });
-
-    return {
-      txid: tx,
-      success: true,
-    };
-  } catch (error) {
-    throw new Error(`Failed to claim rewards: ${error instanceof Error ? error.message : String(error)}`);
+  if (proof.length === 0) {
+    throw new Error(`Airdrop entry has no merkle proof — backend may still be indexing`);
   }
+  if (merkleIndex === undefined || index === undefined) {
+    throw new Error("Airdrop entry is missing merkleIndex / index");
+  }
+
+  // Resolve distributor + selector. Explicit overrides win; otherwise route
+  // from the entry shape using the same rules as front-app's Reward.jsx.
+  let route: V1ClaimRoute;
+  if (params.distributor && params.selector) {
+    route = { distributor: params.distributor, type: "main", selector: params.selector };
+  } else {
+    route = routeV1ClaimEntry({ amount, tokenAddress, tokenSymbol, merkleProof: proof, index: Number(index), merkleIndex: Number(merkleIndex) }, network);
+  }
+
+  // Build the multiClaim payload. Single-amount selector wants a uint256;
+  // multi-amount wants a uint256[]. The wrapping array carries one leaf —
+  // batched claims belong to a separate code path callers can build later.
+  const amountArg: string | string[] = route.selector === "multi"
+    ? toArray<string>(amount).map(a => String(a))
+    : (Array.isArray(amount) ? String(amount[0]) : String(amount));
+
+  const claimTuple = [String(merkleIndex), String(index), amountArg, proof];
+
+  const abi = route.selector === "multi" ? V1_MULTI_DISTRIBUTOR_ABI : V1_SINGLE_DISTRIBUTOR_ABI;
+  const { txID } = await safeSend(
+    {
+      address: route.distributor,
+      abi,
+      functionName: "multiClaim",
+      args: [[claimTuple]],
+    },
+    network,
+  );
+
+  return {
+    txID,
+    key: key || `${merkleIndex}:${index}`,
+    distributor: route.distributor,
+    type: route.type,
+    message: `Claimed V1 mining round (${route.type}, merkleIndex=${merkleIndex}, index=${index}). TX: ${txID}`,
+  };
 }
 
 /**

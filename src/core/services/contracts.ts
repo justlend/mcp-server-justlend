@@ -65,13 +65,15 @@ export function toSafeCallValueNumber(
   }
   if (big > BigInt(Number.MAX_SAFE_INTEGER)) {
     throw new Error(
-      `callValue ${big.toString()} exceeds the SDK safe-integer limit ` +
+      `callValue exceeds the safe SDK limit: ${big.toString()} exceeds the SDK safe-integer limit ` +
       `(${Number.MAX_SAFE_INTEGER} Sun ≈ ${Number.MAX_SAFE_INTEGER / 1e6} TRX). ` +
       `Reduce the amount or split into multiple calls.`,
     );
   }
   return Number(big);
 }
+
+export const callValueToSafeNumber = toSafeCallValueNumber;
 
 /**
  * Read from a smart contract (view/pure functions).

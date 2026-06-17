@@ -19,6 +19,20 @@ import { safeSend } from "./contracts.js";
 import { cacheGet, cacheSet } from "./cache.js";
 import { fetchWithTimeout } from "./http.js";
 import { utils } from "./utils.js";
+import { describeFromDisplay } from "./bigint-math.js";
+
+/** Attach self-describing amounts to the known token-amount fields of a stake-account object (additive). */
+function enrichStrxAccount<T extends Record<string, any>>(data: T): T {
+  if (data && typeof data === "object") {
+    const sb = (data as any).strxBalance;
+    if (typeof sb === "string" || typeof sb === "number")
+      (data as any).strxBalanceAmount = describeFromDisplay(String(sb), STRX_DECIMALS, "sTRX");
+    const supply = (data as any).accountSupply;
+    if (typeof supply === "string" || typeof supply === "number")
+      (data as any).accountSupplyAmount = describeFromDisplay(String(supply), TRX_DECIMALS, "TRX");
+  }
+  return data;
+}
 
 const TRX_DECIMALS = 6;
 const STRX_DECIMALS = 18;
@@ -159,7 +173,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
     const json = await resp.json();
 
     if (json.code === 0 && json.data) {
-      return json.data;
+      return enrichStrxAccount(json.data);
     }
   } catch {
     // API unavailable, fallback to on-chain
@@ -178,7 +192,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
   const strxBalance = formatRawUnits(balanceRaw, STRX_DECIMALS);
   const underlyingTrx = formatRawUnits(underlyingRaw, TRX_DECIMALS);
 
-  return {
+  return enrichStrxAccount({
     accountSupply: underlyingTrx,
     accountIncome: null,
     accountCanClaimAmount: null,
@@ -189,7 +203,7 @@ export async function getStrxStakeAccount(address: string, network = "mainnet") 
     rewardMap: {},
     source: "contract",
     note: "Income and reward data unavailable (API down). Supply data from on-chain balanceOf/viewBalanceOfUnderlying.",
-  };
+  });
 }
 
 /**

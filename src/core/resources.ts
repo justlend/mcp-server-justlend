@@ -22,8 +22,8 @@ export function registerJustLendResources(server: McpServer) {
           const tokens = getAllJTokens(network);
           info[network] = {
             comptroller: addresses.comptroller,
-            priceOracle: addresses.priceOracle,
-            lens: addresses.lens,
+            ...(addresses.priceOracle ? { priceOracle: addresses.priceOracle } : {}),
+            ...(addresses.lens ? { lens: addresses.lens } : {}),
             markets: tokens.map((t) => ({
               symbol: t.symbol,
               underlyingSymbol: t.underlyingSymbol,

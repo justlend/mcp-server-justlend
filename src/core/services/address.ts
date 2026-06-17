@@ -26,6 +26,21 @@ export function toBase58Address(address: string): string {
 }
 
 /**
+ * Compare two TRON addresses for equality, normalizing Base58/hex to hex first.
+ * Base58 is case-sensitive, so a naive `toLowerCase()` compare is fragile (and
+ * never matches a Base58 value against a hex one). This normalizes both sides
+ * via `toHexAddress` before comparing.
+ */
+export function addressesEqual(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  try {
+    return toHexAddress(a).toLowerCase() === toHexAddress(b).toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Returns true if the address is a valid TRON Base58 address (starts with 'T').
  */
 export function isBase58(address: string): boolean {

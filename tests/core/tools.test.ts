@@ -164,6 +164,7 @@ vi.mock("../../src/core/services/index.js", () => ({
     balance: "5000.000000",
     symbol: "USDT",
     decimals: 6,
+    raw: "5000000000",
   })),
   transferTRX: vi.fn(async () => "mock_transfer_trx_tx_id_123"),
   transferTRC20: vi.fn(async () => ({
@@ -515,6 +516,14 @@ describe("Tool Registration", () => {
       "stake_trx_to_strx",
       "unstake_strx",
       "claim_strx_rewards",
+      // V1 merkle airdrop claim
+      "claim_v1_mining_period",
+      // V2 (Moolah) mining
+      "get_moolah_vault_mining_apy",
+      "get_moolah_mining_resolver",
+      "get_moolah_mining_accruing",
+      "get_moolah_pending_mining_periods",
+      "claim_moolah_mining_period",
     ];
 
     for (const name of expectedTools) {
@@ -714,6 +723,8 @@ describe("Account & Balance Tools", () => {
     const output = getToolOutput(result);
     expect(output.balance).toBe("5000.000000");
     expect(output.symbol).toBe("USDT");
+    // Self-describing amount (raw + _unit + decimals + display)
+    expect(output.amount).toEqual({ raw: "5000000000", decimals: 6, _unit: "USDT", display: "5000" });
     expect(services.getTokenBalance).toHaveBeenCalled();
   });
 

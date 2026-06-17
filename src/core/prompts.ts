@@ -546,4 +546,281 @@ Provide a summary:
       }],
     }),
   );
+
+  // ============================================================================
+  // MOOLAH V2 — VAULT SUPPLY
+  // ============================================================================
+  server.registerPrompt(
+    "moolah_supply",
+    {
+      description: "Guide for depositing into a JustLend V2 (Moolah) vault to earn auto-compounding yield",
+      argsSchema: {
+        vaultSymbol: z.string().optional().describe("Vault symbol: 'TRX', 'USDT', or 'USDD'. Omit to compare all vaults."),
+        amount: z.string().optional().describe("Amount to deposit"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ vaultSymbol, amount, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# JustLend V2 Vault Deposit Guide
+
+**Objective**: ${vaultSymbol && amount ? `Deposit ${amount} into the ${vaultSymbol} vault on ${network}.` : "Help the user choose a Moolah vault and deposit assets."}
+
+## Step 1 — Show Available Vaults
+Call \`get_moolah_vaults\` to list all vaults with current APY and TVL.
+
+Explain the three vaults:
+- **TRX vault** — native TRX, no approval needed
+- **USDT vault** — stablecoin, requires approval first
+- **USDD vault** — TRON-native stablecoin, requires approval first
+
+**How Moolah Vaults differ from V1 jTokens**:
+- V1 jTokens: you manually pick a market and earn from that market's utilization
+- V2 Vaults: a curator allocates your funds across multiple markets automatically — higher yield, lower management effort
+- ERC4626 shares: you receive vault shares representing your proportional ownership; shares only increase in value, never decrease (barring protocol risk)
+
+**Minimum deposit recommendation**: Skip if balance < 100 TRX or < 50 USDT — gas cost exceeds expected yield on small amounts.
+
+## Step 2 — Select Vault${vaultSymbol ? ` (already chosen: ${vaultSymbol})` : ""}
+${vaultSymbol ? `User has chosen the **${vaultSymbol}** vault. Proceed to Step 3.` : "Ask the user which vault they want to deposit into. Show APY comparison from Step 1."}
+
+## Step 3 — Check Wallet & Balance
+1. Call \`get_wallet_address\` to confirm wallet.
+2. Check balance:
+   - TRX vault → \`get_trx_balance\`
+   - USDT/USDD vault → \`get_token_balance\` with token='${vaultSymbol ?? "USDT"}'
+
+## Step 4 — Approval (TRC20 vaults only, skip for TRX)
+For USDT or USDD vaults:
+- Call \`approve_moolah_vault\` with vaultSymbol and the EXACT deposit amount (e.g. amount='${amount ?? "<user amount>"}'). Use amount='max' for unlimited approval ONLY if the user explicitly opts in (it can be revoked later with amount='0').
+- Wait for the approval transaction to confirm before proceeding
+
+## Step 5 — Deposit
+Call \`moolah_vault_deposit\` with:
+- vaultSymbol: '${vaultSymbol ?? "<chosen vault>"}'
+- amount: '${amount ?? "<user amount>"}'
+
+## Step 6 — Verify
+Call \`get_moolah_vault\` with the vault symbol to confirm:
+- User's share balance has increased
+- Estimated asset value matches deposit amount (plus any accrued yield)
+
+## Report
+- Vault chosen, amount deposited, shares received
+- Current APY and estimated annual yield on deposited amount
+- How to withdraw: \`moolah_vault_withdraw\` with amount or amount='max'`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // MOOLAH V2 — BORROW
+  // ============================================================================
+  server.registerPrompt(
+    "moolah_borrow",
+    {
+      description: "Guide for supplying collateral and borrowing from a JustLend V2 (Moolah) market",
+      argsSchema: {
+        marketId: z.string().optional().describe("Market ID (bytes32 hex). Omit to browse markets first."),
+        collateralAmount: z.string().optional().describe("Collateral amount to supply"),
+        borrowAmount: z.string().optional().describe("Loan amount to borrow"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ marketId, collateralAmount, borrowAmount, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# JustLend V2 Borrow Guide
+
+**Objective**: ${marketId ? `Borrow in market ${marketId} on ${network}.` : "Help the user find a market and set up a collateralized borrow position."}
+
+## Step 1 — Browse Markets${marketId ? " (skip — market already provided)" : ""}
+${marketId ? `Market ID: \`${marketId}\` — proceed to Step 2.` : `Call \`get_moolah_markets\` to list available markets.
+
+Key market parameters to explain:
+- **LLTV (Liquidation LTV)**: maximum borrow ratio before liquidation. Higher LLTV = more capital-efficient but riskier.
+- **Borrow APY**: current annual cost of the loan (variable, driven by utilization)
+- **Collateral token / Loan token**: each market is isolated with fixed pairs`}
+
+## Step 2 — Understand Risk Thresholds
+The market position API returns a **risk** ratio = (borrowed value) / (collateral value × LLTV).
+
+| risk | Status | Action |
+|---|---|---|
+| < 0.70 | ✅ Healthy | No action needed |
+| 0.70 – 0.85 | ⚠️ Caution | Monitor closely |
+| 0.85 – 1.00 | 🔴 Danger | Repay or add collateral immediately |
+| > 1.00 | ☠️ Liquidatable | Position will be liquidated |
+
+**Recommendation**: Keep risk below 0.70 to allow for price fluctuations.
+
+## Step 3 — Wallet & Balance Check
+1. Call \`get_wallet_address\` to confirm wallet.
+2. Check collateral token balance (TRX: \`get_trx_balance\`; TRC20: \`get_token_balance\`).
+
+## Step 4 — Approval (TRC20 collateral only, skip for TRX)
+If the collateral token is TRC20, call \`approve_moolah_proxy\` with the token details.
+
+## Step 5 — Check Existing Position
+Call \`get_moolah_user_position\` with marketId${marketId ? `='${marketId}'` : ""} to see current collateral and borrow.
+
+## Step 6 — Execute
+Call \`moolah_borrow\` with:
+- marketId: '${marketId ?? "<chosen market>"}'
+- collateralAmount: '${collateralAmount ?? "<amount or omit>"}' (omit if already deposited)
+- borrowAmount: '${borrowAmount ?? "<amount or omit>"}'  (omit to only supply collateral)
+
+## Step 7 — Post-Borrow Safety Check
+Call \`get_moolah_user_position\` again to confirm risk is below 0.70.
+
+## Repayment Reminder
+- Full repay: \`moolah_repay\` with amount='max' (uses shares math for exact settlement)
+- For TRC20 loan tokens, approve Moolah proxy before repaying
+- For TRX loans, TRX is sent directly with no prior approval`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // MOOLAH V2 — LIQUIDATION
+  // ============================================================================
+  server.registerPrompt(
+    "moolah_liquidate",
+    {
+      description: "Guide for finding and executing JustLend V2 (Moolah) public liquidations",
+      argsSchema: {
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# JustLend V2 Liquidation Guide
+
+**Objective**: Find undercollateralized positions and execute profitable public liquidations on ${network}.
+
+## Step 1 — Find Liquidatable Positions
+Call \`get_moolah_pending_liquidations\` with minRiskLevel=1.0 to list positions that can be liquidated right now.
+
+Key fields to interpret:
+- **riskLevel > 1.0**: position is liquidatable (borrowed value exceeds collateral × LLTV)
+- **borrowAssets / borrowUSD**: the debt you will partially repay
+- **collateralAssets / collateralUSD**: the collateral you will seize (at a discount defined by the protocol)
+- **maxSeizableAssets**: maximum collateral you can seize in one liquidation call
+
+For near-threshold positions (riskLevel 0.95–1.0), monitor frequently — prices move fast.
+
+## Step 2 — Estimate Profitability
+For a target position, call \`get_moolah_liquidation_quote\` with:
+- marketId from the pending liquidation
+- seizedAssets = desired collateral to seize (in raw token units)
+
+The returned \`loanTokenAmountNeeded\` tells you how much loan token you must provide.
+
+**Profit estimate** = value of seized collateral − cost of loan token repaid
+A healthy liquidation should yield 3–10% depending on the protocol's liquidation incentive.
+
+## Step 3 — Prepare Loan Token
+1. Verify you hold enough loan token: \`get_token_balance\` with token symbol.
+2. Approve the liquidator contract: \`approve_liquidator_token\` with the loan token details.
+
+## Step 4 — Execute Liquidation
+Call \`moolah_liquidate\` with:
+- marketId: from Step 1
+- borrower: the address of the position to liquidate
+- seizedAssets: your chosen amount (from Step 2), OR
+- repaidShares: borrow shares to repay instead
+
+**Important**: Provide EITHER seizedAssets OR repaidShares — not both.
+
+## Step 5 — Verify Outcome
+After the transaction confirms:
+1. Check your collateral token balance increased: \`get_token_balance\`
+2. Check historical records: \`get_moolah_liquidation_records\` with type='public'
+
+## Safety Notes
+- Liquidations are competitive — frontrunning is common. Consider gas optimization.
+- Partial liquidations are allowed — you don't need to close the full position.
+- If the transaction reverts, the position may have already been liquidated by another liquidator.`,
+        },
+      }],
+    }),
+  );
+
+  // ============================================================================
+  // MOOLAH V2 — PORTFOLIO OVERVIEW
+  // ============================================================================
+  server.registerPrompt(
+    "moolah_portfolio",
+    {
+      description: "Overview of the user's full JustLend V2 (Moolah) portfolio: vaults, markets, risk assessment",
+      argsSchema: {
+        address: z.string().optional().describe("Address to inspect. Default: configured wallet"),
+        network: z.string().optional().describe("Network (default: mainnet)"),
+      },
+    },
+    ({ address, network = "mainnet" }) => ({
+      messages: [{
+        role: "user",
+        content: {
+          type: "text",
+          text: `# JustLend V2 Portfolio Overview
+
+**Objective**: Give a complete picture of ${address ? `address ${address}'s` : "the user's"} Moolah V2 positions on ${network} and highlight any risk.
+
+## Step 1 — Aggregated Summary
+Call \`get_moolah_dashboard\`${address ? ` with address='${address}'` : ""} to get:
+- totalSupplyUsd / totalBorrowUsd / totalCollateralUsd
+- netEarnApy / netBorrowRate / dailyRevenue
+- collateralCount
+
+## Step 2 — Vault Positions
+From the dashboard response, inspect \`userPosition.vaults\`:
+For each vault entry (fields: vaultAddress / assetSymbol / depositAmount / depositUsd / apy):
+- Vault name and underlying asset
+- Deposit amount and USD value
+- Current APY
+
+If no vault positions exist, note that the user has no V2 vault deposits.
+
+## Step 3 — Market Positions
+From the dashboard response, inspect \`userPosition.markets\`:
+For each market entry (fields: marketId / borrowAmount / borrowUsd / collateralAmount / collateralUsd / risk):
+- Loan token and collateral token
+- Borrow amount and collateral amount (with USD values)
+- **risk** ratio (0-1, where 1.0 = at liquidation threshold)
+
+### Risk Assessment
+| risk | Recommendation |
+|---|---|
+| < 0.70 | ✅ Healthy — no action needed |
+| 0.70 – 0.85 | ⚠️ Consider reducing borrow or adding collateral |
+| > 0.85 | 🔴 Immediate action required — liquidation risk |
+
+For any market with risk > 0.80, suggest:
+1. Repay borrow: \`moolah_repay\` with marketId and amount='max'
+2. Add collateral: \`moolah_supply_collateral\`
+
+## Step 4 — Historical Trend (optional)
+Call \`get_moolah_history\`${address ? ` with address='${address}'` : ""} with timeFilter='ONE_WEEK' to show whether the position has been growing or shrinking.
+
+## Summary Report
+Provide a concise summary:
+- Total V2 net worth
+- List of vault positions with yield
+- List of market positions with risk level (color-coded)
+- Any immediate actions recommended`,
+        },
+      }],
+    }),
+  );
 }

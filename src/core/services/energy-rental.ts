@@ -17,6 +17,7 @@ import { safeSend } from "./contracts.js";
 import { waitForTransaction } from "./transactions.js";
 import { checkResourceSufficiency } from "./lending.js";
 import { fetchWithTimeout, promiseWithTimeout } from "./http.js";
+import { describeAmount } from "./bigint-math.js";
 
 const TRX_PRECISION = 1e6;
 const TOKEN_PRECISION = 1e18;
@@ -668,16 +669,17 @@ export async function getRentInfo(
       ], network),
     ]);
 
-    const securityDeposit = rentInfoHex
-      ? Number(decodeUint256(rentInfoHex, 0)) / TRX_PRECISION
-      : 0;
-    const rentBalance = rentalsHex
-      ? Number(decodeUint256(rentalsHex, 0)) / TRX_PRECISION
-      : 0;
+    const securityDepositRaw = rentInfoHex ? decodeUint256(rentInfoHex, 0) : 0n;
+    const rentBalanceRaw = rentalsHex ? decodeUint256(rentalsHex, 0) : 0n;
+    const securityDeposit = Number(securityDepositRaw) / TRX_PRECISION;
+    const rentBalance = Number(rentBalanceRaw) / TRX_PRECISION;
 
     return {
       securityDeposit,
       rentBalance,
+      // Self-describing amounts (TRX, 6 decimals) from the raw sun values.
+      securityDepositAmount: describeAmount(securityDepositRaw, 6, "TRX"),
+      rentBalanceAmount: describeAmount(rentBalanceRaw, 6, "TRX"),
       hasActiveRental: rentBalance > 0,
     };
   } catch (error) {
@@ -685,6 +687,8 @@ export async function getRentInfo(
     return {
       securityDeposit: 0,
       rentBalance: 0,
+      securityDepositAmount: describeAmount(0n, 6, "TRX"),
+      rentBalanceAmount: describeAmount(0n, 6, "TRX"),
       hasActiveRental: false,
     };
   }

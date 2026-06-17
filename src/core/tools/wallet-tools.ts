@@ -5,7 +5,7 @@ import { resolveKnownToken } from "../services/tokens.js";
 import { utils } from "../services/utils.js";
 import { getWalletMode, setWalletMode } from "../services/global.js";
 import { getBrowserSigner } from "../services/wallet.js";
-import { sanitizeError } from "./shared.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerWalletTools(server: McpServer) {
 
@@ -87,7 +87,7 @@ export function registerWalletTools(server: McpServer) {
           tip: "For better security, consider using connect_browser_wallet to sign with TronLink instead.",
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -109,7 +109,7 @@ export function registerWalletTools(server: McpServer) {
           message: status.message,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -153,7 +153,7 @@ export function registerWalletTools(server: McpServer) {
         "Blocks until the user acts or the request times out (5 min). " +
         "After connecting, all write operations will use the browser wallet for signing.",
       inputSchema: {
-        address: z.string().optional().describe("Required TRON address (T...). If set, the user must connect this exact address."),
+        address: tronAddress("Required TRON address (T...). If set, the user must connect this exact address.").optional(),
       },
       annotations: { title: "Connect Browser Wallet", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
@@ -174,7 +174,7 @@ export function registerWalletTools(server: McpServer) {
       } catch (error: any) {
         // Revert to agent mode on failure
         setWalletMode("agent");
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -224,7 +224,7 @@ export function registerWalletTools(server: McpServer) {
             : "Switched to agent wallet mode.",
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -279,7 +279,7 @@ export function registerWalletTools(server: McpServer) {
         services.setGlobalNetwork(network);
         return { content: [{ type: "text", text: `Successfully switched global default network to: ${network}` }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -308,8 +308,8 @@ export function registerWalletTools(server: McpServer) {
         "Checks balance sufficiency (including gas) before sending. " +
         "Typical cost: ~0 energy + ~270 bandwidth.",
       inputSchema: {
-        to: z.string().describe("Recipient TRON address (Base58 T... format)"),
-        amount: z.string().describe("Amount of TRX to transfer (e.g. '1', '10.5')"),
+        to: tronAddress("Recipient TRON address (Base58 T... format)"),
+        amount: amountString("Amount of TRX to transfer (e.g. '1', '10.5')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Transfer TRX", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -326,7 +326,7 @@ export function registerWalletTools(server: McpServer) {
           network,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -341,10 +341,10 @@ export function registerWalletTools(server: McpServer) {
         "Amount is in human-readable units (e.g. '100' for 100 USDT). " +
         "Checks balance sufficiency before sending.",
       inputSchema: {
-        to: z.string().describe("Recipient TRON address (Base58 T... format)"),
-        amount: z.string().describe("Amount to transfer in human-readable units (e.g. '100' for 100 USDT)"),
+        to: tronAddress("Recipient TRON address (Base58 T... format)"),
+        amount: amountString("Amount to transfer in human-readable units (e.g. '100' for 100 USDT)"),
         token: z.string().optional().describe("Token symbol (e.g. 'USDT', 'JST', 'SUN'). Preferred over tokenAddress."),
-        tokenAddress: z.string().optional().describe("TRC20 token contract address. Use 'token' parameter instead when possible."),
+        tokenAddress: tronAddress("TRC20 token contract address. Use 'token' parameter instead when possible.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Transfer TRC20", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -383,7 +383,7 @@ export function registerWalletTools(server: McpServer) {
           network,
         }, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

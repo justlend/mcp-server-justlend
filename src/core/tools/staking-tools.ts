@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { sanitizeError } from "./shared.js";
+import { tronAddress, amountString, toolError } from "./shared.js";
 
 export function registerStakingTools(server: McpServer) {
 
@@ -25,7 +25,7 @@ export function registerStakingTools(server: McpServer) {
         const dashboard = await services.getStrxDashboard(network);
         return { content: [{ type: "text", text: JSON.stringify(dashboard, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -37,7 +37,7 @@ export function registerStakingTools(server: McpServer) {
         "Get user's sTRX staking account info including staked amount, income, " +
         "claimable rewards, withdrawn amount, and rental energy amount.",
       inputSchema: {
-        address: z.string().optional().describe("Address to query. Default: configured wallet"),
+        address: tronAddress("Address to query. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "sTRX Account Info", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -48,7 +48,7 @@ export function registerStakingTools(server: McpServer) {
         const account = await services.getStrxStakeAccount(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(account, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -58,7 +58,7 @@ export function registerStakingTools(server: McpServer) {
     {
       description: "Get the sTRX token balance for an address.",
       inputSchema: {
-        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        address: tronAddress("Address to check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "sTRX Balance", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -76,7 +76,7 @@ export function registerStakingTools(server: McpServer) {
           }]
         };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -88,7 +88,7 @@ export function registerStakingTools(server: McpServer) {
         "Check if user has TRX available to withdraw after sTRX unstaking unbonding period. " +
         "Shows staked amount, claimable rewards, pending/completed unstake rounds, and withdrawal status.",
       inputSchema: {
-        address: z.string().optional().describe("Address to check. Default: configured wallet"),
+        address: tronAddress("Address to check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Check sTRX Withdrawal Eligibility", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -99,7 +99,7 @@ export function registerStakingTools(server: McpServer) {
         const eligibility = await services.checkWithdrawalEligibility(addr, network);
         return { content: [{ type: "text", text: JSON.stringify(eligibility, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -116,7 +116,7 @@ export function registerStakingTools(server: McpServer) {
         "sTRX earns staking rewards (vote APY + energy rental income). " +
         "Pre-checks: sufficient TRX balance for staking amount + gas.",
       inputSchema: {
-        amount: z.string().describe("Amount of TRX to stake (human-readable decimal string, e.g. '1' or '10.5')"),
+        amount: amountString("Amount of TRX to stake (human-readable decimal string, e.g. '1' or '10.5')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Stake TRX to sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -127,7 +127,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.stakeTrxToStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -140,7 +140,7 @@ export function registerStakingTools(server: McpServer) {
         "Note: unstaked TRX has an unbonding period (typically 14 days) before withdrawal. " +
         "Pre-checks: sufficient sTRX balance.",
       inputSchema: {
-        amount: z.string().regex(/^\d+(\.\d+)?$/).describe("Amount of sTRX to unstake (human-readable decimal string, e.g. '1' or '10.5')"),
+        amount: amountString("Amount of sTRX to unstake (human-readable decimal string, e.g. '1' or '10.5')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Unstake sTRX", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -151,7 +151,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.unstakeStrx(amount, network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );
@@ -173,7 +173,7 @@ export function registerStakingTools(server: McpServer) {
         const result = await services.claimStrxRewards(network);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (error: any) {
-        return { content: [{ type: "text", text: `Error: ${sanitizeError(error)}` }], isError: true };
+        return toolError(error);
       }
     },
   );

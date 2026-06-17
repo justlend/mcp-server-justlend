@@ -84,11 +84,18 @@ describe("getJustLendAddresses", () => {
     expect(addresses.comptroller).toMatch(/^T/); // TRON addresses start with T
   });
 
-  it("should include priceOracle, lens, maximillion", () => {
+  it("should include priceOracle, lens, maximillion on mainnet", () => {
     const addresses = getJustLendAddresses("mainnet");
-    expect(addresses.priceOracle).toBeDefined();
-    expect(addresses.lens).toBeDefined();
-    expect(addresses.maximillion).toBeDefined();
+    expect(addresses.priceOracle).toMatch(/^T/);
+    expect(addresses.lens).toMatch(/^T/);
+    expect(addresses.maximillion).toMatch(/^T/);
+  });
+
+  it("should treat priceOracle/lens/maximillion as optional on nile (none deployed there)", () => {
+    const addresses = getJustLendAddresses("nile");
+    expect(addresses.priceOracle).toBe(""); // dynamically resolved via comptroller.oracle()
+    expect(addresses.lens).toBeUndefined();
+    expect(addresses.maximillion).toBeUndefined();
   });
 
   it("should have jToken entries", () => {

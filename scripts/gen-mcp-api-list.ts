@@ -23,6 +23,12 @@ import { registerLendingTools } from "../src/core/tools/lending-tools.js";
 import { registerVotingTools } from "../src/core/tools/voting-tools.js";
 import { registerEnergyTools } from "../src/core/tools/energy-tools.js";
 import { registerStakingTools } from "../src/core/tools/staking-tools.js";
+import { registerMoolahVaultTools } from "../src/core/tools/moolah-vault-tools.js";
+import { registerMoolahMarketTools } from "../src/core/tools/moolah-market-tools.js";
+import { registerMoolahLiquidationTools } from "../src/core/tools/moolah-liquidation-tools.js";
+import { registerMoolahDashboardTools } from "../src/core/tools/moolah-dashboard-tools.js";
+import { registerMoolahMiningTools } from "../src/core/tools/moolah-mining-tools.js";
+import { registerRecordsTools } from "../src/core/tools/records-tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -71,6 +77,14 @@ const categories: Array<[string, (s: any) => void]> = [
   ["JST Voting / Governance", registerVotingTools],
   ["Energy Rental", registerEnergyTools],
   ["sTRX Staking", registerStakingTools],
+  // JustLend V2 (Moolah)
+  ["JustLend V2 (Moolah) — Vaults", registerMoolahVaultTools],
+  ["JustLend V2 (Moolah) — Markets", registerMoolahMarketTools],
+  ["JustLend V2 (Moolah) — Liquidation", registerMoolahLiquidationTools],
+  ["JustLend V2 (Moolah) — Dashboard & History", registerMoolahDashboardTools],
+  ["JustLend V2 (Moolah) — Mining, Rewards & Estimator", registerMoolahMiningTools],
+  // Historical records (V1 + cross-cutting)
+  ["Historical Records", registerRecordsTools],
 ];
 
 for (const [label, register] of categories) {
@@ -127,6 +141,19 @@ function describeField(zt: z.ZodTypeAny): {
       .map((c: any) => `${c.kind} ${c.value}`)
       .join(", ");
     if (bounds) type = `number (${bounds})`;
+  }
+  if (tn === "ZodString") {
+    const checks = t._def.checks ?? [];
+    const parts = checks
+      .map((c: any) => {
+        if (c.kind === "regex") return `pattern ${String(c.regex)}`;
+        if (c.kind === "min") return `min len ${c.value}`;
+        if (c.kind === "max") return `max len ${c.value}`;
+        if (c.kind === "length") return `len ${c.value}`;
+        return null;
+      })
+      .filter(Boolean);
+    if (parts.length) type = `string (${parts.join(", ")})`;
   }
   return { type, required, def, description: (description || "").replace(/\s*\n\s*/g, " ").trim() };
 }
