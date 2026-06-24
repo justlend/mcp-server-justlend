@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as services from "../services/index.js";
 import { getMoolahAddresses } from "../chains.js";
 import { TRC20_ABI } from "../abis.js";
-import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
+import { toolError, tronAddress, amountString, amountOrMaxString } from "./shared.js";
 
 /** Returns true when moolahProxy TRC20 allowance is sufficient for the given amount. */
 async function hasProxyAllowance(
@@ -113,7 +113,7 @@ export function registerMoolahMarketTools(server: McpServer) {
       inputSchema: {
         tokenAddress: tronAddress("TRC20 contract address (Base58)"),
         tokenSymbol: z.string().describe("Token symbol for display (e.g. 'USDT')"),
-        tokenDecimals: z.number().describe("Token decimals (e.g. 6 for USDT)"),
+        tokenDecimals: z.number().int().min(0).max(38).describe("Token decimals (e.g. 6 for USDT). Integer in [0, 38]."),
         amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
@@ -138,7 +138,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         "For TRX collateral, TRX is sent directly with no prior approval.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex) — from get_moolah_markets"),
-        amount: z.string().describe("Amount of collateral to supply (e.g. '10000' for 10000 TRX)"),
+        amount: amountString("Amount of collateral to supply (e.g. '10000' for 10000 TRX)"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Supply Collateral", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -162,7 +162,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         "Withdrawing too much while borrowing will revert — check health factor first.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
-        amount: z.string().describe("Amount of collateral to withdraw, or 'max' for all (requires no active borrows)"),
+        amount: amountOrMaxString("Amount of collateral to withdraw, or 'max' for all (requires no active borrows)"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Withdraw Collateral", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -188,8 +188,8 @@ export function registerMoolahMarketTools(server: McpServer) {
         "Collateral must cover the borrow at the market's LLTV or the borrow tx reverts.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex) — from get_moolah_markets"),
-        collateralAmount: z.string().optional().describe("Collateral to supply first (e.g. '10000' TRX). Omit to skip."),
-        borrowAmount: z.string().optional().describe("Loan token amount to borrow (e.g. '500' USDT). Omit to skip."),
+        collateralAmount: amountString("Collateral to supply first (e.g. '10000' TRX). Omit to skip.").optional(),
+        borrowAmount: amountString("Loan token amount to borrow (e.g. '500' USDT). Omit to skip.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Borrow", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -230,7 +230,7 @@ export function registerMoolahMarketTools(server: McpServer) {
         "For TRX loans, TRX is sent directly.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
-        amount: z.string().describe("Loan amount to repay, or 'max' for full repayment"),
+        amount: amountOrMaxString("Loan amount to repay, or 'max' for full repayment"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Repay", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },

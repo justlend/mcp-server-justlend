@@ -50,4 +50,19 @@ describe("Moolah approve guards — no silent unlimited approval", () => {
       approveLiquidatorToken({ tokenAddress: "TXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", tokenSymbol: "USDT", tokenDecimals: 6, amount: "100", network: "mainnet" }),
     ).rejects.toThrow(/Invalid TRON token address/i);
   });
+
+  // Service-layer defense in depth: even when the schema is bypassed (direct call),
+  // a non-integer / out-of-range tokenDecimals must be rejected before parseUnits
+  // scales the amount — otherwise a wrong decimals value silently inflates the approval.
+  it("approveMoolahProxy rejects non-integer tokenDecimals before scaling", async () => {
+    await expect(
+      approveMoolahProxy({ tokenAddress: VALID_TOKEN, tokenSymbol: "USDT", tokenDecimals: 2.5, amount: "100", network: "mainnet" }),
+    ).rejects.toThrow(/Invalid USDT decimals/i);
+  });
+
+  it("approveLiquidatorToken rejects out-of-range tokenDecimals before scaling", async () => {
+    await expect(
+      approveLiquidatorToken({ tokenAddress: VALID_TOKEN, tokenSymbol: "USDT", tokenDecimals: 99, amount: "100", network: "mainnet" }),
+    ).rejects.toThrow(/Invalid USDT decimals/i);
+  });
 });

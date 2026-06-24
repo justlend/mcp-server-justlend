@@ -161,12 +161,33 @@ describe("utils.parseUnits", () => {
     expect(utils.parseUnits("1.5e-3", 6)).toBe(1500n);
   });
 
-  it("accepts negative-value scientific notation", () => {
-    expect(utils.parseUnits("-2.5e3", 0)).toBe(-2500n);
-  });
-
   it("still rejects garbage strings", () => {
     expect(() => utils.parseUnits("not-a-number", 0)).toThrow(/Invalid numeric value/);
+  });
+
+  // Security regression: a leading '-' must be rejected, never returned as a negative
+  // bigint. A negative value reaching the signing path two's-complement wraps to a
+  // near-MAX_UINT256 uint256 at ABI encoding (catastrophic for approve). Mirrors the
+  // non-negative guard already enforced by toSafeCallValueNumber.
+  it("rejects a leading negative sign", () => {
+    expect(() => utils.parseUnits("-100", 6)).toThrow(/Invalid numeric value/);
+    expect(() => utils.parseUnits("-0.5", 18)).toThrow(/Invalid numeric value/);
+  });
+
+  it("rejects negative-value scientific notation (expanded then rejected)", () => {
+    expect(() => utils.parseUnits("-2.5e3", 0)).toThrow(/Invalid numeric value/);
+  });
+
+  // Security regression: silently truncating excess decimals would sign a smaller
+  // amount than the user intended. Fail loudly when discarded digits are non-zero.
+  it("rejects values with more fraction digits than the token supports", () => {
+    expect(() => utils.parseUnits("1.1234567", 6)).toThrow(/Too many decimal places/);
+    expect(() => utils.parseUnits("0.001", 2)).toThrow(/Too many decimal places/);
+  });
+
+  it("still accepts trailing-zero over-precision (no information lost)", () => {
+    expect(utils.parseUnits("1.5000000", 6)).toBe(1_500_000n);
+    expect(utils.parseUnits("100.00", 0)).toBe(100n);
   });
 });
 

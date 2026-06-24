@@ -100,14 +100,24 @@ export const utils = {
     if (/[eE]/.test(trimmed)) {
       trimmed = expandScientificNotation(trimmed);
     }
-    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    // Reject a leading '-': a negative amount is never legitimate here and would
+    // otherwise flow to the signing path as a negative bigint (two's-complement wrap
+    // to a near-MAX_UINT256 value at ABI encoding — catastrophic for approve). The
+    // regex omits the optional '-' so negatives fall into "Invalid numeric value",
+    // mirroring the non-negative guard already enforced by toSafeCallValueNumber and
+    // the v1 `amountString` tool schema.
+    if (!/^\d+(\.\d+)?$/.test(trimmed)) {
       throw new Error(`Invalid numeric value: "${value}"`);
     }
-    const negative = trimmed.startsWith("-");
-    const abs = negative ? trimmed.slice(1) : trimmed;
-    const [integer, fraction = ""] = abs.split(".");
+    const [integer, fraction = ""] = trimmed.split(".");
+    // Reject silent truncation: if the value carries more fraction digits than the
+    // token supports and any of the excess digits are non-zero, fail loudly instead
+    // of quietly signing a smaller amount than the user intended.
+    const excess = fraction.slice(decimals);
+    if (/[^0]/.test(excess)) {
+      throw new Error(`Too many decimal places in "${value}": token supports at most ${decimals} decimals`);
+    }
     const padded = fraction.slice(0, decimals).padEnd(decimals, "0");
-    const raw = BigInt(integer + padded);
-    return negative ? -raw : raw;
+    return BigInt(integer + padded);
   },
 };

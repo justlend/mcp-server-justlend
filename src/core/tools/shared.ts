@@ -8,6 +8,7 @@ import { z } from "zod";
 export const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 const DECIMAL_AMOUNT_RE = /^\d+(\.\d+)?$/;
 const DECIMAL_OR_MAX_RE = /^(\d+(\.\d+)?|max)$/;
+const RAW_UNITS_RE = /^\d+$/;
 
 /**
  * Reusable Zod schema builders so every tool input that takes a TRON address
@@ -32,6 +33,19 @@ export const amountOrMaxString = (description: string) =>
   z
     .string()
     .regex(DECIMAL_OR_MAX_RE, "Must be a non-negative decimal string (e.g. '100') or 'max'")
+    .describe(description);
+
+/**
+ * Non-negative integer string in raw (smallest) units — no decimal point, no sign.
+ * For parameters that are already in raw on-chain units (e.g. Moolah liquidation
+ * `seizedAssets` / `repaidShares`, which are passed straight to `BigInt(...)`).
+ * Rejects a leading '-' at the tool boundary so a negative bigint can never reach
+ * ABI encoding (two's-complement wrap to a huge uint256).
+ */
+export const rawUnitsString = (description: string) =>
+  z
+    .string()
+    .regex(RAW_UNITS_RE, "Must be a non-negative integer string in raw units, e.g. '1000000'")
     .describe(description);
 
 /**

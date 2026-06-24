@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
+import { toolError, tronAddress, amountOrMaxString, rawUnitsString } from "./shared.js";
 
 export function registerMoolahLiquidationTools(server: McpServer) {
 
@@ -47,8 +47,8 @@ export function registerMoolahLiquidationTools(server: McpServer) {
         "Returns the exact loan token amount needed. Use this before calling moolah_liquidate.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
-        seizedAssets: z.string().optional().describe("Collateral amount to seize (raw units). Provide this OR repaidShares."),
-        repaidShares: z.string().optional().describe("Borrow shares to repay (raw units). Provide this OR seizedAssets."),
+        seizedAssets: rawUnitsString("Collateral amount to seize (raw units). Provide this OR repaidShares.").optional(),
+        repaidShares: rawUnitsString("Borrow shares to repay (raw units). Provide this OR seizedAssets.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Get Liquidation Quote", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -120,8 +120,8 @@ export function registerMoolahLiquidationTools(server: McpServer) {
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
         borrower: tronAddress("Address of the borrower to liquidate (Base58)"),
-        seizedAssets: z.string().optional().describe("Collateral units to seize (raw). Provide this OR repaidShares."),
-        repaidShares: z.string().optional().describe("Borrow shares to repay (raw). Provide this OR seizedAssets."),
+        seizedAssets: rawUnitsString("Collateral units to seize (raw). Provide this OR repaidShares.").optional(),
+        repaidShares: rawUnitsString("Borrow shares to repay (raw). Provide this OR seizedAssets.").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Liquidate", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -147,7 +147,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
       inputSchema: {
         tokenAddress: tronAddress("Loan token contract address (Base58)"),
         tokenSymbol: z.string().describe("Token symbol for display (e.g. 'USDT')"),
-        tokenDecimals: z.number().describe("Token decimals (e.g. 6 for USDT)"),
+        tokenDecimals: z.number().int().min(0).max(38).describe("Token decimals (e.g. 6 for USDT). Integer in [0, 38]."),
         amount: amountOrMaxString("Exact amount to approve (e.g. '100'), or 'max' for unlimited (NOT recommended; user must opt in)."),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
