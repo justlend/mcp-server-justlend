@@ -2,6 +2,23 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [1.1.1] — 2026-06-26
+
+**Theme**: New `jU` (U) V1 jToken market + dependency/security hardening + tooling-doc consistency.
+
+### Added — jU market
+
+- Registered the new **`jU`** mainnet jToken in `src/core/chains.ts`:
+  - jToken delegator `TMz7vmyqoq4WKDiztrZpjAZPnzE9XgXaK4`
+  - underlying **U** `TFNirp6PbqYE1ZTtWuCMUKJWLNZkoCoeFJ`, 18 underlying decimals (jToken decimals 8)
+  - Source of truth: `GET https://openapi.just.network/lend/jtoken` (symbol `jU` / underlyingSymbol `U`).
+- All market, account, and balance tools now surface `jU` automatically via `getJTokenInfo` / `getAllJTokens`. This brings the mainnet roster to **18 active + 6 legacy = 24 jToken markets**.
+
+### Fixed
+
+- npm audit advisories cleared and Moolah V2 amount/decimals validation hardened (folded in from the closed PR #23 audit branch).
+- README directory-tree comment tool count `90 → 96` to match the actual tool registry (`server.tool` registrations, `mcp-api-list.md`, and the docs all agree on 96).
+
 ## [1.1.0] — 2026-06-16
 
 **Theme**: JustLend V2 (Moolah) protocol support + historical records + gas estimation, plus AI-agent ergonomics (structured self-healing errors, self-describing amounts, hardened input schemas).
