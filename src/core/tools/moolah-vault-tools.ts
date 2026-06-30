@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as services from "../services/index.js";
 import { getMoolahVaultInfo } from "../chains.js";
 import { TRC20_ABI } from "../abis.js";
-import { toolError, tronAddress, amountOrMaxString } from "./shared.js";
+import { toolError, tronAddress, amountString, amountOrMaxString } from "./shared.js";
 
 /** Returns true when the vault's TRC20 allowance is already sufficient. */
 async function hasVaultAllowance(
@@ -124,7 +124,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         "Returns vault shares representing your deposit.",
       inputSchema: {
         vaultSymbol: z.string().describe("Vault symbol: 'TRX', 'USDT', or 'USDD'"),
-        amount: z.string().describe("Amount of underlying to deposit (e.g. '1000' for 1000 USDT)"),
+        amount: amountString("Amount of underlying to deposit (e.g. '1000' for 1000 USDT)"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Vault Deposit", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -162,7 +162,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         "Use amount='max' to withdraw everything. No approval needed.",
       inputSchema: {
         vaultSymbol: z.string().describe("Vault symbol: 'TRX', 'USDT', or 'USDD'"),
-        amount: z.string().describe("Amount of underlying to withdraw, or 'max' for full withdrawal"),
+        amount: amountOrMaxString("Amount of underlying to withdraw, or 'max' for full withdrawal"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Vault Withdraw", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -185,7 +185,7 @@ export function registerMoolahVaultTools(server: McpServer) {
         "Use shares='max' to redeem all shares. No approval needed.",
       inputSchema: {
         vaultSymbol: z.string().describe("Vault symbol: 'TRX', 'USDT', or 'USDD'"),
-        shares: z.string().describe("Number of shares to redeem, or 'max' for all shares"),
+        shares: amountOrMaxString("Number of shares to redeem, or 'max' for all shares"),
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
       annotations: { title: "Moolah Vault Redeem", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },

@@ -30,12 +30,19 @@ export async function approveLiquidatorToken(params: {
       `(e.g. amount='100'), or pass amount='max' to grant unlimited allowance (NOT recommended — see warning).`,
     );
   }
+  const isMax = amount.toLowerCase() === "max";
+  // Don't trust caller-supplied decimals: validate before scaling (and before any
+  // network round-trip) so a wrong value — e.g. an LLM defaulting to 18 for a
+  // 6-decimal token — can't silently inflate the approval by orders of magnitude.
+  // In the max branch decimals are unused, so validation is skipped there.
+  if (!isMax) {
+    utils.assertValidDecimals(tokenDecimals, tokenSymbol);
+  }
   const { publicLiquidatorProxy } = getMoolahAddresses(network);
   const tronWeb = await getSigningClient(network);
   const walletAddress = tronWeb.defaultAddress.base58 as string;
   const token = tronWeb.contract(TRC20_ABI, tokenAddress);
 
-  const isMax = amount.toLowerCase() === "max";
   const approveRaw = isMax ? MAX_UINT256 : utils.parseUnits(amount, tokenDecimals).toString();
 
   const currentAllowance = BigInt(await token.methods.allowance(walletAddress, publicLiquidatorProxy).call());

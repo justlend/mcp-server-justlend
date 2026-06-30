@@ -513,7 +513,7 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
-│   │   ├── tools/             # MCP tool registrations (90 tools)
+│   │   ├── tools/             # MCP tool registrations (96 tools)
 │   │   │   ├── index.ts                      # Barrel: registers all 10 tool modules
 │   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining

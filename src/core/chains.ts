@@ -336,6 +336,14 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
+      jU: {
+        address: "TMz7vmyqoq4WKDiztrZpjAZPnzE9XgXaK4",
+        underlying: "TFNirp6PbqYE1ZTtWuCMUKJWLNZkoCoeFJ",
+        symbol: "jU",
+        underlyingSymbol: "U",
+        decimals: 8,
+        underlyingDecimals: 18,
+      },
     },
     moolah: {
       moolahProxy:           "TDH4dhmVQQNc1ZNudJwWzBcs2h6ahhWrpp",

@@ -1,6 +1,6 @@
 {
   "name": "@justlend/mcp-server-justlend",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP server for JustLend V1 DAO on TRON blockchain. Supports supply, borrow, repay, withdraw, market data, mining rewards (USDD/WBTC), API integration, general TRON chain utilities, and AI-guided DeFi prompts.",
   "type": "module",
   "module": "src/index.ts",
@@ -53,7 +53,10 @@
     "hono": "4.12.25",
     "postcss": "8.5.14",
     "qs": "6.15.2",
-    "ws": "8.20.1"
+    "ws": "8.21.0",
+    "form-data": "4.0.6",
+    "vite": "8.0.16",
+    "esbuild": "0.28.1"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -1130,3 +1130,72 @@ describe("Network Parameter Forwarding", () => {
     expect(services.getProtocolSummary).toHaveBeenCalledWith("mainnet");
   });
 });
+
+// ============================================================================
+// Moolah V2 write-tool amount-schema guards (negative / over-precision rejection)
+// ============================================================================
+
+describe("Moolah V2 write tools reject negative amounts at the schema boundary", () => {
+  /** Pull a single input field's zod schema off a registered tool's config. */
+  function fieldSchema(toolName: string, field: string): any {
+    const tool = registeredTools.get(toolName);
+    if (!tool) throw new Error(`Tool "${toolName}" not registered`);
+    const schema = tool.config?.inputSchema?.[field];
+    if (!schema) throw new Error(`Tool "${toolName}" has no input field "${field}"`);
+    return schema;
+  }
+
+  // (toolName, field) pairs whose amount must reject a leading '-'.
+  const amountFields: Array<[string, string]> = [
+    ["moolah_vault_deposit", "amount"],
+    ["moolah_vault_withdraw", "amount"],
+    ["moolah_vault_redeem", "shares"],
+    ["moolah_supply_collateral", "amount"],
+    ["moolah_withdraw_collateral", "amount"],
+    ["moolah_borrow", "collateralAmount"],
+    ["moolah_borrow", "borrowAmount"],
+    ["moolah_repay", "amount"],
+    ["moolah_liquidate", "seizedAssets"],
+    ["moolah_liquidate", "repaidShares"],
+    ["get_moolah_liquidation_quote", "seizedAssets"],
+    ["get_moolah_liquidation_quote", "repaidShares"],
+  ];
+
+  it.each(amountFields)("%s.%s rejects a negative value", (toolName, field) => {
+    expect(fieldSchema(toolName, field).safeParse("-100").success).toBe(false);
+  });
+
+  it.each(amountFields)("%s.%s accepts a valid positive value", (toolName, field) => {
+    expect(fieldSchema(toolName, field).safeParse("100").success).toBe(true);
+  });
+
+  // 'max'-capable fields must still accept the sentinel; raw-units fields must not.
+  it("max-capable fields accept 'max'", () => {
+    for (const [toolName, field] of [
+      ["moolah_vault_withdraw", "amount"],
+      ["moolah_vault_redeem", "shares"],
+      ["moolah_withdraw_collateral", "amount"],
+      ["moolah_repay", "amount"],
+    ] as Array<[string, string]>) {
+      expect(fieldSchema(toolName, field).safeParse("max").success).toBe(true);
+    }
+  });
+
+  it("raw-units liquidation fields reject decimals and 'max'", () => {
+    const s = fieldSchema("moolah_liquidate", "seizedAssets");
+    expect(s.safeParse("1.5").success).toBe(false);
+    expect(s.safeParse("max").success).toBe(false);
+    expect(s.safeParse("1000000").success).toBe(true);
+  });
+
+  // tokenDecimals on the approve tools must be a bounded integer.
+  it("approve-tool tokenDecimals rejects out-of-range / non-integer values", () => {
+    for (const toolName of ["approve_moolah_proxy", "approve_liquidator_token"]) {
+      const s = fieldSchema(toolName, "tokenDecimals");
+      expect(s.safeParse(6).success).toBe(true);
+      expect(s.safeParse(2.5).success).toBe(false);
+      expect(s.safeParse(-5).success).toBe(false);
+      expect(s.safeParse(39).success).toBe(false);
+    }
+  });
+});
