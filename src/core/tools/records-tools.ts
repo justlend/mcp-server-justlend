@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { toolError, tronAddress } from "./shared.js";
+import { toolError, tronAddress, rawUnitsString } from "./shared.js";
 
 /**
  * Historical transaction records (paginated REST).
@@ -166,7 +166,7 @@ export function registerRecordsTools(server: McpServer) {
         key:          z.string().optional().describe("Round key from get_claimable_rewards (preferred)"),
         merkleIndex:  z.union([z.string(), z.number()]).optional().describe("Override: merkle tree index"),
         index:        z.union([z.string(), z.number()]).optional().describe("Override: leaf index inside the tree"),
-        amount:       z.union([z.string(), z.number(), z.array(z.union([z.string(), z.number()]))]).optional().describe("Override: token amount(s) in raw units; pass an array for multi-token leaves"),
+        amount:       z.union([rawUnitsString("Raw-unit amount"), z.array(rawUnitsString("Raw-unit amount"))]).optional().describe("Override: token amount(s) in raw units (integer strings); pass an array for multi-token leaves"),
         proof:        z.array(z.string()).optional().describe("Override: merkle proof (bytes32[])"),
         tokenAddress: z.union([z.string(), z.array(z.string())]).optional().describe("Override: token address(es) used for routing when the entry is single-token"),
         tokenSymbol:  z.union([z.string(), z.array(z.string())]).optional().describe("Override: token symbol(s); useful when tokenAddress is missing"),

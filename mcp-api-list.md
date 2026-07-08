@@ -1136,7 +1136,7 @@
 | `periodKey` | string | — |  | Round key from get_moolah_pending_mining_periods (preferred) |
 | `merkleIndex` | union | — |  | Override: merkle tree index |
 | `index` | union | — |  | Override: leaf index inside the tree |
-| `amounts` | union[] | — |  | Override: token amounts in raw units, slot-aligned with the tree's tokenAddress[] |
+| `amounts` | string[] | — |  | Override: token amounts in raw units (integer strings), slot-aligned with the tree's tokenAddress[] |
 | `proof` | string[] | — |  | Override: merkle proof (bytes32[]) |
 | `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet |
 | `network` | string | — |  | Network. Default: mainnet |
@@ -1223,7 +1223,7 @@
 | `key` | string | — |  | Round key from get_claimable_rewards (preferred) |
 | `merkleIndex` | union | — |  | Override: merkle tree index |
 | `index` | union | — |  | Override: leaf index inside the tree |
-| `amount` | union | — |  | Override: token amount(s) in raw units; pass an array for multi-token leaves |
+| `amount` | union | — |  | Override: token amount(s) in raw units (integer strings); pass an array for multi-token leaves |
 | `proof` | string[] | — |  | Override: merkle proof (bytes32[]) |
 | `tokenAddress` | union | — |  | Override: token address(es) used for routing when the entry is single-token |
 | `tokenSymbol` | union | — |  | Override: token symbol(s); useful when tokenAddress is missing |
