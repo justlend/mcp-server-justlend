@@ -73,52 +73,66 @@ export function sanitizeError(error: any): string {
  * field so an agent can act without parsing prose. Returns `{}` when nothing
  * matches (the raw `error` text is still returned by `toolError`).
  */
-export function classifyError(message: string): { errorCode?: string; hint?: string } {
+export function classifyError(message: string): { errorCode?: string; hint?: string; retryable?: boolean } {
   const m = message.toLowerCase();
   if (/allowance/.test(m) && /approve/.test(m))
     return {
       errorCode: "insufficient_allowance",
+      retryable: false,
       hint: "Raise the allowance first (e.g. approve_underlying for lending, or approve_for_votes for governance), then retry.",
     };
   if (/insufficient/.test(m) && /balance/.test(m))
     return {
       errorCode: "insufficient_balance",
+      retryable: false,
       hint: "Lower the amount or fund the wallet; confirm the spendable balance with get_trx_balance / get_token_balance first.",
     };
   if (/no (active )?wallet|wallet (is )?not (configured|initialized|connected)|no wallet configured/.test(m))
     return {
       errorCode: "wallet_not_configured",
+      retryable: false,
       hint: "Configure a wallet first: import_wallet (agent mode) or connect_wallet (browser mode), then set_active_wallet.",
     };
   if (/revert|execution reverted|reverted/.test(m))
     return {
       errorCode: "execution_reverted",
+      retryable: false,
       hint: "The contract reverted. Check pre-conditions (allowance, collateral/health, market paused) and simulate the operation before broadcasting.",
     };
   if (/not found|unknown market|unsupported market|no such market|invalid market/.test(m))
     return {
       errorCode: "market_not_found",
+      retryable: false,
       hint: "Verify the market symbol or address against get_supported_markets.",
     };
   if (/invalid address|not a valid.*address|bad address/.test(m))
     return {
       errorCode: "invalid_address",
+      retryable: false,
       hint: "Use a Base58 TRON address (starts with 'T', 34 chars).",
+    };
+  if (/timeout|timed out|econnreset|econnrefused|etimedout|fetch failed|network error|socket hang up|rate.?limit|too many requests|server busy|\b50[23]\b|\b429\b/.test(m))
+    return {
+      errorCode: "transient",
+      retryable: true,
+      hint: "Transient network/RPC error — retry read-only calls after a short backoff. Never blindly re-broadcast a write that may already have landed; re-query state first.",
     };
   return {};
 }
 
 /**
  * Build a structured, agent-friendly error result. Emits JSON text with
- * `error` plus, when recognized, a machine-readable `errorCode` and an
- * actionable `hint` — so an agent can self-heal instead of parsing the
- * message. `isError: true` is preserved for MCP clients.
+ * `error` plus, when recognized, a machine-readable `errorCode`, a boolean
+ * `retryable` (whether the agent may safely retry), and an actionable `hint` —
+ * so an agent can self-heal / branch without parsing prose. `isError: true` is
+ * preserved for MCP clients.
  */
 export function toolError(error: any) {
   const message = sanitizeError(error);
-  const { errorCode, hint } = classifyError(message);
-  const payload: { error: string; errorCode?: string; hint?: string } = { error: message };
+  const { errorCode, hint, retryable } = classifyError(message);
+  const payload: { error: string; errorCode?: string; retryable?: boolean; hint?: string } = { error: message };
   if (errorCode) payload.errorCode = errorCode;
+  if (retryable !== undefined) payload.retryable = retryable;
   if (hint) payload.hint = hint;
   return { content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }], isError: true };
 }

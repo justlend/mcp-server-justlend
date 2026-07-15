@@ -15,7 +15,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 [JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.0 — supports both JustLend V1 and JustLend V2 (Moolah)**
+**📌 Current Version: v1.1.2 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
@@ -336,174 +336,28 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 > **Machine-readable tool catalog for AI agents:** [`mcp-api-list.md`](./mcp-api-list.md) — a complete, offline-loadable list of every tool with its input schema (parameter / type / required / default), MCP side-effect annotations (read-only vs. on-chain write / destructive) and HITL guidance. It is **generated from source** (`npm run gen:api-list`, see [`scripts/gen-mcp-api-list.ts`](./scripts/gen-mcp-api-list.ts)) so it never drifts from the actual tool definitions. Agents can load it to plan tool routing without connecting to the server.
 
-### Tools (96 total)
+### Tools (98 total)
 
-Numbers by category: V1 base 59 · JustLend V2 (Moolah) 30 · historical records 7. See [`mcp-api-list.md`](./mcp-api-list.md) (generated from source) for the authoritative per-tool catalog.
+The full, authoritative per-tool catalog — every tool's input schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
 
-#### Wallet & Network
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_wallet_address` | Show wallet address or first-use wallet selection guidance | No |
-| `connect_browser_wallet` | Connect TronLink / browser wallet for signing | Yes |
-| `set_wallet_mode` | Switch between `browser` and `agent` signing | Yes |
-| `get_wallet_mode` | Show current signing mode and addresses | No |
-| `list_wallets` | List all wallets (IDs, types, addresses) | No |
-| `set_active_wallet` | Switch active wallet by wallet ID | No |
-| `get_supported_networks` | List available networks | No |
-| `get_supported_markets` | List all jToken markets with addresses | No |
-| `set_network` | Set global default network (mainnet, nile) | Yes |
-| `get_network` | Get current global default network | No |
+| Category | Tools | Covers |
+|----------|------:|--------|
+| Wallet & Network | 10 | wallet selection, signing mode (browser/agent), active wallet, network |
+| Market Data | 13 | per-market & protocol APY/TVL/rates (contract query + API fallback) |
+| Lending Operations | 10 | supply / borrow / repay / withdraw / collateral / approve (V1 jTokens) |
+| JST Voting / Governance | 10 | proposals, vote status, WJST approve / vote / withdraw |
+| Energy Rental | 9 | rental dashboard, price estimate, rent / return energy |
+| sTRX Staking | 7 | sTRX dashboard & account, stake / unstake / claim / withdraw |
+| WTRX Wrap / Unwrap | 2 | `wrap_trx` (TRX→WTRX 1:1) / `unwrap_trx` (WTRX→TRX 1:1) |
+| JustLend V2 (Moolah) — Vaults | 6 | ERC4626 vault read + deposit / withdraw / redeem / approve |
+| JustLend V2 (Moolah) — Markets | 8 | isolated markets: supply-collateral / borrow / repay / approve |
+| JustLend V2 (Moolah) — Liquidation | 5 | pending liquidations, quote, liquidate, approve |
+| JustLend V2 (Moolah) — Dashboard & History | 6 | portfolio, positions, dashboard & history |
+| JustLend V2 (Moolah) — Mining, Rewards & Estimator | 5 | mining APY / accrual, claim, gas estimate |
+| Historical Records (V1 + airdrop) — mainnet-only | 7 | transaction / vote / reward history, claimable airdrops |
 
-#### Market Data
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_market_data` | Detailed data for one market (APY, TVL, rates) — contract + API fallback | No |
-| `get_all_markets` | Overview of all markets — contract + API fallback | No |
-| `get_protocol_summary` | Comptroller config & protocol parameters — contract query | No |
+Every write / destructive tool is marked `destructiveHint: true` and must be gated behind host-side human confirmation (HITL); see [`mcp-api-list.md`](./mcp-api-list.md) for the exact per-tool side-effect class.
 
-#### Account & Balances
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_account_summary` | Full position: supplies, borrows, health factor — Multicall3 batch | No |
-| `check_allowance` | Check TRC20 approval for jToken | No |
-| `get_trx_balance` | TRX balance | No |
-| `get_token_balance` | TRC20 token balance | No |
-| `get_wallet_balances` | Batch-fetch TRC20 balances across multiple markets via Multicall3 | No |
-
-#### Lending Operations
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `supply` | Deposit assets to earn interest | **Yes** |
-| `withdraw` | Withdraw supplied assets | **Yes** |
-| `withdraw_all` | Withdraw all from a market | **Yes** |
-| `borrow` | Borrow against collateral | **Yes** |
-| `repay` | Repay outstanding borrows | **Yes** |
-| `enter_market` | Enable market as collateral | **Yes** |
-| `exit_market` | Disable market as collateral | **Yes** |
-| `approve_underlying` | Approve TRC20 for jToken | **Yes** |
-| `claim_rewards` | Claim mining rewards | **Yes** |
-| `estimate_lending_energy` | Estimate energy/bandwidth/TRX cost for any lending operation | No |
-
-#### Mining & Rewards
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_mining_rewards` | Unclaimed mining rewards, APY, and reward breakdown | No |
-| `get_usdd_mining_config` | USDD mining periods, reward tokens, and schedule | No |
-| `get_wbtc_mining_config` | WBTC supply mining configuration and activity details | No |
-
-#### JST Voting / Governance
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_proposal_list` | List all governance proposals with status and vote counts | No |
-| `get_user_vote_status` | User's voting history: voted proposals, withdrawable votes | No |
-| `get_vote_info` | Voting power: JST balance, available votes, locked votes | No |
-| `get_locked_votes` | Votes locked in a specific proposal | No |
-| `check_jst_allowance_for_voting` | Check JST approval for WJST voting contract | No |
-| `approve_jst_for_voting` | Approve JST for the WJST voting contract | **Yes** |
-| `deposit_jst_for_votes` | Deposit JST to get voting power (1 JST = 1 Vote) | **Yes** |
-| `withdraw_votes_to_jst` | Withdraw WJST back to JST | **Yes** |
-| `cast_vote` | Cast for/against votes on a proposal | **Yes** |
-| `withdraw_votes_from_proposal` | Reclaim votes from completed proposals | **Yes** |
-
-#### Energy Rental
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_energy_rental_dashboard` | Market data: TRX price, exchange rate, APY, energy per TRX | No |
-| `get_energy_rental_params` | On-chain params: fees, limits, pause status, usage charge ratio | No |
-| `calculate_energy_rental_price` | Estimate cost for renting energy (prepayment, deposit, daily cost) | No |
-| `get_energy_rental_rate` | Current rental rate for a given TRX amount | No |
-| `get_user_energy_rental_orders` | User's rental orders (as renter, receiver, or all) | No |
-| `get_energy_rent_info` | On-chain rental info for a renter-receiver pair | No |
-| `get_return_rental_info` | Return/cancel estimation (refund, remaining rent, daily cost) | No |
-| `rent_energy` | Rent energy for a receiver (with balance, pause, limit checks) | **Yes** |
-| `return_energy_rental` | Cancel an active rental (with active order check) | **Yes** |
-
-#### sTRX Staking
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_strx_dashboard` | Staking market data: exchange rate, APY, total supply | No |
-| `get_strx_account` | User staking account: staked amount, income, rewards | No |
-| `get_strx_balance` | sTRX token balance for an address | No |
-| `check_strx_withdrawal_eligibility` | Check unbonding status, pending/completed withdrawal rounds | No |
-| `stake_trx_to_strx` | Stake TRX to receive sTRX with precision-safe string amount parsing (with balance check) | **Yes** |
-| `unstake_strx` | Unstake sTRX to receive TRX back (with balance check) | **Yes** |
-| `claim_strx_rewards` | Claim all staking rewards (with rewards existence check) | **Yes** |
-
-#### Transfers
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `transfer_trx` | Transfer TRX to another address (with balance check) | **Yes** |
-| `transfer_trc20` | Transfer TRC20 tokens by symbol or contract address; validates token and recipient addresses before signing | **Yes** |
-
-#### JustLend V2 (Moolah) — Vaults
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_moolah_vaults` | List all Moolah vaults with APY / TVL | No |
-| `get_moolah_vault` | Single vault details + allocation + user position (if address provided) | No |
-| `approve_moolah_vault` | Approve underlying TRC20 for a vault (not needed for TRX vault) | **Yes** |
-| `moolah_vault_deposit` | Deposit into an ERC4626 vault | **Yes** |
-| `moolah_vault_withdraw` | Withdraw by underlying amount; `"max"` supported | **Yes** |
-| `moolah_vault_redeem` | Redeem by share amount; `"max"` supported | **Yes** |
-
-#### JustLend V2 (Moolah) — Markets
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_moolah_markets` | List all Moolah markets with borrow/supply APY, LLTV, liquidity | No |
-| `get_moolah_market` | Single market details + supplying vaults | No |
-| `get_moolah_user_position` | User position in a market: collateral, borrow, `risk` (0–1 ratio) | No |
-| `approve_moolah_proxy` | Approve TRC20 for MoolahProxy (collateral or loan token) | **Yes** |
-| `moolah_supply_collateral` | Supply collateral to a market (TRX → TrxProviderProxy; TRC20 → MoolahProxy) | **Yes** |
-| `moolah_withdraw_collateral` | Withdraw collateral; `"max"` supported (only when no active borrows) | **Yes** |
-| `moolah_borrow` | Borrow; accepts `collateralAmount` only, `borrowAmount` only, or both (composite) | **Yes** |
-| `moolah_repay` | Repay by amount; `"max"` uses shares path for exact settlement | **Yes** |
-
-#### JustLend V2 (Moolah) — Liquidation
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_moolah_pending_liquidations` | List positions eligible for liquidation (filter by risk / debt / collateral) | No |
-| `get_moolah_liquidation_quote` | Quote loan-token required for a target seizedAssets OR repaidShares | No |
-| `get_moolah_liquidation_records` | Historical V2 liquidations | No |
-| `approve_liquidator_token` | Approve loan token for PublicLiquidatorProxy | **Yes** |
-| `moolah_liquidate` | Execute a liquidation (seizedAssets OR repaidShares, not both) | **Yes** |
-
-#### JustLend V2 (Moolah) — Dashboard, History & Estimation
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_moolah_dashboard` | Aggregated V2 position (vaults + markets + totals) for a user | No |
-| `get_moolah_history` | V2 position curves + recent transactions for a user | No |
-| `get_moolah_records` | Paginated V2 transaction records | No |
-| `get_moolah_vault_history` | Time series of a vault's APY / TVL / mining APY | No |
-| `get_moolah_market_history` | Time series of a market's borrow/supply APY + utilization | No |
-| `estimate_moolah_energy` | Typical energy / bandwidth / TRX cost for any Moolah write op (TRX vs TRC20 routes) | No |
-
-#### Historical Records (V1 + airdrop) — mainnet-only
-| Tool | Description | Write? |
-|------|-------------|--------|
-| `get_lending_records` | V1 supply / withdraw / borrow / repay / collateral history | No |
-| `get_strx_records` | sTRX stake / unstake / withdraw history | No |
-| `get_vote_records` | Governance voting history (distinct from real-time `get_user_vote_status`) | No |
-| `get_energy_rental_records` | Energy rental action history (distinct from on-chain `get_user_energy_rental_orders`) | No |
-| `get_liquidation_records` | V1 liquidation history (distinct from V2 `get_moolah_liquidation_records`) | No |
-| `get_claimable_rewards` | Scan all JustLend merkle airdrop distributors for unclaimed rewards (read-only) | No |
-
-### Prompts (AI-Guided Workflows)
-
-| Prompt | Description |
-|--------|-------------|
-| `getting_started` | First-time onboarding: wallet setup, connection, feature tour |
-| `supply_assets` | Step-by-step V1 supply with balance checks and approval |
-| `borrow_assets` | Safe V1 borrowing with risk assessment and health factor checks |
-| `repay_borrow` | Guided V1 repayment with verification |
-| `analyze_portfolio` | Comprehensive portfolio analysis with risk scoring |
-| `compare_markets` | Find best supply/borrow opportunities |
-| `rent_energy` | Guided energy rental with price estimation and balance checks |
-| `stake_trx` | Guided TRX staking to sTRX with APY info and verification |
-| `query_proposals` | Browse and query governance proposals, check voting requirements |
-| `cast_vote` | Guided governance voting with vote verification |
-| `moolah_supply` | **(V2)** Deposit into a Moolah ERC4626 vault with approval flow and APY comparison |
-| `moolah_borrow` | **(V2)** Isolated-market borrow workflow with the `risk` threshold table |
-| `moolah_liquidate` | **(V2)** Find and execute public liquidations; loan-token requirement + approval steps |
-| `moolah_portfolio` | **(V2)** Full V2 portfolio overview with per-market risk assessment |
 
 ## Architecture
 
