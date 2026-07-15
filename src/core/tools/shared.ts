@@ -105,13 +105,13 @@ export function classifyError(message: string): { errorCode?: string; hint?: str
       retryable: false,
       hint: "Verify the market symbol or address against get_supported_markets.",
     };
-  if (/invalid address|not a valid.*address|bad address/.test(m))
+  if (/invalid\b.{0,24}\baddress|not a valid.*address|bad address/.test(m))
     return {
       errorCode: "invalid_address",
       retryable: false,
       hint: "Use a Base58 TRON address (starts with 'T', 34 chars).",
     };
-  if (/timeout|timed out|econnreset|econnrefused|etimedout|fetch failed|network error|socket hang up|rate.?limit|too many requests|server busy|\b50[23]\b|\b429\b/.test(m))
+  if (/timeout|timed out|econnreset|econnrefused|etimedout|fetch failed|network error|socket hang up|rate.?limit|too many requests|server[ _]?busy|\b50[23]\b|\b429\b/.test(m))
     return {
       errorCode: "transient",
       retryable: true,
