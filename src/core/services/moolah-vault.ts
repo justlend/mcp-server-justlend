@@ -4,6 +4,7 @@
  */
 import { getSigningClient } from "./wallet.js";
 import { safeSend } from "./contracts.js";
+import { approveWithReset } from "./allowance.js";
 import { getMoolahAddresses, getMoolahVaultInfo } from "../chains.js";
 import { TRC20_ABI, MOOLAH_VAULT_ABI, TRX_PROVIDER_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -201,22 +202,27 @@ export async function approveMoolahVault(params: {
   const approveRaw = isMax ? MAX_UINT256 : utils.parseUnits(amount, vault.underlyingDecimals).toString();
 
   const currentAllowance = BigInt(await token.methods.allowance(walletAddress, vault.address).call());
-  if (!isMax && currentAllowance >= BigInt(approveRaw)) {
+  // A revoke (amount='0') must not be swallowed by the sufficient-allowance skip.
+  if (!isMax && BigInt(approveRaw) > 0n && currentAllowance >= BigInt(approveRaw)) {
     return { txID: "", message: `${vault.underlyingSymbol} already has sufficient allowance for ${vaultSymbol} vault.` };
   }
 
-  const { txID } = await safeSend(
-    {
-      address: vault.underlying,
-      abi: TRC20_ABI,
-      functionName: "approve",
-      args: [vault.address, approveRaw],
-    },
+  const { txID, resetTxID } = await approveWithReset({
+    tokenAddress: vault.underlying,
+    spender: vault.address,
+    approveRaw,
+    currentAllowance,
+    symbol: vault.underlyingSymbol,
     network,
-  );
+  });
+  const action = BigInt(approveRaw) === 0n
+    ? `Revoked ${vault.underlyingSymbol} allowance for ${vaultSymbol} vault`
+    : `Approved ${isMax ? "unlimited" : amount} ${vault.underlyingSymbol} for ${vaultSymbol} vault`;
   const result: { txID: string; message: string; warning?: string } = {
     txID,
-    message: `Approved ${isMax ? "unlimited" : amount} ${vault.underlyingSymbol} for ${vaultSymbol} vault. TX: ${txID}`,
+    message: resetTxID
+      ? `${action} (existing allowance reset to 0 first — reset TX: ${resetTxID}). TX: ${txID}`
+      : `${action}. TX: ${txID}`,
   };
   if (isMax) {
     result.warning =

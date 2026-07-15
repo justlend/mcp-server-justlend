@@ -31,6 +31,7 @@ export * from "./tokens.js";
 export * from "./transactions.js";
 export * from "./transfer.js";
 export * from "./wtrx.js";
+export * from "./allowance.js";
 export * from "./utils.js";
 export * from "./global.js";
 export * from "./cache.js";
