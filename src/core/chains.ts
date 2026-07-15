@@ -399,7 +399,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
     energyRateModel: "TFHzFfBCS8hWV19v1psMZPg4TcWNc1W5LB",
     jTokens: {
       // ====================================================================
-      // 活跃市场 (isValid=1, mintPaused=0)
+      // Active markets (isValid=1, mintPaused=0)
       // ====================================================================
       jTRX: {
         address: "TKM7w4qFmkXQLEF2MgrQroBYpd5TY7i1pq",
@@ -411,7 +411,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       },
       jUSDT: {
         address: "TT6Qk1qrBM4MgyskYZx5pjeJjvv3fdL2ih",
-        underlying: "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",  // 🔧 修复：原为 TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf
+        underlying: "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",
         symbol: "jUSDT",
         underlyingSymbol: "USDT",
         decimals: 8,
@@ -425,7 +425,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jwstUSDT: {                                            // 🆕 新增市场
+      jwstUSDT: {                                            // added market
         address: "TLxZWG4C9AmTjw5KTF24pDwD8DBt6o7gpP",
         underlying: "TQuaRvcTVquWNKWGiA4zVgcy1ChXNX7p54",
         symbol: "jwstUSDT",
@@ -443,7 +443,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       },
       jSUN: {
         address: "TYf16sZLR9uXpm63bXsRCNQMQFvqqvXQ2t",
-        underlying: "TESJCkrX1rrNgJNb69b4vUJzSNBn1B8iZC",  // 🔧 修复：原为 TDqjTkZ63yHB19w2n7vPm2qAkLHwn9fKKk
+        underlying: "TESJCkrX1rrNgJNb69b4vUJzSNBn1B8iZC",
         symbol: "jSUN",
         underlyingSymbol: "SUN",
         decimals: 8,
@@ -451,7 +451,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       },
       jBTT: {
         address: "TPovsintcLMh9udvXgt45jvb1RYQ86imnL",
-        underlying: "TBagxx57zx73VJJ61o12VfxzQ2EG3KHYJp",  // 🔧 修复：原为 TVSvjZdyDSNocHm7dP3jvCmMNsCnMTPa5W
+        underlying: "TBagxx57zx73VJJ61o12VfxzQ2EG3KHYJp",
         symbol: "jBTT",
         underlyingSymbol: "BTT",
         decimals: 8,
@@ -481,7 +481,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 6,
       },
-      jUSD1: {                                               // 🆕 新增市场
+      jUSD1: {                                               // added market
         address: "TNPnMcpU5VuYREYnLh86tGzRGBkAyeo6Yh",
         underlying: "TM3H36y6i8U6ju3xjo6vipsLM1pw5yT8Qs",
         symbol: "jUSD1",
@@ -497,7 +497,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jWBTC: {                                               // 🆕 新增市场
+      jWBTC: {                                               // added market
         address: "TAhR7YtYGeVJK3rE2nocnBjPpgZtFJbAXX",
         underlying: "TW714k8Ni3g7yiHUUckXXuSdCPqFmNXZis",
         symbol: "jWBTC",
@@ -527,9 +527,9 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         symbol: "jETHB",
         underlyingSymbol: "ETHB",
         decimals: 8,
-        underlyingDecimals: 18,                              // 🔧 修复：原为 6，API 显示 collateralDecimal=18
+        underlyingDecimals: 18,                              // 18 per API collateralDecimal
       },
-      jHTX: {                                                // 🆕 新增市场
+      jHTX: {                                                // added market
         address: "TD6FMHLmG4uGq9JqVuSX1NgvBeS2HbuRAt",
         underlying: "TC9wyHyAQqnvz6oQBfoLMu4kJpfqdp9nMY",
         symbol: "jHTX",
@@ -539,7 +539,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       },
 
       // ====================================================================
-      // 已暂停/遗留市场 (mintPaused=1 或 QA 测试市场)
+      // Paused / legacy markets (mintPaused=1, or QA test markets)
       // ====================================================================
       jUSDD_OLD: {
         address: "TRM3faiTDB9D4Vq4mwezUeo5rQLzCDqGSE",
@@ -573,15 +573,15 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jUSDCOLD: {                                            // 🔧 重命名：原为 jUSDC，与 API 的 USDCOLD 对齐
+      jUSDCOLD: {                                            // aligned with the API's USDCOLD symbol
         address: "TMsoCkr2yhukcGnvjhVk8Gj541BCQPEHwm",
-        underlying: "TM1Xq1HHd5RTcR4VAiQ8oV6CQvfVdn3F1f",  // 🔧 修复：原为 TWMCMCoJPqCGw5RR7eChF2HoY3a9B8eYA3
+        underlying: "TM1Xq1HHd5RTcR4VAiQ8oV6CQvfVdn3F1f",
         symbol: "jUSDCOLD",
         underlyingSymbol: "USDCOLD",
         decimals: 8,
         underlyingDecimals: 6,
       },
-      jBUSDOLD: {                                            // 🆕 新增市场
+      jBUSDOLD: {                                            // added market
         address: "TTNcbZWxaeUSq81HJ4uY1SpyVsKykUX97W",
         underlying: "TBEzkiB2JUevVNLUnnD8NtCYnnaE9XeviM",
         symbol: "jBUSDOLD",
@@ -589,7 +589,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jsTRX2: {                                              // 🆕 新增：第二个 sTRX 市场 (id=21)
+      jsTRX2: {                                              // added: second sTRX market (id=21)
         address: "TSdoXvEqv68xhsvjbDyaMJPNYRhfhnHHCS",
         underlying: "TZ8du1HkatTWDbS6FLZei4dQfjfpSm9mxp",
         symbol: "jsTRX2",
@@ -597,7 +597,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jwstUSDTqa: {                                          // 🆕 新增 QA 测试市场
+      jwstUSDTqa: {                                          // QA test market
         address: "TCC5apD2j49ENCFoNg1J2ewiaGaB8N6rzX",
         underlying: "TKgoZCgeempgYabfzmM2oFYzAsYVyfDT3H",
         symbol: "jwstUSDTqa",
@@ -605,7 +605,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jUSD1test: {                                           // 🆕 新增 QA 测试市场
+      jUSD1test: {                                           // QA test market
         address: "TK3NzBmtrVbZkUDsnGimz3X2KuUdi5eVf6",
         underlying: "TPwHeKVsR6AHf7HvoMefWqa79CQ2vTmCES",
         symbol: "jUSD1test",
@@ -613,7 +613,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jETHQA: {                                              // 🆕 新增 QA 测试市场
+      jETHQA: {                                              // QA test market
         address: "TKL3bPaPu9UoJcQHuvcC2jLqNnVgCere68",
         underlying: "TWCKXq9T3ujpdRMahXndBGmWWhV3WumSMy",
         symbol: "jETHQA",
@@ -621,7 +621,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jBUSDqa1: {                                            // 🆕 新增 QA 测试市场
+      jBUSDqa1: {                                            // QA test market
         address: "TH9QTJEastYJqeuQnABCyo9Gce7dNuA9wj",
         underlying: "TBEzkiB2JUevVNLUnnD8NtCYnnaE9XeviM",
         symbol: "jBUSDqa1",
@@ -629,7 +629,7 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
         decimals: 8,
         underlyingDecimals: 18,
       },
-      jBUSDqa2: {                                            // 🆕 新增 QA 测试市场
+      jBUSDqa2: {                                            // QA test market
         address: "TK8WHNA8mAaT8YYcmChMREPsqBGE5aCBLJ",
         underlying: "TBEzkiB2JUevVNLUnnD8NtCYnnaE9XeviM",
         symbol: "jBUSDqa2",

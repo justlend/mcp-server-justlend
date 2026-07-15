@@ -2,6 +2,22 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [1.1.2] — 2026-07-15
+
+**Theme**: TRX↔WTRX wrap/unwrap tools + USDT/USDC/USDJ approve reset-to-0 hardening.
+
+### Added — WTRX wrap / unwrap
+
+- New tools **`wrap_trx`** (native TRX → WTRX, 1:1 via the WTRX contract's payable `deposit()`) and **`unwrap_trx`** (WTRX → native TRX via `withdraw(uint256)`). Mirrors the app front-end's WTRX swap; runs on the hardened `safeSend` path (pre-flight simulation + mainnet fail-closed on `REVERT`) with non-negative/precision-guarded amounts and TRX/WTRX balance pre-checks. Tool count **96 → 98**.
+- Both paths validate the on-chain WTRX `decimals()` against TRX's `6` before moving funds — the 1:1 mapping is only valid at 6 decimals, so a mismatch aborts (a transient read failure falls back to 6). `unwrap_trx` gained a symmetric TRX-for-gas pre-check (matching `wrap_trx`), and the tool descriptions now note wrap/unwrap are reversible.
+
+### Fixed — approve allowance handling
+
+- TetherToken-style tokens (**USDT / USDC / USDJ**) now reset the allowance to `0` before a new non-zero `approve`, so re-approving on a stale non-zero allowance no longer reverts. Applied across all five approve services (`approveUnderlying`, `approveMoolahVault`, `approveMoolahProxy`, `approveLiquidatorToken`, `approveTRC20`) via a shared `approveWithReset` helper (reset then await confirmation before the target approve, so its pre-flight simulation sees the zeroed allowance).
+- `amount='0'` revoke is no longer swallowed by the sufficient-allowance short-circuit — it now sends `approve(0)`, so the revoke path the unlimited-approval warning points to actually works.
+- The reset-to-0 step now waits for the reset tx to **succeed** (not merely be mined) before the target approve, via a new opt-in `requireSuccess` on `waitForTransaction`; a reverted reset aborts with the decoded reason instead of falling through.
+- `approveTRC20` (the generic approve) now reads the token `symbol()` best-effort so a USDT/USDC/USDJ token whose address isn't in the mainnet reset list (e.g. a testnet mock) still gets the reset-to-0 treatment, and uses the known TRC20 ABI instead of an on-chain ABI fetch.
+
 ## [1.1.1] — 2026-06-26
 
 **Theme**: New `jU` (U) V1 jToken market + dependency/security hardening + tooling-doc consistency.

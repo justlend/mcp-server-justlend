@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import * as services from "../services/index.js";
-import { toolError, tronAddress } from "./shared.js";
+import { toolError, tronAddress, rawUnitsString } from "./shared.js";
 
 /**
  * JustLend V2 (Moolah) — Mining rewards.
@@ -130,7 +130,7 @@ export function registerMoolahMiningTools(server: McpServer) {
         periodKey:   z.string().optional().describe("Round key from get_moolah_pending_mining_periods (preferred)"),
         merkleIndex: z.union([z.string(), z.number()]).optional().describe("Override: merkle tree index"),
         index:       z.union([z.string(), z.number()]).optional().describe("Override: leaf index inside the tree"),
-        amounts:     z.array(z.union([z.string(), z.number()])).optional().describe("Override: token amounts in raw units, slot-aligned with the tree's tokenAddress[]"),
+        amounts:     z.array(rawUnitsString("Raw-unit token amount")).optional().describe("Override: token amounts in raw units (integer strings), slot-aligned with the tree's tokenAddress[]"),
         proof:       z.array(z.string()).optional().describe("Override: merkle proof (bytes32[])"),
         address:     tronAddress("Owner address used to refetch the airdrop entry when periodKey is supplied. Default: signing wallet").optional(),
         network:     z.string().optional().describe("Network. Default: mainnet"),

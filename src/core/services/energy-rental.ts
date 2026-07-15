@@ -58,7 +58,7 @@ async function getMarketContract(network: string) {
  * Fallback to on-chain global parameters if API fails or if in Nile network.
  */
 export async function getEnergyRentalDashboard(network = "mainnet") {
-  // 如果是 nile 测试网，直接跳过 API 请求，强制走链上
+  // On nile testnet, skip the API request and query on-chain directly
   if (network !== "nile") {
     const apiHost = getApiHost(network);
     try {
@@ -709,7 +709,7 @@ export async function getReturnRentalInfo(
   validateTronAddress(receiver, "receiver address");
   const onChainInfo = await getRentInfo(renter, receiver, network);
 
-  // Nile 环境熔断，不调 API
+  // Nile circuit-breaker: skip the API call
   if (network !== "nile") {
     const apiHost = getApiHost(network);
     const params = new URLSearchParams({ renter, receiver, rentType: "1" });

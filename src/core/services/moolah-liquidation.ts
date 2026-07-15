@@ -4,6 +4,7 @@
  */
 import { getSigningClient } from "./wallet.js";
 import { safeSend } from "./contracts.js";
+import { approveWithReset } from "./allowance.js";
 import { getMoolahAddresses } from "../chains.js";
 import { TRC20_ABI, PUBLIC_LIQUIDATOR_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -46,22 +47,27 @@ export async function approveLiquidatorToken(params: {
   const approveRaw = isMax ? MAX_UINT256 : utils.parseUnits(amount, tokenDecimals).toString();
 
   const currentAllowance = BigInt(await token.methods.allowance(walletAddress, publicLiquidatorProxy).call());
-  if (!isMax && currentAllowance >= BigInt(approveRaw)) {
+  // A revoke (amount='0') must not be swallowed by the sufficient-allowance skip.
+  if (!isMax && BigInt(approveRaw) > 0n && currentAllowance >= BigInt(approveRaw)) {
     return { txID: "", message: `${tokenSymbol} already has sufficient allowance for liquidator.` };
   }
 
-  const { txID } = await safeSend(
-    {
-      address: tokenAddress,
-      abi: TRC20_ABI,
-      functionName: "approve",
-      args: [publicLiquidatorProxy, approveRaw],
-    },
+  const { txID, resetTxID } = await approveWithReset({
+    tokenAddress,
+    spender: publicLiquidatorProxy,
+    approveRaw,
+    currentAllowance,
+    symbol: tokenSymbol,
     network,
-  );
+  });
+  const action = BigInt(approveRaw) === 0n
+    ? `Revoked ${tokenSymbol} allowance for Moolah liquidator`
+    : `Approved ${isMax ? "unlimited" : amount} ${tokenSymbol} for Moolah liquidator`;
   const result: { txID: string; message: string; warning?: string } = {
     txID,
-    message: `Approved ${isMax ? "unlimited" : amount} ${tokenSymbol} for Moolah liquidator. TX: ${txID}`,
+    message: resetTxID
+      ? `${action} (existing allowance reset to 0 first — reset TX: ${resetTxID}). TX: ${txID}`
+      : `${action}. TX: ${txID}`,
   };
   if (isMax) {
     result.warning =

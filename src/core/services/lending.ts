@@ -9,6 +9,7 @@
 import { getTronWeb } from "./clients.js";
 import { getSigningClient } from "./wallet.js";
 import { safeSend, toSafeCallValueNumber } from "./contracts.js";
+import { approveWithReset } from "./allowance.js";
 import { getJustLendAddresses, getJTokenInfo, getAllJTokens, type JTokenInfo } from "../chains.js";
 import { JTOKEN_ABI, JTRX_MINT_ABI, JTRX_REPAY_ABI, COMPTROLLER_ABI, TRC20_ABI, PRICE_ORACLE_ABI } from "../abis.js";
 import { utils } from "./utils.js";
@@ -632,22 +633,32 @@ export async function approveUnderlying(
     ? MAX_UINT256
     : utils.parseUnits(amount, info.underlyingDecimals).toString();
 
-  if (currentAllowance >= BigInt(approveAmount)) {
+  // Skip only when we already hold enough for a *non-zero* target. A revoke
+  // (amount='0' → approveAmount '0') must never be swallowed here — it has to
+  // reach the approve(0) below to actually lower the allowance.
+  if (BigInt(approveAmount) > 0n && currentAllowance >= BigInt(approveAmount)) {
     return {
       txID: "",
       message: `${info.underlyingSymbol} already has sufficient allowance (${utils.formatUnits(currentAllowance.toString(), info.underlyingDecimals)}) for ${jTokenSymbol}. No approve needed.`,
     };
   }
 
-  const { txID } = await safeSend({
-    address: info.underlying!,
-    abi: TRC20_ABI,
-    functionName: "approve",
-    args: [info.address, approveAmount],
-  }, network);
+  const { txID, resetTxID } = await approveWithReset({
+    tokenAddress: info.underlying!,
+    spender: info.address,
+    approveRaw: approveAmount,
+    currentAllowance,
+    symbol: info.underlyingSymbol,
+    network,
+  });
+  const action = BigInt(approveAmount) === 0n
+    ? `Revoked ${info.underlyingSymbol} allowance for ${jTokenSymbol}`
+    : `Approved ${isMax ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}`;
   const result: { txID: string; message: string; warning?: string } = {
     txID,
-    message: `Approved ${isMax ? "unlimited" : amount} ${info.underlyingSymbol} for ${jTokenSymbol}`,
+    message: resetTxID
+      ? `${action} (existing allowance reset to 0 first — reset TX: ${resetTxID}).`
+      : action,
   };
   if (isMax) {
     result.warning =

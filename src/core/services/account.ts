@@ -106,7 +106,7 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
   const comptroller = tronWeb.contract(COMPTROLLER_ABI, addresses.comptroller);
   const jTokens = getAllJTokens(network);
 
-  // 💡 核心修复 1：获取资产并从 Hex 转换回 Base58
+  // Fetch assets and convert from hex back to Base58
   const assetsInRaw: string[] = await promiseWithTimeout(
     comptroller.methods.getAssetsIn(userAddress).call(),
     undefined,
@@ -123,7 +123,7 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
   )
     .then((r: any) => [BigInt(r.err || r[0]), BigInt(r.liquidity || r[1]), BigInt(r.shortfall || r[2])]);
 
-  // 💡 核心修复 2：动态获取真正的 Oracle 地址
+  // Dynamically resolve the real oracle address
   let realOracleAddress = addresses.priceOracle;
   try {
     const oracleHex = await promiseWithTimeout(
@@ -252,7 +252,7 @@ export async function getAccountSummary(userAddress: string, network = "mainnet"
     liquidityUSD: formatUsdCents(liquidityCents),
     shortfallUSD: formatUsdCents(shortfallCents),
     healthFactor,
-    collateralMarkets: assetsIn, // 返回真实的 base58 抵押池地址列表
+    collateralMarkets: assetsIn, // real base58 collateral-market addresses
     blockNumber,
     blockTimestamp,
     lastUpdated: new Date(blockTimestamp).toISOString(),

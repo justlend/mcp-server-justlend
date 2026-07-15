@@ -146,6 +146,19 @@ export const TRC20_ABI = [
 ];
 
 // ============================================================================
+// WTRX (Wrapped TRX) ABI — WETH-style native-TRX wrapper.
+// `deposit()` wraps the TRX sent as callValue into WTRX (1:1); `withdraw(uint256)`
+// burns WTRX to redeem native TRX (1:1). WTRX mirrors TRX at 6 decimals.
+// ============================================================================
+export const WTRX_ABI = [
+  { type: "function", name: "deposit", inputs: [], outputs: [], stateMutability: "payable" },
+  { type: "function", name: "withdraw", inputs: [{ type: "uint256", name: "wad" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "balanceOf", inputs: [{ type: "address", name: "account" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "decimals", inputs: [], outputs: [{ type: "uint8" }], stateMutability: "view" },
+  { type: "function", name: "totalSupply", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+];
+
+// ============================================================================
 // GovernorAlpha ABI (JST Voting / Governance)
 // ============================================================================
 export const GOVERNOR_ALPHA_ABI = [
@@ -167,7 +180,7 @@ export const GOVERNOR_ALPHA_ABI = [
     stateMutability: "nonpayable",
   },
 
-  // --- Read (新增：用于链上状态查询) ---
+  // --- Read (on-chain state queries) ---
   {
     type: "function", name: "proposalCount",
     inputs: [],
@@ -177,7 +190,7 @@ export const GOVERNOR_ALPHA_ABI = [
   {
     type: "function", name: "state",
     inputs: [{ name: "proposalId", type: "uint256" }],
-    outputs: [{ name: "", type: "uint8" }], // 返回 0~7 代表不同状态
+    outputs: [{ name: "", type: "uint8" }], // returns 0..7 for the different proposal states
     stateMutability: "view",
   },
   {
@@ -204,8 +217,8 @@ export const GOVERNOR_ALPHA_ABI = [
       { name: "endBlock", type: "uint256" },
       { name: "forVotes", type: "uint256" },
       { name: "againstVotes", type: "uint256" },
-      // 注意：如果是 Governor Bravo 升级后，可能会多一个 abstainVotes。
-      // 如果调用报错，可以尝试把这一行注释掉，按你的合约实际版本来。
+      // Note: after a Governor Bravo upgrade there may be an extra abstainVotes.
+      // If the call errors, comment this line out to match the deployed contract version.
       { name: "abstainVotes", type: "uint256" },
       { name: "canceled", type: "bool" },
       { name: "executed", type: "bool" }

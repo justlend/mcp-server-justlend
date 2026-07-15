@@ -23,6 +23,7 @@ import { registerLendingTools } from "../src/core/tools/lending-tools.js";
 import { registerVotingTools } from "../src/core/tools/voting-tools.js";
 import { registerEnergyTools } from "../src/core/tools/energy-tools.js";
 import { registerStakingTools } from "../src/core/tools/staking-tools.js";
+import { registerWtrxTools } from "../src/core/tools/wtrx-tools.js";
 import { registerMoolahVaultTools } from "../src/core/tools/moolah-vault-tools.js";
 import { registerMoolahMarketTools } from "../src/core/tools/moolah-market-tools.js";
 import { registerMoolahLiquidationTools } from "../src/core/tools/moolah-liquidation-tools.js";
@@ -77,6 +78,7 @@ const categories: Array<[string, (s: any) => void]> = [
   ["JST Voting / Governance", registerVotingTools],
   ["Energy Rental", registerEnergyTools],
   ["sTRX Staking", registerStakingTools],
+  ["WTRX Wrap / Unwrap", registerWtrxTools],
   // JustLend V2 (Moolah)
   ["JustLend V2 (Moolah) — Vaults", registerMoolahVaultTools],
   ["JustLend V2 (Moolah) — Markets", registerMoolahMarketTools],
