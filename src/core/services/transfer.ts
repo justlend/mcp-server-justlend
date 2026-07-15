@@ -122,13 +122,24 @@ export async function approveTRC20(
     // Read the current allowance so USDT/USDC/USDJ (TetherToken) get a reset-to-0
     // before a new non-zero approval — otherwise approve() reverts non-zero -> non-zero.
     const walletAddress = tronWeb.defaultAddress.base58 as string;
-    const token = await tronWeb.contract().at(tokenAddress);
+    // Use the known TRC20 ABI rather than an on-chain ABI fetch (`.at()`), which
+    // can fail for unverified tokens and doesn't guarantee symbol()/allowance().
+    const token = tronWeb.contract(TRC20_ABI, tokenAddress);
     const currentAllowance = BigInt(await token.methods.allowance(walletAddress, spenderAddress).call());
+    // Best-effort symbol so a USDT/USDC/USDJ token whose address isn't in the
+    // mainnet reset list (e.g. a testnet mock) still gets the reset-to-0 fallback.
+    let symbol: string | undefined;
+    try {
+      symbol = String(await token.methods.symbol().call());
+    } catch {
+      // symbol() is an optional fallback; the address match already covers mainnet.
+    }
     const { txID: txId } = await approveWithReset({
       tokenAddress,
       spender: spenderAddress,
       approveRaw: amount,
       currentAllowance,
+      symbol,
       network,
     });
     return txId;

@@ -14,6 +14,8 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 
 - TetherToken-style tokens (**USDT / USDC / USDJ**) now reset the allowance to `0` before a new non-zero `approve`, so re-approving on a stale non-zero allowance no longer reverts. Applied across all five approve services (`approveUnderlying`, `approveMoolahVault`, `approveMoolahProxy`, `approveLiquidatorToken`, `approveTRC20`) via a shared `approveWithReset` helper (reset then await confirmation before the target approve, so its pre-flight simulation sees the zeroed allowance).
 - `amount='0'` revoke is no longer swallowed by the sufficient-allowance short-circuit — it now sends `approve(0)`, so the revoke path the unlimited-approval warning points to actually works.
+- The reset-to-0 step now waits for the reset tx to **succeed** (not merely be mined) before the target approve, via a new opt-in `requireSuccess` on `waitForTransaction`; a reverted reset aborts with the decoded reason instead of falling through.
+- `approveTRC20` (the generic approve) now reads the token `symbol()` best-effort so a USDT/USDC/USDJ token whose address isn't in the mainnet reset list (e.g. a testnet mock) still gets the reset-to-0 treatment, and uses the known TRC20 ABI instead of an on-chain ABI fetch.
 
 ## [1.1.1] — 2026-06-26
 

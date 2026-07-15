@@ -63,9 +63,11 @@ export async function approveWithReset(
       network,
     );
     resetTxID = reset.txID;
-    // Wait for the reset to be mined so the next approve simulates against a 0
-    // allowance (TetherToken reverts non-zero -> non-zero otherwise).
-    await waitForTransaction(resetTxID, network);
+    // Wait for the reset to be mined AND succeed before the next approve, so it
+    // simulates against a 0 allowance (TetherToken reverts non-zero -> non-zero
+    // otherwise). requireSuccess: a reverted reset aborts here instead of falling
+    // through to a target approve that would only fail-close later.
+    await waitForTransaction(resetTxID, network, { requireSuccess: true });
   }
 
   const { txID } = await safeSend(
