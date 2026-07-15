@@ -733,7 +733,7 @@
 **Wrap TRX to WTRX**  
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Wrap native TRX into WTRX (Wrapped TRX) at a 1:1 rate by sending TRX to the WTRX contract's payable deposit(). WTRX is a TRC20 representation of TRX used by DeFi protocols that can't hold native TRX (e.g. JustLend V2 / Moolah markets quoting WTRX). Pre-checks: sufficient TRX balance for the wrap amount + gas.
+- **Description**: Wrap native TRX into WTRX (Wrapped TRX) at a 1:1 rate by sending TRX to the WTRX contract's payable deposit(). WTRX is a TRC20 representation of TRX used by DeFi protocols that can't hold native TRX (e.g. JustLend V2 / Moolah markets quoting WTRX). Reversible: unwrap_trx converts WTRX back to TRX 1:1. Pre-checks: sufficient TRX balance for the wrap amount + gas.
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
@@ -745,7 +745,7 @@
 **Unwrap WTRX to TRX**  
 - **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
 - **annotations**: idempotent: false · openWorld: true
-- **Description**: Unwrap WTRX (Wrapped TRX) back into native TRX at a 1:1 rate via the WTRX contract's withdraw(uint256). No approval is needed — you burn your own WTRX. Pre-checks: sufficient WTRX balance.
+- **Description**: Unwrap WTRX (Wrapped TRX) back into native TRX at a 1:1 rate via the WTRX contract's withdraw(uint256). No approval is needed — you burn your own WTRX. Reverses wrap_trx (1:1). Pre-checks: sufficient WTRX balance and native TRX for gas.
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
