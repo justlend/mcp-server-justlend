@@ -4,9 +4,9 @@
 >
 > Lets an AI agent plan tool routing offline without connecting to the server. Side-effect classes align with the AI-Agent documentation standard baseline (Safe / Network Read / Remote Write / Destructive).
 
-**Total tools**: 96  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
+**Total tools**: 98  |  **Protocol**: MCP  |  **Transport**: stdio / HTTP(SSE)
 
-**Read-only tools**: 58  |  **Write tools**: 38 (of which marked destructive: 25)
+**Read-only tools**: 58  |  **Write tools**: 40 (of which marked destructive: 27)
 
 > ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` or signed via the TronLink browser wallet, and are **never passed as tool arguments**.
 
@@ -724,6 +724,32 @@
 
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
+| `network` | string | — |  | Network. Default: mainnet |
+
+## WTRX Wrap / Unwrap (2)
+
+### `wrap_trx`
+
+**Wrap TRX to WTRX**  
+- **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
+- **annotations**: idempotent: false · openWorld: true
+- **Description**: Wrap native TRX into WTRX (Wrapped TRX) at a 1:1 rate by sending TRX to the WTRX contract's payable deposit(). WTRX is a TRC20 representation of TRX used by DeFi protocols that can't hold native TRX (e.g. JustLend V2 / Moolah markets quoting WTRX). Pre-checks: sufficient TRX balance for the wrap amount + gas.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of TRX to wrap into WTRX (human-readable decimal string, e.g. '1' or '10.5') |
+| `network` | string | — |  | Network. Default: mainnet |
+
+### `unwrap_trx`
+
+**Unwrap WTRX to TRX**  
+- **Side effect**: 🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing
+- **annotations**: idempotent: false · openWorld: true
+- **Description**: Unwrap WTRX (Wrapped TRX) back into native TRX at a 1:1 rate via the WTRX contract's withdraw(uint256). No approval is needed — you burn your own WTRX. Pre-checks: sufficient WTRX balance.
+
+| Param | Type | Required | Default | Description |
+|-------|------|:--------:|---------|-------------|
+| `amount` | string (pattern /^\d+(\.\d+)?$/) | ✅ |  | Amount of WTRX to unwrap into TRX (human-readable decimal string, e.g. '1' or '10.5') |
 | `network` | string | — |  | Network. Default: mainnet |
 
 ## JustLend V2 (Moolah) — Vaults (6)

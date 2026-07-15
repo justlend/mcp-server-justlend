@@ -146,6 +146,19 @@ export const TRC20_ABI = [
 ];
 
 // ============================================================================
+// WTRX (Wrapped TRX) ABI — WETH-style native-TRX wrapper.
+// `deposit()` wraps the TRX sent as callValue into WTRX (1:1); `withdraw(uint256)`
+// burns WTRX to redeem native TRX (1:1). WTRX mirrors TRX at 6 decimals.
+// ============================================================================
+export const WTRX_ABI = [
+  { type: "function", name: "deposit", inputs: [], outputs: [], stateMutability: "payable" },
+  { type: "function", name: "withdraw", inputs: [{ type: "uint256", name: "wad" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "balanceOf", inputs: [{ type: "address", name: "account" }], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "decimals", inputs: [], outputs: [{ type: "uint8" }], stateMutability: "view" },
+  { type: "function", name: "totalSupply", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+];
+
+// ============================================================================
 // GovernorAlpha ABI (JST Voting / Governance)
 // ============================================================================
 export const GOVERNOR_ALPHA_ABI = [
