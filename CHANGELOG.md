@@ -9,6 +9,7 @@ All notable changes to `@justlend/mcp-server-justlend` are documented here. Form
 ### Added — WTRX wrap / unwrap
 
 - New tools **`wrap_trx`** (native TRX → WTRX, 1:1 via the WTRX contract's payable `deposit()`) and **`unwrap_trx`** (WTRX → native TRX via `withdraw(uint256)`). Mirrors the app front-end's WTRX swap; runs on the hardened `safeSend` path (pre-flight simulation + mainnet fail-closed on `REVERT`) with non-negative/precision-guarded amounts and TRX/WTRX balance pre-checks. Tool count **96 → 98**.
+- Both paths validate the on-chain WTRX `decimals()` against TRX's `6` before moving funds — the 1:1 mapping is only valid at 6 decimals, so a mismatch aborts (a transient read failure falls back to 6). `unwrap_trx` gained a symmetric TRX-for-gas pre-check (matching `wrap_trx`), and the tool descriptions now note wrap/unwrap are reversible.
 
 ### Fixed — approve allowance handling
 

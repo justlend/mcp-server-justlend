@@ -4,6 +4,7 @@ const mockSafeSend = vi.fn();
 const mockTrxBalance = vi.fn();
 const mockWtrxBalanceOf = vi.fn();
 const mockCheckResourceSufficiency = vi.fn();
+const mockWtrxDecimals = vi.fn();
 const mockIsAddress = vi.fn();
 
 vi.mock("tronweb", () => ({
@@ -22,6 +23,7 @@ vi.mock("../../../src/core/services/wallet.js", () => ({
     contract: vi.fn(() => ({
       methods: {
         balanceOf: vi.fn(() => ({ call: mockWtrxBalanceOf })),
+        decimals: vi.fn(() => ({ call: mockWtrxDecimals })),
       },
     })),
   })),
@@ -49,6 +51,7 @@ describe("wtrx wrap / unwrap", () => {
     mockTrxBalance.mockResolvedValue("1000000000000"); // 1,000,000 TRX
     mockWtrxBalanceOf.mockResolvedValue("1000000000000"); // 1,000,000 WTRX
     mockCheckResourceSufficiency.mockResolvedValue({ energyBurnTRX: "0", bandwidthBurnTRX: "0" });
+    mockWtrxDecimals.mockResolvedValue("6"); // WTRX matches TRX (6 dp) — 1:1 invariant holds
   });
 
   it("wrapTrx builds a payable deposit() with the amount as callValue in SUN", async () => {
@@ -99,5 +102,26 @@ describe("wtrx wrap / unwrap", () => {
   it("unwrapTrx rejects a zero amount before broadcasting", async () => {
     await expect(unwrapTrx("0", "mainnet")).rejects.toThrow(/greater than 0/);
     expect(mockSafeSend).not.toHaveBeenCalled();
+  });
+
+  it("unwrapTrx rejects when the wallet can't cover gas", async () => {
+    // Enough WTRX to unwrap, but not enough native TRX for the energy/bandwidth burn.
+    mockTrxBalance.mockResolvedValueOnce("100000"); // 0.1 TRX
+    mockCheckResourceSufficiency.mockResolvedValueOnce({ energyBurnTRX: "5", bandwidthBurnTRX: "0.5" }); // ~5.5 TRX
+    await expect(unwrapTrx("2.25", "mainnet")).rejects.toThrow(/Insufficient TRX for gas/);
+    expect(mockSafeSend).not.toHaveBeenCalled();
+  });
+
+  it("aborts wrap when on-chain WTRX decimals != 6 (1:1 invariant guard)", async () => {
+    mockWtrxDecimals.mockResolvedValueOnce("8");
+    await expect(wrapTrx("1.5", "mainnet")).rejects.toThrow(/reports 8 decimals/);
+    expect(mockSafeSend).not.toHaveBeenCalled();
+  });
+
+  it("tolerates a decimals() read failure and proceeds on the 6-dp assumption", async () => {
+    mockWtrxDecimals.mockRejectedValueOnce(new Error("rpc down"));
+    const result = await wrapTrx("1.5", "mainnet");
+    expect(result.wtrx).toBe("1.5");
+    expect(mockSafeSend).toHaveBeenCalledTimes(1);
   });
 });

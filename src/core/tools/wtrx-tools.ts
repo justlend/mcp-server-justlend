@@ -18,6 +18,7 @@ export function registerWtrxTools(server: McpServer) {
         "Wrap native TRX into WTRX (Wrapped TRX) at a 1:1 rate by sending TRX to the WTRX " +
         "contract's payable deposit(). WTRX is a TRC20 representation of TRX used by DeFi " +
         "protocols that can't hold native TRX (e.g. JustLend V2 / Moolah markets quoting WTRX). " +
+        "Reversible: unwrap_trx converts WTRX back to TRX 1:1. " +
         "Pre-checks: sufficient TRX balance for the wrap amount + gas.",
       inputSchema: {
         amount: amountString("Amount of TRX to wrap into WTRX (human-readable decimal string, e.g. '1' or '10.5')"),
@@ -40,8 +41,8 @@ export function registerWtrxTools(server: McpServer) {
     {
       description:
         "Unwrap WTRX (Wrapped TRX) back into native TRX at a 1:1 rate via the WTRX contract's " +
-        "withdraw(uint256). No approval is needed — you burn your own WTRX. " +
-        "Pre-checks: sufficient WTRX balance.",
+        "withdraw(uint256). No approval is needed — you burn your own WTRX. Reverses wrap_trx (1:1). " +
+        "Pre-checks: sufficient WTRX balance and native TRX for gas.",
       inputSchema: {
         amount: amountString("Amount of WTRX to unwrap into TRX (human-readable decimal string, e.g. '1' or '10.5')"),
         network: z.string().optional().describe("Network. Default: mainnet"),
