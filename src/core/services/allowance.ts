@@ -2,11 +2,16 @@ import { safeSend } from "./contracts.js";
 import { waitForTransaction } from "./transactions.js";
 import { TRC20_ABI } from "../abis.js";
 
-// TRON USDT / USDC / USDJ are TetherToken-style: their `approve()` reverts when
-// the current allowance is already non-zero, so the allowance must be reset to 0
-// before a new non-zero approval. Matched by contract address (robust) with a
-// symbol fallback that mirrors app-justlend's `NEEDS_APPROVE_RESET = {USDT,USDC,USDJ}`.
-// Base58 addresses are case-sensitive — do NOT lowercase.
+// Ethereum USDT famously reverts `approve(non-zero)` while the current allowance
+// is non-zero (the TetherToken race-condition guard). On-chain probing of the TRON
+// deployments (2026-07-15, simulated approve from live non-zero-allowance holders)
+// shows the CURRENT TRON USDT/USDC/USDJ do NOT enforce that guard — but TRON USDT
+// is a TetherToken-family upgradeable contract (`deprecated()`/`upgradedAddress()`
+// exist), so an upgrade could start enforcing it at any time. We therefore keep the
+// reset-to-0 as cheap insurance and for behavioral parity with app-justlend's
+// `NEEDS_APPROVE_RESET = {USDT,USDC,USDJ}`. Matched by contract address (robust)
+// with a symbol fallback. Base58 addresses are case-sensitive — do NOT lowercase.
+// All other JustLend mainnet underlyings were probed the same way: standard approve.
 const RESET_TO_ZERO_TOKENS = new Set<string>([
   "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", // USDT (mainnet)
   "TMwFHYXLJaRUPeW6421aqXL4ZEzPRFGkGT", // USDJ (mainnet)
