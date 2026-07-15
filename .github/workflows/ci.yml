@@ -18,3 +18,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      # mcp-api-list.md is generated from source; fail if a tool change forgot to regenerate it.
+      - name: Check mcp-api-list.md is fresh
+        run: |
+          npm run gen:api-list
+          git diff --exit-code mcp-api-list.md || {
+            echo "::error::mcp-api-list.md is stale — run 'npm run gen:api-list' and commit the result."
+            exit 1
+          }
