@@ -180,7 +180,7 @@ export const GOVERNOR_ALPHA_ABI = [
     stateMutability: "nonpayable",
   },
 
-  // --- Read (新增：用于链上状态查询) ---
+  // --- Read (on-chain state queries) ---
   {
     type: "function", name: "proposalCount",
     inputs: [],
@@ -190,7 +190,7 @@ export const GOVERNOR_ALPHA_ABI = [
   {
     type: "function", name: "state",
     inputs: [{ name: "proposalId", type: "uint256" }],
-    outputs: [{ name: "", type: "uint8" }], // 返回 0~7 代表不同状态
+    outputs: [{ name: "", type: "uint8" }], // returns 0..7 for the different proposal states
     stateMutability: "view",
   },
   {
@@ -217,8 +217,8 @@ export const GOVERNOR_ALPHA_ABI = [
       { name: "endBlock", type: "uint256" },
       { name: "forVotes", type: "uint256" },
       { name: "againstVotes", type: "uint256" },
-      // 注意：如果是 Governor Bravo 升级后，可能会多一个 abstainVotes。
-      // 如果调用报错，可以尝试把这一行注释掉，按你的合约实际版本来。
+      // Note: after a Governor Bravo upgrade there may be an extra abstainVotes.
+      // If the call errors, comment this line out to match the deployed contract version.
       { name: "abstainVotes", type: "uint256" },
       { name: "canceled", type: "bool" },
       { name: "executed", type: "bool" }
