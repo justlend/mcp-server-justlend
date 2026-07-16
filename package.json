@@ -25,6 +25,7 @@
     "dev:http": "tsx watch src/server/http-server.ts",
     "test": "vitest run",
     "gen:api-list": "tsx scripts/gen-mcp-api-list.ts > mcp-api-list.md",
+    "gen:integrity": "npm run build --silent && tsx scripts/gen-integrity.ts > integrity.json",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
