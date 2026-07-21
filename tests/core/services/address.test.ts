@@ -7,6 +7,8 @@ import {
   toBase58Address,
   isBase58,
   isHex,
+  isValidTronAddress,
+  addressesEqual,
   resolveAddress,
 } from "../../../src/core/services/address.js";
 
@@ -84,10 +86,40 @@ describe("isHex", () => {
   });
 });
 
+describe("isValidTronAddress", () => {
+  it("accepts Base58 and hex encodings of the same address", () => {
+    const hex = toHexAddress(BASE58);
+    expect(isValidTronAddress(BASE58)).toBe(true);
+    expect(isValidTronAddress(hex)).toBe(true);
+  });
+
+  it("rejects random strings", () => {
+    expect(isValidTronAddress("not-an-address")).toBe(false);
+  });
+});
+
+describe("addressesEqual", () => {
+  it("matches Base58 and hex forms of the same address", () => {
+    const hex = toHexAddress(BASE58);
+    expect(addressesEqual(BASE58, hex)).toBe(true);
+  });
+
+  it("returns false when either side is missing", () => {
+    expect(addressesEqual(undefined, BASE58)).toBe(false);
+    expect(addressesEqual(BASE58, undefined)).toBe(false);
+  });
+});
+
 describe("resolveAddress", () => {
   it("returns the address unchanged if it is a valid TRON address", async () => {
     const resolved = await resolveAddress(BASE58);
     expect(resolved).toBe(BASE58);
+  });
+
+  it("accepts hex-encoded TRON addresses", async () => {
+    const hex = toHexAddress(BASE58);
+    const resolved = await resolveAddress(hex);
+    expect(resolved).toBe(hex);
   });
 
   it("throws for an invalid address / unsupported name", async () => {
