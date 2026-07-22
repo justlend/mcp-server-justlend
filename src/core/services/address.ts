@@ -64,11 +64,18 @@ export function isHex(address: string): boolean {
 }
 
 /**
+ * Returns true for any supported TRON address encoding (Base58 or hex).
+ */
+export function isValidTronAddress(address: string): boolean {
+  return isBase58(address) || isHex(address);
+}
+
+/**
  * Resolve a TRON address or name to its canonical address.
  * Currently supports direct addresses only (no name service).
  */
 export const resolveAddress = async (nameOrAddress: string, _network?: string): Promise<string> => {
-  if (TronWeb.isAddress(nameOrAddress)) {
+  if (isValidTronAddress(nameOrAddress)) {
     return nameOrAddress;
   }
   throw new Error(`Invalid address or unsupported name service: ${nameOrAddress}`);
