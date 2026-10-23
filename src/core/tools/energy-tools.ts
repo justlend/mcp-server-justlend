@@ -228,7 +228,8 @@ export function registerEnergyTools(server: McpServer) {
     {
       description:
         "Get on-chain energy rental parameters: liquidation threshold, fee ratio, min fee, " +
-        "total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio.",
+        "total delegated/frozen TRX, max rentable amount, rent paused status, usage charge ratio. " +
+        "Fails if required contract reads are unavailable; never substitutes fixed defaults.",
       inputSchema: {
         network: z.string().optional().describe("Network. Default: mainnet"),
       },
@@ -249,7 +250,8 @@ export function registerEnergyTools(server: McpServer) {
     {
       description:
         "Calculate the cost to rent a specific amount of energy for a given duration. " +
-        "Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, and daily cost. " +
+        "Returns TRX amount needed, rental rate, fee, total prepayment, security deposit, daily cost, and dataSources. " +
+        "Fails closed on missing contract inputs or renewal duration; no fixed-default or rate-model substitute quotes. " +
         "For NEW rentals: provide energyAmount and durationHours. " +
         "For RENEWALS: provide energyAmount and receiverAddress. The tool auto-detects existing rentals " +
         "and calculates the incremental cost (subtracting existing security deposit). " +
@@ -275,7 +277,12 @@ export function registerEnergyTools(server: McpServer) {
             const matchingOrder = orders.orders.find(
               (o: any) => o.receiver === receiverAddress && o.renter === walletAddress,
             );
-            const remainingSeconds = matchingOrder ? Number(matchingOrder.canRentSeconds || 0) : 0;
+            const rawRemainingSeconds = matchingOrder?.canRentSeconds;
+            const remainingSeconds = Number(rawRemainingSeconds);
+            if ((typeof rawRemainingSeconds !== "number" && typeof rawRemainingSeconds !== "string") ||
+                String(rawRemainingSeconds).trim() === "" || !Number.isFinite(remainingSeconds) || remainingSeconds < 0) {
+              throw new Error("Energy rental data unavailable: cannot verify remaining rental duration; no renewal quote produced");
+            }
             const additionalSeconds = (durationHours || 0) * 3600;
 
             const estimate = await services.calculateRenewalPrice(
@@ -330,7 +337,8 @@ export function registerEnergyTools(server: McpServer) {
     {
       description:
         "Get the current energy rental rate for a given TRX amount. " +
-        "Returns rental rate, stable rate, and effective rate (max of both).",
+        "Returns rental rate, stable rate, and effective rate (max of both). " +
+        "Both market-contract reads must succeed; unsupported deployments return an error, not a guessed rate.",
       inputSchema: {
         trxAmount: z.number().min(0).describe("TRX amount to check rate for (0 for base rate)"),
         network: z.string().optional().describe("Network. Default: mainnet"),

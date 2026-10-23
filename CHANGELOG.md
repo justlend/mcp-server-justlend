@@ -2,6 +2,38 @@
 
 All notable changes to `@justlend/mcp-server-justlend` are documented here. Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with [Semantic Versioning](https://semver.org/). Dates are approximate, derived from git history; see the repository log for exact commits.
 
+## [Unreleased]
+
+### Security
+
+- Limit each tool call to 10,000 combined array elements and object members before schema validation; retain the HTTP parser's 1 MiB request-body limit.
+- Patch remaining redirect-header and source-map advisories with follow-redirects `1.16.1` and source-map-js `1.2.2`; the previous stable releases remain affected. Add loopback regressions for array-form and declared sensitive headers across redirects.
+- Refresh the development toolchain to patched next-to-latest stable releases on the existing major lines: Vitest `4.1.11`, Vite `8.3.4`, and PostCSS `8.5.30`. Release order and advisory ranges checked on 2026-10-21; production dependencies and the CI audit threshold are otherwise unchanged.
+- Upgrade the SDK to `1.32.0` and pin patched transitive HTTP/URL dependencies: Axios `1.20.0`, fast-uri `3.1.8`, Hono `4.13.12`, ip-address `10.7.3`, proxy-addr `2.0.8`, and qs `6.16.0`.
+- Prefer the next-to-latest stable release on the existing major line where patched (SDK, Hono, ip-address, qs). Axios, fast-uri 3.x, and proxy-addr require their latest release on that line because the previous release remains affected. Selection checked on 2026-10-19; no major-version migration or audit-threshold relaxation.
+- Remove redundant Express-specific body-parser overrides that conflicted during npm dependency validation; the locked body-parser versions remain unchanged.
+- Add offline regressions for proxy-trust IP spoofing and comma-array query-limit bypasses. Dependency audit findings do not by themselves establish that every vulnerable feature is used by this server.
+
+### Fixed
+
+- Fail energy-rental quotes and transaction preflight on unavailable, rejected or malformed contract reads instead of substituting parameter, pause, usage-ratio or rate defaults.
+- Require both market rates; deployments without the required getters return errors rather than a rate-model substitute quote.
+- Require real global resource values for API-to-chain energy conversion, expose quote input sources, and distinguish unknown order/renewal data from verified zero values.
+- Add offline quote, renewal, RPC-failure and no-broadcast regression controls.
+
+## [1.1.4] — 2026-09-02
+
+**Theme**: wallet initialization race hardening and release-artifact alignment.
+
+### Fixed
+
+- Serialized first-use wallet initialization across processes with an owned `O_EXCL` lock descriptor, bounded stale-lock handling, and a second existence check before creation.
+- Wired the secure local secret loader into every agent-wallet provider so persisted key material is decrypted through the configured secret store.
+- Verified CSPRNG failure and concurrent first-use paths fail closed without leaving private-key or lock artifacts.
+- Kept operator-supplied `AGENT_WALLET_PASSWORD` in memory during wallet import; only an explicitly opted-in generated fallback may be persisted.
+- Reject invalid HTTP numeric environment settings before startup so `NaN` cannot disable session, timeout, or rate-limit boundaries.
+- Aligned the package metadata and release documentation with the fixed wallet implementation.
+
 ## [1.1.3] — 2026-08-19
 
 **Theme**: secure energy direct purchase, versioned MCP structured outputs, and market-inventory reconciliation.
@@ -266,7 +298,7 @@ findings, plus dependency advisory cleanup. Tool surface unchanged (59 tools).
 
 [1.1.0]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.1.0
 [1.0.8]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.8
-[1.0.7]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.7
+[1.0.7]: https://github.com/justlend/mcp-server-justlend/commit/e6d4bc917e522d8fc7fe50a6e653e2719943b129
 [1.0.6]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.6
 [1.0.4]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.4
 [1.0.3]: https://github.com/justlend/mcp-server-justlend/releases/tag/v1.0.3

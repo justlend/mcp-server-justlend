@@ -14,6 +14,9 @@ async function startServer() {
         version: SERVER_VERSION,
       },
       {
+        // Bound cumulative array elements and object members before schema
+        // validation. The HTTP parser's byte limit alone cannot bound its cost.
+        maxToolInputElements: 10_000,
         instructions:
           "JustLend DAO MCP Server — TRON lending protocol + general chain utilities.\n\n" +
           "IMPORTANT: On the FIRST user interaction, call `get_wallet_address` to check wallet status. " +

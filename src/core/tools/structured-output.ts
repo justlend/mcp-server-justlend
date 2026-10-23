@@ -15,6 +15,28 @@ export const TOOL_OUTPUT_SCHEMA = {
   result: z.unknown(),
 };
 
+/** Key decision output: null means unavailable, never an inferred zero/false. */
+export const STRX_ELIGIBILITY_RESULT_SCHEMA = z.object({
+  address: z.string(),
+  hasStakedTrx: z.boolean().nullable(),
+  stakedAmount: z.number().finite().nonnegative().nullable().describe("TRX, human-readable; null when unknown"),
+  totalIncome: z.number().finite().nonnegative().nullable().describe("TRX, human-readable; null when unknown"),
+  claimableRewards: z.number().finite().nonnegative().nullable().describe("TRX available to claim; null when unknown"),
+  withdrawnAmount: z.number().finite().nonnegative().nullable().describe("TRX, human-readable; null when unknown"),
+  pendingUnstakeRounds: z.number().int().nonnegative().nullable(),
+  completedUnstakeRounds: z.number().int().nonnegative().nullable(),
+  hasCompletedWithdrawals: z.boolean().nullable(),
+  unfreezeDelayDays: z.number().finite().nonnegative().nullable(),
+  roundDetails: z.array(z.object({ endTimestamp: z.union([z.string(), z.number()]) }).passthrough()).nullable()
+    .describe("API rounds with Unix-millisecond expiry; null when unavailable, [] only for a known empty queue"),
+  claimEligibility: z.enum(["eligible", "ineligible", "unknown"]),
+  source: z.string().describe("Account source, normally api or contract"),
+  dashboardSource: z.string(),
+  dataStatus: z.enum(["complete", "partial"]).describe("Completeness of these eligibility fields, not all dashboard fields"),
+  unknownFields: z.array(z.string()),
+  note: z.string().optional().describe("Source/degradation details; retain when presenting a result"),
+});
+
 export interface StructuredToolOutput {
   schemaVersion: typeof TOOL_OUTPUT_SCHEMA_VERSION;
   tool: string;
@@ -56,7 +78,9 @@ export function withStructuredToolOutputs(server: McpServer): McpServer {
   const registerTool = ((name: string, config: Record<string, unknown>, handler: AnyToolHandler) =>
     (server.registerTool as any)(
       name,
-      { ...config, outputSchema: TOOL_OUTPUT_SCHEMA },
+      { ...config, outputSchema: name === "check_strx_withdrawal_eligibility"
+        ? { ...TOOL_OUTPUT_SCHEMA, result: STRX_ELIGIBILITY_RESULT_SCHEMA }
+        : TOOL_OUTPUT_SCHEMA },
       async (...args: any[]) => {
         const response = await handler(...args);
         if (response.isError) return response;

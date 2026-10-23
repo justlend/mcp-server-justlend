@@ -1,6 +1,6 @@
 {
   "name": "@justlend/mcp-server-justlend",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "MCP server for JustLend DAO on TRON. Covers JustLend V1 (supply/borrow/repay/withdraw, sTRX staking, energy rental and direct purchase, governance, mining) and V2/Moolah (isolated markets, ERC4626 vaults, liquidation), TRX<->WTRX wrap/unwrap, general TRON chain utilities, and AI-guided DeFi prompts.",
   "type": "module",
   "module": "src/index.ts",
@@ -25,11 +25,12 @@
     "dev:http": "tsx watch src/server/http-server.ts",
     "test": "vitest run",
     "gen:api-list": "tsx scripts/gen-mcp-api-list.ts > mcp-api-list.md",
+    "gen:integrity": "npm run build --silent && tsx scripts/gen-integrity.ts > integrity.json",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@bankofai/agent-wallet": "2.3.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "cors": "2.8.6",
     "express": "4.22.1",
     "express-rate-limit": "8.6.2",
@@ -43,30 +44,27 @@
     "@types/node": "22.19.15",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.0"
+    "vitest": "4.1.11"
   },
   "overrides": {
-    "axios": "1.18.1",
-    "fast-uri": "3.1.5",
-    "ip-address": "10.3.1",
-    "hono": "4.12.34",
-    "postcss": "8.5.23",
-    "qs": "6.15.2",
+    "axios": "1.20.0",
+    "fast-uri": "3.1.8",
+    "ip-address": "10.7.3",
+    "hono": "4.13.12",
+    "postcss": "8.5.30",
+    "qs": "6.16.0",
     "ws": "8.21.0",
     "form-data": "4.0.6",
-    "vite": "8.0.16",
+    "vite": "8.3.4",
     "esbuild": "0.28.1",
     "@hono/node-server": "2.0.11",
-    "express@4.22.1": {
-      "body-parser": "1.20.6"
-    },
-    "express@5.2.1": {
-      "body-parser": "2.3.0"
-    },
-    "nanoid": "3.3.18"
+    "nanoid": "3.3.18",
+    "proxy-addr": "2.0.8",
+    "follow-redirects": "1.16.1",
+    "source-map-js": "1.2.2"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   },
   "keywords": [
     "mcp",

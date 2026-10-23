@@ -11,11 +11,13 @@ export function registerMoolahLiquidationTools(server: McpServer) {
     "get_moolah_pending_liquidations",
     {
       description:
-        "List Moolah positions eligible or approaching liquidation. " +
-        "riskLevel > 1.0 means the position is liquidatable right now. " +
-        "Use minRiskLevel=0.9 to find positions near the threshold.",
+        "List Moolah liquidation candidates, including positions approaching the threshold. " +
+        "Risk can exceed 1; approaching 1 is a warning, not proof of liquidation eligibility. " +
+        "Rounded or stale API values do not establish current on-chain health. " +
+        "Verify current on-chain health for the borrower and obtain a fresh cost quote before acting. " +
+        "Use minRiskLevel=0.9 to include near-threshold candidates.",
       inputSchema: {
-        minRiskLevel: z.number().optional().describe("Minimum risk level (e.g. 0.9 for near-liquidatable, 1.0 for liquidatable now)"),
+        minRiskLevel: z.number().optional().describe("Minimum risk filter (e.g. 0.9 for near-threshold candidates, 1.0 for threshold candidates); this filter does not establish liquidation eligibility"),
         maxRiskLevel: z.number().optional().describe("Maximum risk level filter"),
         debtToken: z.string().optional().describe("Filter by loan token symbol (e.g. 'USDT')"),
         collateralToken: z.string().optional().describe("Filter by collateral token symbol (e.g. 'TRX')"),
@@ -44,7 +46,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
       description:
         "Estimate the loan token cost to liquidate a position. " +
         "Provide either seizedAssets (collateral to take) OR repaidShares (borrow shares to repay), not both. " +
-        "Returns the exact loan token amount needed. Use this before calling moolah_liquidate.",
+        "Returns the loan token amount needed for the supplied market and amounts. This cost quote does not check borrower health or establish liquidation eligibility; verify current on-chain health separately before calling moolah_liquidate.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
         seizedAssets: rawUnitsString("Collateral amount to seize (raw units). Provide this OR repaidShares.").optional(),

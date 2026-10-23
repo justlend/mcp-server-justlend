@@ -308,6 +308,14 @@ vi.mock("../../src/core/services/index.js", () => ({
     dailyRentalCost: 86.4,
   })),
 
+  calculateRenewalPrice: vi.fn(async () => ({
+    energyAmount: 50000, trxAmount: 100, durationSeconds: 86400, rate: 0.000002,
+    fee: 20, totalPrepayment: 70.56, securityDeposit: 38.72, dailyRentalCost: 34.56,
+    existingTrxAmount: 100, existingSecurityDeposit: 20, existingRemainingSeconds: 86400,
+    totalTrxAmount: 200, renewalPrepayment: 70.56,
+    dataSources: { network: "mainnet", energyConversion: "dashboard-api", parameters: "market-contract", rates: "market-contract" },
+  })),
+
   getRentalRate: vi.fn(async () => ({
     rentalRate: 0.00000008,
     stableRate: 0.0000001,
@@ -994,6 +1002,67 @@ describe("Energy Rental Tools", () => {
     expect(output.durationHours).toBe(168);
     expect(output.summary).toContain("300000 energy");
     expect(services.calculateRentalPrice).toHaveBeenCalledWith(300000, 604800, "mainnet");
+  });
+
+  it.each(["get_energy_rental_params", "get_energy_rental_rate", "calculate_energy_rental_price"])(
+    "%s exposes failed required reads as an MCP error, not a successful estimate", async name => {
+      const method = name === "get_energy_rental_params" ? services.getEnergyRentalParams :
+        name === "get_energy_rental_rate" ? services.getRentalRate : services.calculateRentalPrice;
+      vi.mocked(method).mockRejectedValueOnce(new Error("Energy rental data unavailable: cannot verify contract read"));
+      const result = await callTool(name, { trxAmount: 100, energyAmount: 300000, durationHours: 24 });
+      expect(result.isError).toBe(true);
+      expect(getToolOutput(result).error).toContain("cannot verify");
+      expect(services.rentEnergy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not reinterpret a failed order lookup as a new-rental quote", async () => {
+    vi.mocked(services.getRentInfo).mockRejectedValueOnce(new Error("RPC timeout"));
+    const result = await callTool("calculate_energy_rental_price", {
+      receiverAddress: "TReceiver123", energyAmount: 300000, durationHours: 24,
+    });
+    expect(result.isError).toBe(true);
+    expect(services.calculateRentalPrice).not.toHaveBeenCalled();
+    expect(services.calculateRenewalPrice).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null, "", " ", "NaN", Infinity, -1, true])(
+    "rejects an unverified renewal duration %s", async remaining => {
+      vi.mocked(services.getUserRentalOrders).mockResolvedValueOnce({
+        orders: [{ renter: "TTestWalletAddress123456789012345", receiver: "TReceiver123", canRentSeconds: remaining }],
+        receiverOrders: [], total: 1, receiverTotal: 0,
+      } as any);
+      const result = await callTool("calculate_energy_rental_price", {
+        receiverAddress: "TReceiver123", energyAmount: 50000, durationHours: 24,
+      });
+      expect(result.isError).toBe(true);
+      expect(getToolOutput(result).error).toContain("cannot verify remaining rental duration");
+      expect(services.calculateRenewalPrice).not.toHaveBeenCalled();
+      expect(services.calculateRentalPrice).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an absent renewal order instead of assuming zero remaining duration", async () => {
+    vi.mocked(services.getUserRentalOrders).mockResolvedValueOnce({ orders: [], receiverOrders: [], total: 0, receiverTotal: 0 });
+    const result = await callTool("calculate_energy_rental_price", {
+      receiverAddress: "TReceiver123", energyAmount: 50000, durationHours: 24,
+    });
+    expect(result.isError).toBe(true);
+    expect(services.calculateRenewalPrice).not.toHaveBeenCalled();
+  });
+
+  it("accepts a verified zero remaining duration and preserves quote provenance", async () => {
+    vi.mocked(services.getUserRentalOrders).mockResolvedValueOnce({
+      orders: [{ renter: "TTestWalletAddress123456789012345", receiver: "TReceiver123", canRentSeconds: "0" }],
+      receiverOrders: [], total: 1, receiverTotal: 0,
+    } as any);
+    const result = await callTool("calculate_energy_rental_price", {
+      receiverAddress: "TReceiver123", energyAmount: 50000, durationHours: 24,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(services.calculateRenewalPrice).toHaveBeenCalledWith(50000, 10000, 200, 0, 86400, "mainnet");
+    expect(getToolOutput(result).dataSources.rates).toBe("market-contract");
+    expect(services.rentEnergy).not.toHaveBeenCalled();
   });
 
   it("get_energy_rental_rate should return rate info", async () => {

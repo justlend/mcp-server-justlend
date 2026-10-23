@@ -20,17 +20,13 @@ echo ""
 # ── 1. Check Node.js ──────────────────────
 
 if ! command -v node &> /dev/null; then
-    echo "❌ Node.js not found. Please install Node.js 20+ first."
+    echo "❌ Node.js not found. Please install Node.js 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+ first."
     echo "   macOS:   brew install node"
     echo "   Other:   https://nodejs.org/"
     exit 1
 fi
 
-NODE_MAJOR=$(node -v | cut -d'.' -f1 | tr -d 'v')
-if [ "$NODE_MAJOR" -lt 20 ]; then
-    echo "❌ Node.js version too old ($(node -v)), v20+ required."
-    exit 1
-fi
+node "$PROJECT_DIR/scripts/check-node-version.cjs"
 echo "✅ Node.js $(node -v)"
 
 # ── 2. Install dependencies ──────────────────────────

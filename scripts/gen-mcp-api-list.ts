@@ -31,6 +31,7 @@ import { registerMoolahDashboardTools } from "../src/core/tools/moolah-dashboard
 import { registerMoolahMiningTools } from "../src/core/tools/moolah-mining-tools.js";
 import { registerRecordsTools } from "../src/core/tools/records-tools.js";
 import { TOOL_OUTPUT_SCHEMA_VERSION, withStructuredToolOutputs } from "../src/core/tools/structured-output.js";
+import { sideEffect } from "./lib/tool-side-effects.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -110,6 +111,7 @@ function describeField(zt: z.ZodTypeAny): {
   description: string;
 } {
   let required = true;
+  let nullable = false;
   let def: string | undefined;
   let description = (zt as any)?._def?.description ?? "";
   let t: any = zt;
@@ -120,7 +122,7 @@ function describeField(zt: z.ZodTypeAny): {
       required = false;
       t = t._def.innerType;
     } else if (tn === "ZodNullable") {
-      required = false;
+      nullable = true;
       t = t._def.innerType;
     } else if (tn === "ZodDefault") {
       required = false;
@@ -165,17 +167,14 @@ function describeField(zt: z.ZodTypeAny): {
       .filter(Boolean);
     if (parts.length) type = `string (${parts.join(", ")})`;
   }
+  if (nullable) type += " | null";
   return { type, required, def, description: (description || "").replace(/\s*\n\s*/g, " ").trim() };
 }
 
-/** Map MCP annotations to a human/agent-readable side-effect class. */
-function sideEffect(a?: CapturedTool["annotations"]): string {
-  if (!a) return "unannotated";
-  if (a.readOnlyHint === true) return "🟢 Read-only (Safe / Network Read)";
-  if (a.destructiveHint === true)
-    return "🔴 On-chain write · high-risk (Remote Write / Destructive) — signs and broadcasts a TRON transaction moving real assets; the client MUST require human confirmation (HITL) before executing";
-  return "🟡 State-changing (Write) — changes local wallet/network config or starts an interaction; client should confirm";
-}
+// HTML code keeps regex backslashes and union pipes intact in Markdown tables.
+const typeCell = (value: string) => `<code>${value.replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\\/g, "&#92;").replace(/\|/g, "&#124;")}</code>`;
+const textCell = (value: string) => value.replace(/\|/g, "&#124;");
 
 const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 
@@ -206,6 +205,7 @@ lines.push(JSON.stringify({ schemaVersion: TOOL_OUTPUT_SCHEMA_VERSION, tool: "ge
 lines.push("```");
 lines.push("");
 lines.push("Consume `structuredContent` when available; older clients may continue parsing the first text content item. Error results keep `isError: true` and the existing structured JSON error body.");
+lines.push("The envelope version covers `schemaVersion`, `tool`, and `result`, not every nested business field. The sTRX eligibility tool additionally declares a field-level result schema below. Unknown error codes or missing retryability never authorize replaying a write.");
 lines.push("");
 
 // Side-effect summary
@@ -217,10 +217,10 @@ lines.push(
 );
 lines.push("");
 lines.push(
-  "> ⚠️ Tools marked 🔴 **sign and broadcast TRON transactions that move real assets** — the client " +
-    "MUST require human confirmation (HITL) before executing. 🟡 tools only change local wallet/network " +
-    "config or start an interaction. Private keys are managed encrypted by `@bankofai/agent-wallet` and are " +
-    "**never passed as tool arguments**. The legacy unauthenticated browser-wallet bridge is disabled.",
+  "> ⚠️ 🔴 identifies on-chain transactions, including transfers, approvals, collateral membership, and claims, whether or not the MCP annotation marks them destructive. " +
+    "They require explicit human confirmation **before** building a signing/broadcast workflow. 🟡 identifies local configuration or the disabled browser interaction, not an on-chain write. " +
+    "`destructiveHint: false` does not mean read-only. Direct energy payments are signed locally but may be broadcast by the backend. " +
+    "Private keys remain encrypted in `@bankofai/agent-wallet` and are never tool arguments. The browser-wallet bridge remains disabled.",
 );
 lines.push("");
 lines.push("---");
@@ -235,7 +235,7 @@ for (const [label] of categories) {
     lines.push(`### \`${tool.name}\``);
     lines.push("");
     if (tool.annotations?.title) lines.push(`**${tool.annotations.title}**`);
-    lines.push(`- **Side effect**: ${sideEffect(tool.annotations)}`);
+    lines.push(`- **Side effect**: ${sideEffect(tool.name, tool.annotations)}`);
     if (tool.annotations) {
       const flags = [
         tool.annotations.idempotentHint != null ? `idempotent: ${tool.annotations.idempotentHint}` : null,
@@ -248,6 +248,15 @@ for (const [label] of categories) {
       `- **Output schema**: common structured envelope v${TOOL_OUTPUT_SCHEMA_VERSION} (` +
         "`schemaVersion`, `tool`, `result`)",
     );
+    const resultSchema = tool.outputSchema?.result;
+    if (resultSchema instanceof z.ZodObject) {
+      lines.push("- **Result fields** (required nullable fields must be present as `null` when unknown):", "");
+      lines.push("| Field | Type | Required | Description |", "|-------|------|:--------:|-------------|");
+      for (const [name, schema] of Object.entries(resultSchema.shape)) {
+        const field = describeField(schema as z.ZodTypeAny);
+        lines.push(`| \`${name}\` | ${typeCell(field.type)} | ${field.required ? "✅" : "—"} | ${textCell(field.description)} |`);
+      }
+    }
     const fields = Object.entries(tool.inputSchema);
     if (fields.length) {
       lines.push("");
@@ -256,7 +265,7 @@ for (const [label] of categories) {
       for (const [fname, zt] of fields) {
         const d = describeField(zt as z.ZodTypeAny);
         lines.push(
-          `| \`${fname}\` | ${d.type} | ${d.required ? "✅" : "—"} | ${d.def ?? ""} | ${d.description} |`,
+          `| \`${fname}\` | ${typeCell(d.type)} | ${d.required ? "✅" : "—"} | ${textCell(d.def ?? "")} | ${textCell(d.description)} |`,
         );
       }
     } else {

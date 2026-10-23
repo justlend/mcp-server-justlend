@@ -15,7 +15,7 @@ Beyond JustLend-specific operations, the server also exposes a full set of **gen
 
 [JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.3 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
+**📌 Current Version: v1.1.4 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
@@ -108,7 +108,9 @@ Markets are not enumerated here because they are created dynamically on-chain; u
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 20.0.0 or higher
+Recommended development and CI baseline: **Node.js 24.22.1**, pinned in `.nvmrc`.
+
+- [Node.js](https://nodejs.org/) 22.23.4+ (22.x), 24.22.1+ (24.x), or 26.12.1+
 - Optional: [TronGrid API key](https://www.trongrid.io/) for reliable mainnet access (strongly recommended)
 
 ## Installation
@@ -128,7 +130,7 @@ bash scripts/setup-mcp-test.sh
 # Add --claude-desktop to also print Claude Desktop JSON
 ```
 
-The script checks Node.js 20+, installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
+The script checks for a security-patched Node.js release, installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
 
 ## Configuration
 
@@ -344,6 +346,14 @@ HTTP mode is fail-closed: `MCP_API_KEY` is required, the server binds to `127.0.
 | `MCP_CORS_ORIGIN` | _(disabled)_ | Allowed CORS origin. If unset, no CORS headers are sent. |
 | `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
 | `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
+| `MCP_RATE_LIMIT_PER_MIN` | `120` | Per-IP HTTP requests per minute, excluding `/health` |
+| `MCP_SSE_RATE_LIMIT_PER_MIN` | `10` | Per-IP new SSE sessions per minute |
+
+Numeric settings must be positive, safe base-10 integers (`PORT`: 1–65535).
+Unset or empty values use the defaults; other invalid values stop HTTP startup
+rather than silently disabling a limit. `AGENT_WALLET_PASSWORD` remains
+memory-only during both wallet creation and import. Only an explicitly allowed,
+auto-generated legacy password may be written to `runtime_secrets.json`.
 
 Example with authentication:
 
@@ -380,6 +390,37 @@ All 104 tools declare an MCP `outputSchema`. Successful calls preserve the exist
 ```
 
 Schema-aware clients should consume `structuredContent`; consumers should pin the schema major. Tool-specific payloads live under `result`. Error calls preserve `isError: true` and the existing JSON error body with `errorCode`, `retryable`, and `hint` when classified.
+
+**Compatibility scope:** `schemaVersion` versions the common envelope, not every nested
+API result. The generic `result` remains unconstrained for most tools. Do not assume
+that an unchanged envelope version guarantees every business field; inspect the
+connected tool's `outputSchema` and pin the package version for stricter consumers.
+The bundled Skills server's structured error envelope is different from this full
+server's JSON text errors. For unknown codes or missing `retryable`, stop a write
+workflow and inspect state; `retryable: true` permits backoff for reads, not blind
+replay of a possibly submitted transaction.
+
+#### sTRX eligibility result contract
+
+`check_strx_withdrawal_eligibility` has a field-level `result` schema (discoverable
+through MCP `tools/list`, also rendered in the generated catalog):
+
+| Fields | Meaning |
+|---|---|
+| `stakedAmount`, `totalIncome`, `claimableRewards`, `withdrawnAmount` | Human-readable TRX numbers, or `null` if unavailable; do not use these Number-based summaries for exact transaction arithmetic. |
+| `hasStakedTrx`, `hasCompletedWithdrawals` | Boolean for known state, otherwise `null`. |
+| `pendingUnstakeRounds`, `completedUnstakeRounds`, `roundDetails` | Counts / API round array; `null` when unavailable. `[]` means a known empty queue, not contract fallback. Round `endTimestamp` is Unix milliseconds. |
+| `unfreezeDelayDays` | Days, or `null` if unknown. |
+| `claimEligibility` | `eligible` for a known positive claimable amount, `ineligible` for a known zero, otherwise `unknown`; not a guarantee that a future transaction succeeds. |
+| `source`, `dashboardSource`, `dataStatus`, `unknownFields`, `note` | Account/dashboard provenance and field completeness; preserve degradation notes. `complete` describes eligibility fields only, not all dashboard data. |
+
+This corrects the old fallback's misleading zeros/false/empty queue. Consumers
+must handle nullable fields before using the result for decisions. An unavailable
+claim amount causes `claim_strx_rewards` to return `data_unavailable`,
+`retryable: false`, without submission; re-read account/eligibility and obtain
+confirmation before trying a known-positive claim. `unstake_strx` starts a new
+unbonding round; collecting available TRX uses `claim_strx_rewards` (`claimAll`),
+followed by receipt and post-state verification.
 
 ### Tools (104 total)
 
@@ -518,6 +559,9 @@ npx vitest run tests/core/services/contracts.test.ts
 npx vitest run tests/core/services/transactions.test.ts
 npx vitest run tests/core/services/tokens.test.ts
 
+# Offline rental quote/preflight failure controls (no RPC or wallet transactions)
+npx vitest run tests/core/services/energy-rental-fail-closed.test.ts
+
 # Energy rental & sTRX staking read tests
 npx vitest run tests/core/services/energy-rental.test.ts
 npx vitest run tests/core/services/strx-staking.test.ts
@@ -536,6 +580,14 @@ TEST_MOOLAH_WRITE=1 npx vitest run tests/integration/moolah-writes.nile.test.ts
 ```
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
+
+## Energy rental quote safety
+
+Energy rental quotes now require successful reads of the market parameters, pause flag, usage-charge ratio, and **both** market rates. Missing, reverted, or malformed reads return an error, not fixed defaults or a rate-model substitute. The same checks run before `rent_energy` reaches the transaction sender. An unreadable rental order is not treated as an empty order, and the read-only renewal quote rejects an unknown remaining duration rather than assuming zero.
+
+Successful quotes include `dataSources` with the network, energy conversion source (`dashboard-api` or `chain-resources`), and market-contract parameter/rate sources. API-to-chain conversion fallback is allowed only when actual global energy limit and weight reads are positive and valid; fallback dashboard metrics listed in `unavailableFields` are not observed prices or yields. These sources identify how inputs were obtained, not an atomic-block snapshot or a guarantee that an API response is fresh. Re-quote before a separate confirmed write.
+
+Older/testnet deployments that do not expose the required quote inputs now fail closed, including Nile deployments missing `usageChargeRatio` or either market-rate getter. They are not silently assigned a 0.5 ratio or a default rate. This change does not publish a server release or alter any contract.
 
 ## Troubleshooting
 
@@ -609,7 +661,7 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `stake_trx` prompt: checks balance → checks exchange rate & APY → stakes TRX → verifies sTRX received
 
 **"Do I have any sTRX rewards to claim?"**
-→ AI calls `get_strx_account` to check claimable rewards → calls `claim_strx_rewards` if available
+→ AI reads `get_strx_account` and `check_strx_withdrawal_eligibility`, then reports the result only. Unknown/null data is not zero and must not trigger a claim. A query alone never authorizes a transaction. If the user later requests a claim, refresh eligibility; for a known positive amount, show the current claimable amount, network and signer, obtain separate explicit confirmation, then call `claim_strx_rewards` and verify the receipt and post-state.
 
 **"Can I withdraw my unstaked TRX?"**
 → AI calls `check_strx_withdrawal_eligibility` to check unbonding status and completed withdrawal rounds
@@ -618,10 +670,10 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `moolah_supply` prompt: lists vaults with APY → selects USDT → checks allowance → calls `approve_moolah_vault` → calls `moolah_vault_deposit` → verifies shares via `get_moolah_vault`
 
 **"What's my risk on the TRX→USDT market?"** _(Moolah)_
-→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (0–1 where 1.0 = liquidatable), warns at `>0.85`
+→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (which can exceed 1); approaching 1 is a warning, not proof of liquidation eligibility. Rounded or stale API values, including 1.0, are not an execution predicate; verify current on-chain health before acting
 
 **"Find me a liquidation opportunity"** _(Moolah)_
-→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` → for a target, calls `get_moolah_liquidation_quote` → estimates profit → if viable, guides through `approve_liquidator_token` + `moolah_liquidate`
+→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` to find candidates, not guaranteed liquidatable positions → verifies current on-chain health for the target → calls `get_moolah_liquidation_quote` (a cost estimate, not proof of borrower eligibility) → estimates profit → if eligible and viable, separately confirms `approve_liquidator_token` + `moolah_liquidate`
 
 **"How much did I supply to JustLend in the last month?"**
 → AI calls `get_lending_records` paginated and filters action type `1` (supply) from the returned `actionName`

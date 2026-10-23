@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { withStructuredToolOutputs } from "../../src/core/tools/structured-output.js";
+import { z } from "zod";
 
 function captureServer() {
   const captured = new Map<string, { config: any; handler: Function }>();
@@ -48,5 +49,17 @@ describe("common MCP structured output", () => {
     const result = await captured.get("fails")!.handler({});
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toBeUndefined();
+  });
+
+  it("declares a business result schema for sTRX eligibility, not just the generic envelope", () => {
+    const { server, captured } = captureServer();
+    withStructuredToolOutputs(server).registerTool("check_strx_withdrawal_eligibility", { inputSchema: {} },
+      async () => ({ content: [] }));
+    const resultSchema = captured.get("check_strx_withdrawal_eligibility")!.config.outputSchema.result;
+    expect(resultSchema).toBeInstanceOf(z.ZodObject);
+    expect(resultSchema.shape.claimableRewards.safeParse(null).success).toBe(true);
+    expect(resultSchema.shape.claimableRewards.safeParse(undefined).success).toBe(false);
+    expect(resultSchema.shape.claimableRewards.safeParse("unknown").success).toBe(false);
+    expect(resultSchema.shape.claimEligibility.safeParse("unknown").success).toBe(true);
   });
 });

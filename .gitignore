@@ -119,3 +119,6 @@ CLAUDE.md
 /test-results/
 /blob-report/
 /tests/**-snapshots/**-darwin.png
+# Release integrity manifest — generated per release (npm run gen:integrity), attach to the GitHub Release instead of committing
+integrity.json
+integrity.json.asc

@@ -28,6 +28,21 @@ function logEnergyRentalFallback(message: string): void {
   console.warn(`[energy-rental] ${message}`);
 }
 
+function isPositiveNumericValue(value: unknown): boolean {
+  return (typeof value === "number" || typeof value === "string") &&
+    Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+function isNileNetwork(network: string): boolean {
+  return ["nile", "testnet"].includes(network.toLowerCase());
+}
+
+function assertQuoteAmounts(...amounts: number[]): void {
+  if (amounts.some(value => !Number.isFinite(value) || value < 0)) {
+    throw new Error("Energy rental quote contains an invalid or out-of-range amount");
+  }
+}
+
 function validateTronAddress(address: string, label = "address"): string {
   if (!TRON_ADDRESS_RE.test(address)) {
     throw new Error(`Invalid TRON ${label} format`);
@@ -59,14 +74,15 @@ async function getMarketContract(network: string) {
  */
 export async function getEnergyRentalDashboard(network = "mainnet") {
   // On nile testnet, skip the API request and query on-chain directly
-  if (network !== "nile") {
+  if (!isNileNetwork(network)) {
     const apiHost = getApiHost(network);
     try {
       const resp = await fetchWithTimeout(`${apiHost}/strx/dashboard`);
       const json = await resp.json();
-      if (json.code === 0 && json.data) {
+      if (resp.ok && json.code === 0 && json.data && isPositiveNumericValue(json.data.energyStakePerTrx)) {
         const data = json.data;
         return {
+          energyConversionSource: "dashboard-api" as const,
           trxPrice: data.trxPrice,
           exchangeRate: data.exchangeRate,
           totalApy: data.totalApy,
@@ -96,11 +112,22 @@ export async function getEnergyRentalDashboard(network = "mainnet") {
     undefined,
     "Timed out while loading global energy parameters",
   );
-  const totalEnergyLimit = resource.TotalEnergyLimit || 90_000_000_000;
-  const totalEnergyWeight = resource.TotalEnergyWeight || 1;
+  const totalEnergyLimit = Number(resource.TotalEnergyLimit);
+  const totalEnergyWeight = Number(resource.TotalEnergyWeight);
+  if (!isPositiveNumericValue(resource.TotalEnergyLimit) || !isPositiveNumericValue(resource.TotalEnergyWeight)) {
+    throw new Error("Energy rental data unavailable: missing or invalid global energy parameters; no quote can be verified");
+  }
   const energyStakePerTrx = Math.floor(totalEnergyLimit / totalEnergyWeight);
+  if (energyStakePerTrx <= 0) {
+    throw new Error("Energy rental data unavailable: invalid on-chain energy conversion ratio");
+  }
 
   return {
+    energyConversionSource: "chain-resources" as const,
+    // Only the conversion ratio is observed here; other dashboard metrics are unavailable.
+    unavailableFields: ["trxPrice", "exchangeRate", "totalApy", "voteApy", "totalSupply",
+      "totalUnfreezable", "unfreezeDelayDays", "energyBurnPerTrx", "jstAmountRewardRentPerTrx",
+      "jstPrice", "energyUsed", "sTrx1Trx", "trx1sTrx"],
     trxPrice: 0,
     exchangeRate: 1e18,
     totalApy: 0,
@@ -129,7 +156,8 @@ async function viewContractMethod(
   functionSelector: string,
   parameters: Array<{ type: string; value: string | number }>,
   network: string,
-): Promise<string | null> {
+  expectedWords = 1,
+): Promise<string> {
   const tronWeb = getTronWeb(network);
   const from = (tronWeb.defaultAddress.hex || tronWeb.defaultAddress.base58 || undefined) as string | undefined;
 
@@ -145,160 +173,78 @@ async function viewContractMethod(
     "Timed out while reading energy rental contract state",
   );
 
-  if (result && result.result && result.constant_result && result.constant_result.length > 0) {
-    return result.constant_result[0];
+  const hex = result?.constant_result?.[0];
+  if (result?.result?.result !== true || typeof hex !== "string" ||
+      hex.length !== expectedWords * 64 || !/^(?:[0-9a-fA-F]{64})+$/.test(hex)) {
+    throw new Error(`Energy rental data unavailable: cannot verify ${functionSelector} on ${network}`);
   }
-  return null;
+  return hex;
 }
 
 function decodeUint256(hex: string, offset = 0): bigint {
-  return BigInt("0x" + hex.slice(offset * 64, offset * 64 + 64));
+  const word = hex.slice(offset * 64, offset * 64 + 64);
+  if (!/^[0-9a-fA-F]{64}$/.test(word)) {
+    throw new Error("Energy rental data unavailable: incomplete uint256 response");
+  }
+  return BigInt("0x" + word);
 }
 
 /**
- * Get contract-level rental parameters (on-chain).
- * Adapts to Nile contract differences (e.g., rentPaused() has no params,
- * usageChargeRatio may not exist).
+ * Read every parameter used by rental quotes. Missing/unsupported getters are
+ * errors, including on older Nile deployments; never invent a fee or pause state.
  */
 export async function getEnergyRentalParams(network = "mainnet") {
-  const addrs = getJustLendAddresses(network);
-  const market = addrs.strx.market;
+  const market = getJustLendAddresses(network).strx.market;
+  const nile = isNileNetwork(network);
+  const [liquidateThresholdHex, feeRatioHex, minFeeHex, totalDelegatedHex,
+    totalFrozenHex, maxRentableHex, rentPausedHex, usageChargeRatioHex] = await Promise.all([
+    viewContractMethod(market, "liquidateThreshold()", [], network),
+    viewContractMethod(market, "feeRatio()", [], network),
+    viewContractMethod(market, "minFee()", [], network),
+    viewContractMethod(market, "totalDelegatedOfType(uint256)", [{ type: "uint256", value: 1 }], network),
+    viewContractMethod(market, "totalFrozenOfType(uint256)", [{ type: "uint256", value: 1 }], network),
+    viewContractMethod(market, "maxRentableOfType(uint256)", [{ type: "uint256", value: 1 }], network),
+    viewContractMethod(market, nile ? "rentPaused()" : "rentPaused(uint256)",
+      nile ? [] : [{ type: "uint256", value: 1 }], network),
+    viewContractMethod(market, "usageChargeRatio()", [], network),
+  ]);
 
-  try {
-    // These methods exist on both mainnet and Nile
-    const [
-      liquidateThresholdHex,
-      feeRatioHex,
-      minFeeHex,
-      totalDelegatedHex,
-      totalFrozenHex,
-      maxRentableHex,
-    ] = await Promise.all([
-      viewContractMethod(market, "liquidateThreshold()", [], network),
-      viewContractMethod(market, "feeRatio()", [], network),
-      viewContractMethod(market, "minFee()", [], network),
-      viewContractMethod(market, "totalDelegatedOfType(uint256)", [{ type: "uint256", value: 1 }], network),
-      viewContractMethod(market, "totalFrozenOfType(uint256)", [{ type: "uint256", value: 1 }], network),
-      viewContractMethod(market, "maxRentableOfType(uint256)", [{ type: "uint256", value: 1 }], network),
-    ]);
-
-    if (
-      !liquidateThresholdHex || !feeRatioHex || !minFeeHex ||
-      !totalDelegatedHex || !totalFrozenHex || !maxRentableHex
-    ) {
-      throw new Error("Core contract view calls returned empty result");
-    }
-
-    // rentPaused: try no-param version first (Nile), then with param (mainnet)
-    let rentPausedHex: string | null = null;
-    rentPausedHex = await viewContractMethod(market, "rentPaused()", [], network).catch(() => null);
-    if (!rentPausedHex) {
-      rentPausedHex = await viewContractMethod(
-        market, "rentPaused(uint256)", [{ type: "uint256", value: 1 }], network,
-      ).catch(() => null);
-    }
-
-    // usageChargeRatio: may not exist on Nile
-    let usageChargeRatio = 0.5; // default
-    try {
-      const hex = await viewContractMethod(market, "usageChargeRatio()", [], network);
-      if (hex) {
-        usageChargeRatio = Number(decodeUint256(hex)) / TOKEN_PRECISION;
-      }
-    } catch {
-      logEnergyRentalFallback("Using default usage charge ratio.");
-    }
-
-    return {
-      liquidateThreshold: Number(decodeUint256(liquidateThresholdHex)),
-      feeRatio: Number(decodeUint256(feeRatioHex)) / TOKEN_PRECISION,
-      minFee: Number(decodeUint256(minFeeHex)) / TRX_PRECISION,
-      totalDelegated: Number(decodeUint256(totalDelegatedHex)) / TRX_PRECISION,
-      totalFrozen: Number(decodeUint256(totalFrozenHex)) / TRX_PRECISION,
-      maxRentable: Number(decodeUint256(maxRentableHex)) / TRX_PRECISION,
-      rentPaused: rentPausedHex ? Number(decodeUint256(rentPausedHex)) !== 0 : false,
-      usageChargeRatio,
-    };
-  } catch (error) {
-    logEnergyRentalFallback("Energy rental parameters unavailable; using safe defaults.");
-
-    return {
-      liquidateThreshold: 86400,
-      feeRatio: 0.05,
-      minFee: 50,
-      totalDelegated: 0,
-      totalFrozen: 0,
-      maxRentable: 100_000_000,
-      rentPaused: false,
-      usageChargeRatio: 0.5,
-    };
+  const paused = decodeUint256(rentPausedHex);
+  const usageChargeRatioRaw = decodeUint256(usageChargeRatioHex);
+  if (paused > 1n || usageChargeRatioRaw > 10n ** 18n) {
+    throw new Error("Energy rental data unavailable: invalid pause flag or usage charge ratio");
   }
+  return {
+    liquidateThreshold: Number(decodeUint256(liquidateThresholdHex)),
+    feeRatio: Number(decodeUint256(feeRatioHex)) / TOKEN_PRECISION,
+    minFee: Number(decodeUint256(minFeeHex)) / TRX_PRECISION,
+    totalDelegated: Number(decodeUint256(totalDelegatedHex)) / TRX_PRECISION,
+    totalFrozen: Number(decodeUint256(totalFrozenHex)) / TRX_PRECISION,
+    maxRentable: Number(decodeUint256(maxRentableHex)) / TRX_PRECISION,
+    rentPaused: paused === 1n,
+    usageChargeRatio: Number(usageChargeRatioRaw) / TOKEN_PRECISION,
+  };
 }
 
 /**
- * Get the rental rate for a given TRX amount.
- * On mainnet: calls _rentalRate/_stableRate on market proxy.
- * On Nile: calls getRentalRate on energyRateModel contract (same as frontend).
+ * Read both market rates, or fail. A rate-model estimate does not establish the
+ * stable-rate floor; an unsupported deployment must not produce a payable quote.
  */
 export async function getRentalRate(trxAmount: number, network = "mainnet") {
-  const addrs = getJustLendAddresses(network);
-  const market = addrs.strx.market;
-
-  try {
-    // First try mainnet-style: _rentalRate / _stableRate on market proxy
-    const amountSun = BigInt(Math.floor(trxAmount * TRX_PRECISION)).toString();
-
-    const [rentalRateHex, stableRateHex] = await Promise.all([
-      viewContractMethod(market, "_rentalRate(uint256,uint256)", [
-        { type: "uint256", value: amountSun },
-        { type: "uint256", value: 1 },
-      ], network).catch(() => null),
-      viewContractMethod(market, "_stableRate(uint256)", [
-        { type: "uint256", value: 1 },
-      ], network).catch(() => null),
-    ]);
-
-    if (rentalRateHex && stableRateHex) {
-      const rentalRate = Number(decodeUint256(rentalRateHex)) / TOKEN_PRECISION;
-      const stableRate = Number(decodeUint256(stableRateHex)) / TOKEN_PRECISION;
-      return { rentalRate, stableRate, effectiveRate: Math.max(rentalRate, stableRate) };
-    }
-
-    // Fallback: Nile-style — get totalDelegated/totalFrozen, call energyRateModel
-    logEnergyRentalFallback("Primary rental-rate query unavailable; using fallback estimator.");
-
-    const totalDelegatedHex = await viewContractMethod(
-      market, "totalDelegatedOfType(uint256)", [{ type: "uint256", value: 1 }], network,
-    );
-    const totalFrozenHex = await viewContractMethod(
-      market, "totalFrozenOfType(uint256)", [{ type: "uint256", value: 1 }], network,
-    );
-
-    if (!totalDelegatedHex || !totalFrozenHex) {
-      throw new Error("Cannot get totalDelegated/totalFrozen for rate calculation");
-    }
-
-    const totalDelegated = decodeUint256(totalDelegatedHex).toString();
-    const totalFrozen = decodeUint256(totalFrozenHex).toString();
-
-    const rateHex = await viewContractMethod(
-      addrs.energyRateModel, "getRentalRate(uint256,uint256)", [
-      { type: "uint256", value: totalDelegated },
-      { type: "uint256", value: totalFrozen },
-    ], network,
-    );
-
-    if (!rateHex) {
-      throw new Error("energyRateModel.getRentalRate returned empty");
-    }
-
-    const rate = Number(decodeUint256(rateHex)) / TOKEN_PRECISION;
-    return { rentalRate: rate, stableRate: rate, effectiveRate: rate };
-  } catch (error) {
-    logEnergyRentalFallback("Rental rate unavailable; using default rate.");
-    const defaultRate = 4e-8;
-    return { rentalRate: defaultRate, stableRate: defaultRate, effectiveRate: defaultRate };
+  if (!Number.isFinite(trxAmount) || trxAmount < 0) {
+    throw new Error("trxAmount must be a finite non-negative number");
   }
+  const market = getJustLendAddresses(network).strx.market;
+  const amountSun = BigInt(Math.floor(trxAmount * TRX_PRECISION)).toString();
+  const [rentalRateHex, stableRateHex] = await Promise.all([
+    viewContractMethod(market, "_rentalRate(uint256,uint256)", [
+      { type: "uint256", value: amountSun }, { type: "uint256", value: 1 },
+    ], network),
+    viewContractMethod(market, "_stableRate(uint256)", [{ type: "uint256", value: 1 }], network),
+  ]);
+  const rentalRate = Number(decodeUint256(rentalRateHex)) / TOKEN_PRECISION;
+  const stableRate = Number(decodeUint256(stableRateHex)) / TOKEN_PRECISION;
+  return { rentalRate, stableRate, effectiveRate: Math.max(rentalRate, stableRate) };
 }
 
 // ============================================================================
@@ -314,6 +260,12 @@ export interface RentalPriceEstimate {
   totalPrepayment: number;
   securityDeposit: number;
   dailyRentalCost: number;
+  dataSources: {
+    network: string;
+    energyConversion: "dashboard-api" | "chain-resources";
+    parameters: "market-contract";
+    rates: "market-contract";
+  };
 }
 
 export interface RenewalPriceEstimate extends RentalPriceEstimate {
@@ -332,6 +284,10 @@ export async function calculateRentalPrice(
   durationSeconds: number,
   network = "mainnet",
 ): Promise<RentalPriceEstimate> {
+  if (!Number.isFinite(energyAmount) || energyAmount <= 0 ||
+      !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new Error("New rentals require finite positive energy and duration");
+  }
   const dashboard = await getEnergyRentalDashboard(network);
   const params = await getEnergyRentalParams(network);
 
@@ -340,7 +296,7 @@ export async function calculateRentalPrice(
   }
 
   const energyStakePerTrx = Number(dashboard.energyStakePerTrx);
-  if (!energyStakePerTrx || energyStakePerTrx <= 0 || Number.isNaN(energyStakePerTrx)) {
+  if (!Number.isFinite(energyStakePerTrx) || energyStakePerTrx <= 0) {
     throw new Error("Invalid energyStakePerTrx from dashboard");
   }
 
@@ -366,6 +322,7 @@ export async function calculateRentalPrice(
   const securityDeposit = unUsageChargeRent + fee;
 
   const dailyRentalCost = trxAmount * rate * 86400;
+  assertQuoteAmounts(trxAmount, rate, fee, totalPrepayment, securityDeposit, dailyRentalCost);
 
   return {
     energyAmount,
@@ -376,6 +333,12 @@ export async function calculateRentalPrice(
     totalPrepayment,
     securityDeposit,
     dailyRentalCost,
+    dataSources: {
+      network,
+      energyConversion: dashboard.energyConversionSource,
+      parameters: "market-contract",
+      rates: "market-contract",
+    },
   };
 }
 
@@ -390,6 +353,10 @@ export async function calculateRenewalPrice(
   additionalDurationSeconds = 0,
   network = "mainnet",
 ): Promise<RenewalPriceEstimate> {
+  if ([energyAmount, existingTrxAmount, existingSecurityDeposit, existingRemainingSeconds,
+    additionalDurationSeconds].some(value => !Number.isFinite(value) || value < 0)) {
+    throw new Error("Renewal inputs must be finite non-negative numbers");
+  }
   const dashboard = await getEnergyRentalDashboard(network);
   const params = await getEnergyRentalParams(network);
 
@@ -398,13 +365,16 @@ export async function calculateRenewalPrice(
   }
 
   const energyStakePerTrx = Number(dashboard.energyStakePerTrx);
-  if (!energyStakePerTrx || energyStakePerTrx <= 0 || Number.isNaN(energyStakePerTrx)) {
+  if (!Number.isFinite(energyStakePerTrx) || energyStakePerTrx <= 0) {
     throw new Error("Invalid energyStakePerTrx from dashboard");
   }
 
   // New TRX to add (incremental)
   const newTrxAmount = energyAmount > 0 ? Math.ceil(energyAmount / energyStakePerTrx) : 0;
   const totalTrxAmount = newTrxAmount + existingTrxAmount;
+  if (newTrxAmount > params.maxRentable) {
+    throw new Error(`Requested ${newTrxAmount} TRX exceeds max rentable ${params.maxRentable.toFixed(2)} TRX`);
+  }
 
   // Rate is based on the NEW/incremental amount
   const rateInfo = await getRentalRate(newTrxAmount, network);
@@ -429,6 +399,8 @@ export async function calculateRenewalPrice(
   const securityDeposit = unUsageChargeRent + fee;
 
   const dailyRentalCost = totalTrxAmount * rate * 86400;
+  assertQuoteAmounts(newTrxAmount, totalTrxAmount, totalSeconds, rate, fee,
+    grossPrepayment, renewalPrepayment, securityDeposit, dailyRentalCost);
 
   return {
     energyAmount,
@@ -439,6 +411,12 @@ export async function calculateRenewalPrice(
     totalPrepayment: renewalPrepayment,
     securityDeposit,
     dailyRentalCost,
+    dataSources: {
+      network,
+      energyConversion: dashboard.energyConversionSource,
+      parameters: "market-contract",
+      rates: "market-contract",
+    },
     existingTrxAmount,
     existingSecurityDeposit,
     existingRemainingSeconds,
@@ -655,43 +633,32 @@ export async function getRentInfo(
   const market = addrs.strx.market;
   const receiver = receiverAddress || renterAddress;
 
-  try {
-    const [rentInfoHex, rentalsHex] = await Promise.all([
-      viewContractMethod(market, "getRentInfo(address,address,uint256)", [
-        { type: "address", value: renterAddress },
-        { type: "address", value: receiver },
-        { type: "uint256", value: 1 },
-      ], network),
-      viewContractMethod(market, "rentals(address,address,uint256)", [
-        { type: "address", value: renterAddress },
-        { type: "address", value: receiver },
-        { type: "uint256", value: 1 },
-      ], network),
-    ]);
+  const [rentInfoHex, rentalsHex] = await Promise.all([
+    viewContractMethod(market, "getRentInfo(address,address,uint256)", [
+      { type: "address", value: renterAddress },
+      { type: "address", value: receiver },
+      { type: "uint256", value: 1 },
+    ], network, 3),
+    viewContractMethod(market, "rentals(address,address,uint256)", [
+      { type: "address", value: renterAddress },
+      { type: "address", value: receiver },
+      { type: "uint256", value: 1 },
+    ], network, 3),
+  ]);
 
-    const securityDepositRaw = rentInfoHex ? decodeUint256(rentInfoHex, 0) : 0n;
-    const rentBalanceRaw = rentalsHex ? decodeUint256(rentalsHex, 0) : 0n;
-    const securityDeposit = Number(securityDepositRaw) / TRX_PRECISION;
-    const rentBalance = Number(rentBalanceRaw) / TRX_PRECISION;
+  const securityDepositRaw = decodeUint256(rentInfoHex, 0);
+  const rentBalanceRaw = decodeUint256(rentalsHex, 0);
+  const securityDeposit = Number(securityDepositRaw) / TRX_PRECISION;
+  const rentBalance = Number(rentBalanceRaw) / TRX_PRECISION;
 
-    return {
-      securityDeposit,
-      rentBalance,
-      // Self-describing amounts (TRX, 6 decimals) from the raw sun values.
-      securityDepositAmount: describeAmount(securityDepositRaw, 6, "TRX"),
-      rentBalanceAmount: describeAmount(rentBalanceRaw, 6, "TRX"),
-      hasActiveRental: rentBalance > 0,
-    };
-  } catch (error) {
-    logEnergyRentalFallback("Rental status lookup failed; assuming no active rental.");
-    return {
-      securityDeposit: 0,
-      rentBalance: 0,
-      securityDepositAmount: describeAmount(0n, 6, "TRX"),
-      rentBalanceAmount: describeAmount(0n, 6, "TRX"),
-      hasActiveRental: false,
-    };
-  }
+  return {
+    securityDeposit,
+    rentBalance,
+    // Self-describing amounts (TRX, 6 decimals) from the raw sun values.
+    securityDepositAmount: describeAmount(securityDepositRaw, 6, "TRX"),
+    rentBalanceAmount: describeAmount(rentBalanceRaw, 6, "TRX"),
+    hasActiveRental: rentBalance > 0,
+  };
 }
 
 /**
