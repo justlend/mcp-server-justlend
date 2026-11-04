@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { createServer, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -92,6 +93,20 @@ describe("redirect credential boundaries", () => {
     });
     expect(initial[0][name.toLowerCase()]).toBe("offline-custom-marker");
     expect(forwarded).not.toHaveProperty(name.toLowerCase());
+    expect(forwarded["x-keep"]).toBe("visible");
+  });
+
+  // GHSA-mrwp-f3q8-3g9p: sensitive header lists may come from another realm.
+  it.each(["object", "array"])("strips cross-realm sensitive headers from %s-form headers", async (form) => {
+    const sensitiveHeaders = runInNewContext('["X-API-Key"]');
+    expect(Array.isArray(sensitiveHeaders)).toBe(true);
+    expect(sensitiveHeaders instanceof Array).toBe(false);
+    const headers = form === "object"
+      ? { "X-API-Key": "offline-custom-marker", "X-Keep": "visible" }
+      : ["X-API-Key", "offline-custom-marker", "X-Keep", "visible"];
+    const { initial, forwarded } = await crossOrigin({ headers, sensitiveHeaders });
+    expect(initial[0]["x-api-key"]).toBe("offline-custom-marker");
+    expect(forwarded).not.toHaveProperty("x-api-key");
     expect(forwarded["x-keep"]).toBe("visible");
   });
 
