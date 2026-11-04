@@ -15,6 +15,7 @@ import {
   checkWithdrawalEligibility,
 } from "../../../src/core/services/strx-staking.js";
 import { skipOn429 } from "../../helpers.js";
+import { STRX_ELIGIBILITY_RESULT_SCHEMA } from "../../../src/core/tools/structured-output.js";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -126,16 +127,12 @@ describe("checkWithdrawalEligibility (Mainnet)", () => {
 
     expect(eligibility).toBeDefined();
     expect(eligibility.address).toBe(TEST_ADDRESS);
-    expect(typeof eligibility.hasStakedTrx).toBe("boolean");
-    expect(typeof eligibility.stakedAmount).toBe("number");
-    expect(typeof eligibility.totalIncome).toBe("number");
-    expect(typeof eligibility.claimableRewards).toBe("number");
-    expect(typeof eligibility.withdrawnAmount).toBe("number");
-    expect(typeof eligibility.pendingUnstakeRounds).toBe("number");
-    expect(typeof eligibility.completedUnstakeRounds).toBe("number");
-    expect(typeof eligibility.hasCompletedWithdrawals).toBe("boolean");
-    expect(typeof eligibility.unfreezeDelayDays).toBe("number");
-    expect(eligibility.roundDetails).toBeInstanceOf(Array);
+    expect(STRX_ELIGIBILITY_RESULT_SCHEMA.safeParse(eligibility).success).toBe(true);
+    if (eligibility.source === "contract") {
+      expect(eligibility.claimEligibility).toBe("unknown");
+      expect(eligibility.claimableRewards).toBeNull();
+      expect(eligibility.roundDetails).toBeNull();
+    }
     console.error(`Eligibility: staked=${eligibility.hasStakedTrx}, pending=${eligibility.pendingUnstakeRounds}, completed=${eligibility.completedUnstakeRounds}`);
   }), 30_000);
 });

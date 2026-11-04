@@ -302,9 +302,10 @@ const isMerkleRootReady = async (
       network,
     );
     const hex = String(result ?? "").replace(/^0x/i, "").toLowerCase();
-    return hex.length > 0 && hex !== ZERO_BYTES32;
+    if (!/^[0-9a-f]{64}$/.test(hex)) throw new Error("Invalid merkle root response");
+    return hex !== ZERO_BYTES32;
   } catch {
-    return false;
+    throw new Error("Unable to verify the V2 mining merkle root. Retry before submitting a claim.");
   }
 };
 
@@ -324,9 +325,10 @@ const isAlreadyClaimedOnChain = async (
       },
       network,
     );
-    return Boolean(result);
+    if (typeof result !== "boolean") throw new Error("Invalid isClaimed response");
+    return result;
   } catch {
-    return false;
+    throw new Error("Unable to verify whether the V2 mining round was claimed. Retry before submitting a claim.");
   }
 };
 
@@ -361,8 +363,7 @@ export async function claimMoolahMiningPeriod(params: {
   const distributor = addresses.merkleDistributorV2;
   if (!distributor) {
     throw new Error(
-      `V2 mining distributor is not configured on ${network}. ` +
-      `Mainnet contract is pending deployment; nile is supported.`,
+      `V2 mining distributor is not configured on ${network}. Check the deployment configuration before claiming.`,
     );
   }
 
@@ -431,6 +432,6 @@ export async function claimMoolahMiningPeriod(params: {
     periodKey: periodKey || `${merkleIndex}:${index}`,
     merkleIndex: Number(merkleIndex),
     index: Number(index),
-    message: `Claimed V2 mining round (merkleIndex=${merkleIndex}, index=${index}). TX: ${txID}`,
+    message: `Submitted V2 mining claim (merkleIndex=${merkleIndex}, index=${index}). Verify the transaction receipt. TX: ${txID}`,
   };
 }

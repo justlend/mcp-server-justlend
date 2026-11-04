@@ -8,18 +8,17 @@ import { createSessionState, runWithSessionState, type SessionState } from "../c
 import { shutdownBrowserSignerForSession } from "../core/services/wallet.js";
 import { SERVER_VERSION } from "./version.js";
 import { authHeaderMatches } from "./auth.js";
+import { readHttpNumericConfig } from "./http-config.js";
 
-const PORT = parseInt(process.env.PORT || "3001", 10);
 const HOST = process.env.MCP_HOST || "127.0.0.1";
 const API_KEY = process.env.MCP_API_KEY?.trim();
 const CORS_ORIGIN = process.env.MCP_CORS_ORIGIN?.trim();
-const MAX_SESSIONS = parseInt(process.env.MCP_MAX_SESSIONS || "100", 10);
-const SESSION_TIMEOUT_MS = parseInt(process.env.MCP_SESSION_TIMEOUT_MS || "1800000", 10); // 30 min
-
 async function main() {
   if (!API_KEY) {
     throw new Error("MCP_API_KEY is required in HTTP mode. Refusing to start without authentication.");
   }
+
+  const { port, maxSessions, sessionTimeoutMs, rateLimitPerMin, sseRateLimitPerMin } = readHttpNumericConfig();
 
   const app = express();
   const transports = new Map<string, {
@@ -52,7 +51,7 @@ async function main() {
   // even if the API key leaks. Per-IP; tune via env. /health is exempt.
   app.use(rateLimit({
     windowMs: 60_000,
-    limit: parseInt(process.env.MCP_RATE_LIMIT_PER_MIN || "120", 10),
+    limit: rateLimitPerMin,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.path === "/health",
@@ -62,7 +61,7 @@ async function main() {
   // Stricter limit for new SSE sessions — each opens a server instance + session state.
   const sseLimiter = rateLimit({
     windowMs: 60_000,
-    limit: parseInt(process.env.MCP_SSE_RATE_LIMIT_PER_MIN || "10", 10),
+    limit: sseRateLimitPerMin,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many new sessions" },
@@ -87,7 +86,7 @@ async function main() {
   const sessionSweeper = setInterval(() => {
     const now = Date.now();
     for (const [id, session] of transports) {
-      if (now - session.lastActivity > SESSION_TIMEOUT_MS) {
+      if (now - session.lastActivity > sessionTimeoutMs) {
         void closeSession(id);
       }
     }
@@ -96,7 +95,7 @@ async function main() {
 
   app.get("/sse", sseLimiter, async (_req, res) => {
     // M-6: Max session limit
-    if (transports.size >= MAX_SESSIONS) {
+    if (transports.size >= maxSessions) {
       res.status(503).json({ error: "Too many active sessions" });
       return;
     }
@@ -148,10 +147,10 @@ async function main() {
     res.json({ status: "ok", server: "mcp-server-justlend", version: SERVER_VERSION });
   });
 
-  app.listen(PORT, HOST, () => {
-    console.error(`@justlend/mcp-server-justlend HTTP server listening on http://${HOST}:${PORT}`);
-    console.error(`SSE endpoint: http://${HOST}:${PORT}/sse`);
-    console.error(`Health check: http://${HOST}:${PORT}/health`);
+  app.listen(port, HOST, () => {
+    console.error(`@justlend/mcp-server-justlend HTTP server listening on http://${HOST}:${port}`);
+    console.error(`SSE endpoint: http://${HOST}:${port}/sse`);
+    console.error(`Health check: http://${HOST}:${port}/health`);
   });
 }
 

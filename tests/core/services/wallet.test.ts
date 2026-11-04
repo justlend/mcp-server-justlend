@@ -3,7 +3,10 @@
  * Tests module exports and function signatures.
  * Actual wallet operations require agent-wallet to be configured.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   autoInitWallet,
   getBrowserSigner,
@@ -85,4 +88,33 @@ describe("browser signer session isolation", () => {
     expect(signerA1).toBe(signerA2);
     expect(signerA1).not.toBe(signerB);
   });
+});
+
+describe("agent-wallet auto initialization", () => {
+  let tempDir: string | undefined;
+  const originalDir = process.env.AGENT_WALLET_DIR;
+  const originalPassword = process.env.AGENT_WALLET_PASSWORD;
+
+  afterEach(() => {
+    if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+    tempDir = undefined;
+    if (originalDir === undefined) delete process.env.AGENT_WALLET_DIR;
+    else process.env.AGENT_WALLET_DIR = originalDir;
+    if (originalPassword === undefined) delete process.env.AGENT_WALLET_PASSWORD;
+    else process.env.AGENT_WALLET_PASSWORD = originalPassword;
+  });
+
+  it("creates and resolves a local_secure wallet on first use", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "mcp-wallet-test-"));
+    process.env.AGENT_WALLET_DIR = tempDir;
+    process.env.AGENT_WALLET_PASSWORD = "test-only-agent-wallet-password";
+
+    const first = await autoInitWallet();
+    const second = await autoInitWallet();
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.address).toBe(first.address);
+    expect(first.address).toMatch(/^T[1-9A-HJ-NP-Za-km-z]{33}$/);
+  }, 30_000);
 });

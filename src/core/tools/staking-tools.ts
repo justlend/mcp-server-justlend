@@ -86,7 +86,8 @@ export function registerStakingTools(server: McpServer) {
     {
       description:
         "Check if user has TRX available to withdraw after sTRX unstaking unbonding period. " +
-        "Shows staked amount, claimable rewards, pending/completed unstake rounds, and withdrawal status.",
+        "Shows staked amount, claimable rewards, pending/completed unstake rounds, and withdrawal status. " +
+        "Unavailable fields are null, not zero: inspect claimEligibility, dataStatus, source, dashboardSource, unknownFields, and note before deciding to claim.",
       inputSchema: {
         address: tronAddress("Address to check. Default: configured wallet").optional(),
         network: z.string().optional().describe("Network. Default: mainnet"),
@@ -161,7 +162,8 @@ export function registerStakingTools(server: McpServer) {
     {
       description:
         "Claim all available sTRX staking rewards. " +
-        "Pre-checks: verifies there are claimable rewards before executing.",
+        "Calls claimAll to collect available TRX after unbonding. " +
+        "Pre-checks: verifies a positive claimable amount; unknown availability stops without submitting a transaction (data_unavailable).",
       inputSchema: {
         network: z.string().optional().describe("Network. Default: mainnet"),
       },

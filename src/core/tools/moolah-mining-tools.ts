@@ -9,9 +9,8 @@ import { toolError, tronAddress, rawUnitsString } from "./shared.js";
  * Mirrors the front-app useMining.js surface: vault APY, accruing/settling
  * state, claimable merkle rounds, and the multi-token claim write path.
  *
- * Note: the V2 merkle distributor is not yet deployed on mainnet. Read-only
- * APIs work on both networks; `claim_moolah_mining_period` errors clearly
- * when the distributor address is empty for the requested network.
+ * Mainnet and Nile distributors are configured. The rewards REST backend is
+ * mainnet-only; Nile claims require explicitly supplied raw claim fields.
  */
 export function registerMoolahMiningTools(server: McpServer) {
 
@@ -124,8 +123,9 @@ export function registerMoolahMiningTools(server: McpServer) {
         "Claim a single V2 mining airdrop round via multiClaim() on the Moolah merkle distributor. " +
         "Pass periodKey from get_moolah_pending_mining_periods (preferred) or supply merkleIndex / index / " +
         "amounts / proof directly. Pre-checks isClaimed() and merkleRoots() on-chain so the wallet does not pay " +
-        "gas for a guaranteed-revert tx. Mainnet currently errors with 'distributor not configured' until the V2 " +
-        "contract ships — nile testnet works.",
+        "gas for a guaranteed-revert tx; unavailable pre-checks stop submission. Mainnet supports periodKey " +
+        "resolution. Nile requires raw claim fields because the rewards REST backend is mainnet-only. " +
+        "A returned txID indicates submission, not final confirmation.",
       inputSchema: {
         periodKey:   z.string().optional().describe("Round key from get_moolah_pending_mining_periods (preferred)"),
         merkleIndex: z.union([z.string(), z.number()]).optional().describe("Override: merkle tree index"),

@@ -13,6 +13,7 @@ import { registerMoolahDashboardTools } from "./moolah-dashboard-tools.js";
 import { registerMoolahMiningTools } from "./moolah-mining-tools.js";
 import { registerRecordsTools } from "./records-tools.js";
 import { withStructuredToolOutputs } from "./structured-output.js";
+import { registerRiskAlertTools } from "./risk-alert-tools.js";
 
 /**
  * Register all JustLend MCP tools.
@@ -37,4 +38,5 @@ export function registerJustLendTools(server: McpServer) {
   registerMoolahMiningTools(structuredServer);
   // Historical records (V1 + cross-cutting)
   registerRecordsTools(structuredServer);
+  registerRiskAlertTools(structuredServer);
 }

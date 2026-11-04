@@ -75,11 +75,17 @@ export function sanitizeError(error: any): string {
  */
 export function classifyError(message: string): { errorCode?: string; hint?: string; retryable?: boolean } {
   const m = message.toLowerCase();
+  if (m.startsWith("strx claim availability is unknown"))
+    return {
+      errorCode: "data_unavailable",
+      retryable: false,
+      hint: "Re-query get_strx_account and check_strx_withdrawal_eligibility. Unknown is not zero; do not retry a claim until availability is known and the user confirms it.",
+    };
   if (/allowance/.test(m) && /approve/.test(m))
     return {
       errorCode: "insufficient_allowance",
       retryable: false,
-      hint: "Raise the allowance first (e.g. approve_underlying for lending, or approve_for_votes for governance), then retry.",
+      hint: "Separately confirm the exact approval (e.g. approve_underlying for lending, or approve_jst_for_voting for governance), recheck allowance, then obtain confirmation for the intended write. Do not retry automatically.",
     };
   if (/insufficient/.test(m) && /balance/.test(m))
     return {
@@ -91,7 +97,7 @@ export function classifyError(message: string): { errorCode?: string; hint?: str
     return {
       errorCode: "wallet_not_configured",
       retryable: false,
-      hint: "Configure agent-wallet first with import_wallet or set_wallet_mode({ mode: 'agent' }), then set_active_wallet if needed.",
+      hint: "Ask the user to configure agent-wallet locally. To import an existing wallet, the user runs npx agent-wallet import in their own terminal; never request a private key in chat or tool arguments. Then use set_wallet_mode({ mode: 'agent' }), list_wallets, and set_active_wallet with the chosen wallet ID if needed.",
     };
   if (/revert|execution reverted|reverted/.test(m))
     return {

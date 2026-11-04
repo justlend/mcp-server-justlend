@@ -4,18 +4,18 @@
 ![TRON Network](https://img.shields.io/badge/Network-TRON-red)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-3178C6)
 ![MCP](https://img.shields.io/badge/MCP-1.22.0+-blue)
-![JustLend](https://img.shields.io/badge/Protocol-JustLend_DAO-green)
+![JustLend](https://img.shields.io/badge/Protocol-JustLend-green)
 ![npm](https://img.shields.io/badge/npm-@justlend/mcp--server--justlend-CB3837)
 
-A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend DAO** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, participate in V2 (Moolah) isolated markets and vaults, and analyze DeFi portfolios — all through a unified AI interface.
+A Model Context Protocol (MCP) server that enables AI agents to interact with the **JustLend** lending protocol on TRON. Supply assets, borrow against collateral, manage positions, participate in V2 (Moolah) isolated markets and vaults, and analyze DeFi portfolios — all through a unified AI interface.
 
 Beyond JustLend-specific operations, the server also exposes a full set of **general-purpose TRON chain utilities** — balance queries, block/transaction data, token metadata, TRX transfers, smart contract reads/writes, staking (Stake 2.0), multicall, and more.
 
 ## Overview
 
-[JustLend DAO](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
+[JustLend](https://justlend.org) is the largest lending protocol on TRON. This MCP server wraps the full protocol functionality into tools and guided prompts that local MCP clients such as Claude Desktop, Codex, Claude Code, and Cursor can use.
 
-**📌 Current Version: v1.1.3 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
+**📌 Package version: v1.1.4 — JustLend V1 + V2 (Moolah), plus TRX↔WTRX wrap/unwrap**
 
 - **JustLend V1** (Compound V2 fork): the original pool-based protocol — `jUSDT`, `jTRX`, `jUSDD`, `jSUN`, `jWBTC`, etc. Full supply / borrow / repay / withdraw / collateral management and mining rewards.
 - **JustLend V2 (Moolah)** (Morpho Blue fork): isolated markets with `MarketParams (loanToken, collateralToken, oracle, irm, lltv)` and ERC4626 vaults that auto-allocate across markets. Full vault deposit / redeem, collateral supply / borrow / repay / liquidate, and public liquidations.
@@ -346,6 +346,14 @@ HTTP mode is fail-closed: `MCP_API_KEY` is required, the server binds to `127.0.
 | `MCP_CORS_ORIGIN` | _(disabled)_ | Allowed CORS origin. If unset, no CORS headers are sent. |
 | `MCP_MAX_SESSIONS` | `100` | Maximum concurrent SSE sessions |
 | `MCP_SESSION_TIMEOUT_MS` | `1800000` | Session idle timeout in ms (default: 30 min) |
+| `MCP_RATE_LIMIT_PER_MIN` | `120` | Per-IP HTTP requests per minute, excluding `/health` |
+| `MCP_SSE_RATE_LIMIT_PER_MIN` | `10` | Per-IP new SSE sessions per minute |
+
+Numeric settings must be positive, safe base-10 integers (`PORT`: 1–65535).
+Unset or empty values use the defaults; other invalid values stop HTTP startup
+rather than silently disabling a limit. `AGENT_WALLET_PASSWORD` remains
+memory-only during both wallet creation and import. Only an explicitly allowed,
+auto-generated legacy password may be written to `runtime_secrets.json`.
 
 Example with authentication:
 
@@ -371,7 +379,7 @@ npm run dev:http     # HTTP/SSE with auto-reload
 
 ### Structured output contract
 
-All 104 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
+All 107 tools declare an MCP `outputSchema`. Successful calls preserve the existing text `content` for older clients and also return a versioned envelope in `structuredContent`:
 
 ```json
 {
@@ -383,7 +391,41 @@ All 104 tools declare an MCP `outputSchema`. Successful calls preserve the exist
 
 Schema-aware clients should consume `structuredContent`; consumers should pin the schema major. Tool-specific payloads live under `result`. Error calls preserve `isError: true` and the existing JSON error body with `errorCode`, `retryable`, and `hint` when classified.
 
-### Tools (104 total)
+**Compatibility scope:** `schemaVersion` versions the common envelope, not every nested
+API result. The generic `result` remains unconstrained for most tools. Do not assume
+that an unchanged envelope version guarantees every business field; inspect the
+connected tool's `outputSchema` and pin the package version for stricter consumers.
+The bundled Skills server's structured error envelope is different from this full
+server's JSON text errors. For unknown codes or missing `retryable`, stop a write
+workflow and inspect state; `retryable: true` permits backoff for reads, not blind
+replay of a possibly submitted transaction.
+
+#### sTRX eligibility result contract
+
+`check_strx_withdrawal_eligibility` has a field-level `result` schema (discoverable
+through MCP `tools/list`, also rendered in the generated catalog):
+
+| Fields | Meaning |
+|---|---|
+| `stakedAmount`, `totalIncome`, `claimableRewards`, `withdrawnAmount` | Human-readable TRX numbers, or `null` if unavailable; do not use these Number-based summaries for exact transaction arithmetic. |
+| `hasStakedTrx`, `hasCompletedWithdrawals` | Boolean for known state, otherwise `null`. |
+| `pendingUnstakeRounds`, `completedUnstakeRounds`, `roundDetails` | Counts / API round array; `null` when unavailable. `[]` means a known empty queue, not contract fallback. Round `endTimestamp` is Unix milliseconds. |
+| `unfreezeDelayDays` | Days, or `null` if unknown. |
+| `claimEligibility` | `eligible` for a known positive claimable amount, `ineligible` for a known zero, otherwise `unknown`; not a guarantee that a future transaction succeeds. |
+| `source`, `dashboardSource`, `dataStatus`, `unknownFields`, `note` | Account/dashboard provenance and field completeness; preserve degradation notes. `complete` describes eligibility fields only, not all dashboard data. |
+
+This corrects the old fallback's misleading zeros/false/empty queue. Consumers
+must handle nullable fields before using the result for decisions. An unavailable
+claim amount causes `claim_strx_rewards` to return `data_unavailable`,
+`retryable: false`, without submission; re-read account/eligibility and obtain
+confirmation before trying a known-positive claim. `unstake_strx` starts a new
+unbonding round; collecting available TRX uses `claim_strx_rewards` (`claimAll`),
+followed by receipt and post-state verification.
+
+The 107-tool catalog below describes this source checkout, not a new npm release.
+Use the connected server’s `tools/list` to detect capabilities before use.
+
+### Tools (107 total)
 
 The full, authoritative per-tool catalog — every tool's input and output schema, side-effect class (read-only / on-chain write / destructive) and HITL guidance — lives in [`mcp-api-list.md`](./mcp-api-list.md), **generated from source** (`npm run gen:api-list`) so it never drifts. Counts by category:
 
@@ -401,6 +443,7 @@ The full, authoritative per-tool catalog — every tool's input and output schem
 | JustLend V2 (Moolah) — Liquidation | 5 | pending liquidations, quote, liquidate, approve |
 | JustLend V2 (Moolah) — Dashboard & History | 6 | portfolio, positions, dashboard & history |
 | JustLend V2 (Moolah) — Mining, Rewards & Estimator | 5 | mining APY / accrual, claim, gas estimate |
+| Risk Alerts (read-only) | 3 | alert list, default rules, V2 markets; no signatures or email writes |
 | Historical Records (V1 + airdrop) — mainnet-only | 7 | transaction / vote / reward history, claimable airdrops |
 
 Every write / destructive tool is marked `destructiveHint: true` and must be gated behind host-side human confirmation (HITL); see [`mcp-api-list.md`](./mcp-api-list.md) for the exact per-tool side-effect class.
@@ -414,8 +457,8 @@ mcp-server-justlend/
 │   ├── core/
 │   │   ├── chains.ts          # Network configs + V1 jTokens + V2 Moolah addresses (mainnet + nile)
 │   │   ├── abis.ts            # jToken, Comptroller, Oracle, TRC20 + 4 Moolah ABIs
-│   │   ├── tools/             # MCP tool registrations (104 tools)
-│   │   │   ├── index.ts                      # Barrel: registers all 13 tool modules with structured outputs
+│   │   ├── tools/             # MCP tool registrations (107 tools)
+│   │   │   ├── index.ts                      # Barrel: registers all 14 tool modules with structured outputs
 │   │   │   ├── wallet-tools.ts               # Wallet, network, transfer
 │   │   │   ├── market-tools.ts               # V1 market data, balance, mining
 │   │   │   ├── lending-tools.ts              # V1 supply / borrow / repay / collateral / approve / estimate
@@ -520,6 +563,9 @@ npx vitest run tests/core/services/contracts.test.ts
 npx vitest run tests/core/services/transactions.test.ts
 npx vitest run tests/core/services/tokens.test.ts
 
+# Offline rental quote/preflight failure controls (no RPC or wallet transactions)
+npx vitest run tests/core/services/energy-rental-fail-closed.test.ts
+
 # Energy rental & sTRX staking read tests
 npx vitest run tests/core/services/energy-rental.test.ts
 npx vitest run tests/core/services/strx-staking.test.ts
@@ -538,6 +584,14 @@ TEST_MOOLAH_WRITE=1 npx vitest run tests/integration/moolah-writes.nile.test.ts
 ```
 
 > **Rate limiting**: Integration tests make real RPC calls to TronGrid. Without `TRONGRID_API_KEY` the free tier limits to a few requests per second. Run test files individually, or set `TRONGRID_API_KEY` to avoid 429 errors.
+
+## Energy rental quote safety
+
+Energy rental quotes now require successful reads of the market parameters, pause flag, usage-charge ratio, and **both** market rates. Missing, reverted, or malformed reads return an error, not fixed defaults or a rate-model substitute. The same checks run before `rent_energy` reaches the transaction sender. An unreadable rental order is not treated as an empty order, and the read-only renewal quote rejects an unknown remaining duration rather than assuming zero.
+
+Successful quotes include `dataSources` with the network, energy conversion source (`dashboard-api` or `chain-resources`), and market-contract parameter/rate sources. API-to-chain conversion fallback is allowed only when actual global energy limit and weight reads are positive and valid; fallback dashboard metrics listed in `unavailableFields` are not observed prices or yields. These sources identify how inputs were obtained, not an atomic-block snapshot or a guarantee that an API response is fresh. Re-quote before a separate confirmed write.
+
+Older/testnet deployments that do not expose the required quote inputs now fail closed, including Nile deployments missing `usageChargeRatio` or either market-rate getter. They are not silently assigned a 0.5 ratio or a default rate. This change does not publish a server release or alter any contract.
 
 ## Troubleshooting
 
@@ -611,7 +665,7 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `stake_trx` prompt: checks balance → checks exchange rate & APY → stakes TRX → verifies sTRX received
 
 **"Do I have any sTRX rewards to claim?"**
-→ AI calls `get_strx_account` to check claimable rewards → calls `claim_strx_rewards` if available
+→ AI reads `get_strx_account` and `check_strx_withdrawal_eligibility`, then reports the result only. Unknown/null data is not zero and must not trigger a claim. A query alone never authorizes a transaction. If the user later requests a claim, refresh eligibility; for a known positive amount, show the current claimable amount, network and signer, obtain separate explicit confirmation, then call `claim_strx_rewards` and verify the receipt and post-state.
 
 **"Can I withdraw my unstaked TRX?"**
 → AI calls `check_strx_withdrawal_eligibility` to check unbonding status and completed withdrawal rounds
@@ -620,10 +674,10 @@ For deeper inspection, run the server under the [MCP Inspector](https://github.c
 → AI uses `moolah_supply` prompt: lists vaults with APY → selects USDT → checks allowance → calls `approve_moolah_vault` → calls `moolah_vault_deposit` → verifies shares via `get_moolah_vault`
 
 **"What's my risk on the TRX→USDT market?"** _(Moolah)_
-→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (0–1 where 1.0 = liquidatable), warns at `>0.85`
+→ AI calls `get_moolah_user_position` for the market, interprets the `risk` ratio (which can exceed 1); approaching 1 is a warning, not proof of liquidation eligibility. Rounded or stale API values, including 1.0, are not an execution predicate; verify current on-chain health before acting
 
 **"Find me a liquidation opportunity"** _(Moolah)_
-→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` → for a target, calls `get_moolah_liquidation_quote` → estimates profit → if viable, guides through `approve_liquidator_token` + `moolah_liquidate`
+→ AI calls `get_moolah_pending_liquidations` with `minRiskLevel=1.0` to find candidates, not guaranteed liquidatable positions → verifies current on-chain health for the target → calls `get_moolah_liquidation_quote` (a cost estimate, not proof of borrower eligibility) → estimates profit → if eligible and viable, separately confirms `approve_liquidator_token` + `moolah_liquidate`
 
 **"How much did I supply to JustLend in the last month?"**
 → AI calls `get_lending_records` paginated and filters action type `1` (supply) from the returned `actionName`
@@ -636,3 +690,26 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for the per-version history (Keep a Changel
 
 MIT License Copyright (c) 2026 JustLend
 SPDX-License-Identifier: MIT
+
+## Risk alerts (read-only)
+
+Set `JUSTLEND_ALERT_API_URL` to an explicitly trusted HTTPS endpoint. There is no
+implicit production host. `get_risk_alerts` and `get_risk_alert_markets` require an
+explicit account; `get_risk_alert_rules` needs no account. Mainnet TRON only.
+These public reads never load a wallet or reuse a browser session. Failed reads
+are errors/unknown, not empty lists; null defaults remain unavailable. Email
+addresses, signatures and session identifiers are omitted from returned data.
+Creating, editing, toggling, deleting alerts and email operations are not exposed
+until the backend confirms a headless session contract. The signing protocol
+prefix `JustLend DAO Risk Alert` must not be renamed with product branding.
+
+## Deployment and fee policy
+
+Independent configuration assertions live in `tests/fixtures/deployments.verified.json`.
+The Nile sTRX/energy profile is internally linked but differs from App's other Nile
+profile. Do not mix individual addresses between them. Both ETHB contracts report
+18 decimals; do not copy App's stale static 6. Unknown networks fail closed.
+These snapshots do not replace fresh deployment/permission checks before a write.
+General `safeSend` fee-limit fallback is 1000 TRX, with operation-level overrides;
+this is a ceiling, not a quote or actual charge. Inspect the exact transaction
+preview and current resource estimate; this change does not raise fee budgets.

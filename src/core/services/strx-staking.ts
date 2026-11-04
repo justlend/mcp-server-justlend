@@ -76,6 +76,17 @@ function formatRatio(numerator: bigint, denominator: bigint, decimals = 6): stri
   return formatRawUnits((numerator * scale) / denominator, decimals, decimals);
 }
 
+/** Missing/malformed API amounts are unknown, not a confirmed zero. */
+function knownAmount(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  if (typeof value === "string" && !/^\d+(\.\d+)?$/.test(value)) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  // Do not turn a positive decimal below Number's range into a negative eligibility decision.
+  if (amount === 0 && typeof value === "string" && /[1-9]/.test(value)) return null;
+  return amount;
+}
+
 // ============================================================================
 // Market Data
 // ============================================================================
@@ -366,7 +377,11 @@ export async function claimStrxRewards(
 
   // Check if there are rewards to claim
   const account = await getStrxStakeAccount(walletAddress, network);
-  if (!account.accountCanClaimAmount || Number(account.accountCanClaimAmount) <= 0) {
+  const claimable = knownAmount(account.accountCanClaimAmount);
+  if (claimable === null) {
+    throw new Error("sTRX claim availability is unknown. Re-query account data before claiming; no transaction was submitted.");
+  }
+  if (claimable === 0) {
     throw new Error("No claimable staking rewards available");
   }
 
@@ -397,28 +412,45 @@ export async function checkWithdrawalEligibility(
   const account = await getStrxStakeAccount(address, network);
   const dashboard = await getStrxDashboard(network);
 
-  const canClaim = Number(account.accountCanClaimAmount || 0);
-  const withdrawAmount = Number(account.accountWithDrawAmount || 0);
-  const supply = Number(account.accountSupply || 0);
-  const income = Number(account.accountIncome || 0);
+  const canClaim = knownAmount(account.accountCanClaimAmount);
+  const withdrawAmount = knownAmount(account.accountWithDrawAmount);
+  const supply = knownAmount(account.accountSupply);
+  const income = knownAmount(account.accountIncome);
 
-  // roundDetails contains pending unstake rounds with expiry info
-  const roundDetails = account.roundDetails || [];
+  // The contract fallback cannot read the rounds. Its empty placeholder is not
+  // evidence of an empty withdrawal queue. Malformed expiry data is unknown too.
+  const roundDetails = account.source !== "contract" && Array.isArray(account.roundDetails) &&
+    account.roundDetails.every((r: any) => r && knownAmount(r.endTimestamp) !== null && Number(r.endTimestamp) > 0)
+    ? account.roundDetails : null;
   const now = Date.now();
-  const pendingRounds = roundDetails.filter((r: any) => r.endTimestamp && r.endTimestamp > now);
-  const completedRounds = roundDetails.filter((r: any) => r.endTimestamp && r.endTimestamp <= now);
+  const pendingRounds = roundDetails?.filter((r: any) => Number(r.endTimestamp) > now);
+  const completedRounds = roundDetails?.filter((r: any) => Number(r.endTimestamp) <= now);
+  const unfreezeDelayDays = knownAmount(dashboard.unfreezeDelayDays);
+  const unknownFields = Object.entries({
+    stakedAmount: supply, totalIncome: income, claimableRewards: canClaim,
+    withdrawnAmount: withdrawAmount, roundDetails, unfreezeDelayDays,
+  }).filter(([, value]) => value === null).map(([name]) => name);
+  const notes = [account.note, "note" in dashboard ? dashboard.note : undefined]
+    .filter((note): note is string => typeof note === "string" && note.length > 0);
+  if (unknownFields.length) notes.push("Unavailable fields are unknown, not zero or an empty queue. Re-query before a claim decision.");
 
   return {
     address,
-    hasStakedTrx: supply > 0,
+    hasStakedTrx: supply === null ? null : supply > 0,
     stakedAmount: supply,
     totalIncome: income,
     claimableRewards: canClaim,
     withdrawnAmount: withdrawAmount,
-    pendingUnstakeRounds: pendingRounds.length,
-    completedUnstakeRounds: completedRounds.length,
-    hasCompletedWithdrawals: completedRounds.length > 0,
-    unfreezeDelayDays: Number(dashboard.unfreezeDelayDays),
+    pendingUnstakeRounds: pendingRounds?.length ?? null,
+    completedUnstakeRounds: completedRounds?.length ?? null,
+    hasCompletedWithdrawals: completedRounds ? completedRounds.length > 0 : null,
+    unfreezeDelayDays,
     roundDetails,
+    claimEligibility: canClaim === null ? "unknown" as const : canClaim > 0 ? "eligible" as const : "ineligible" as const,
+    source: account.source ?? "api",
+    dashboardSource: "source" in dashboard ? dashboard.source : "api",
+    dataStatus: unknownFields.length ? "partial" as const : "complete" as const,
+    unknownFields,
+    ...(notes.length ? { note: notes.join(" ") } : {}),
   };
 }

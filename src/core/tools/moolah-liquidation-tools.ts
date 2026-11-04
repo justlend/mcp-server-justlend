@@ -11,11 +11,13 @@ export function registerMoolahLiquidationTools(server: McpServer) {
     "get_moolah_pending_liquidations",
     {
       description:
-        "List Moolah positions eligible or approaching liquidation. " +
-        "riskLevel > 1.0 means the position is liquidatable right now. " +
-        "Use minRiskLevel=0.9 to find positions near the threshold.",
+        "List Moolah liquidation candidates, including positions approaching the threshold. " +
+        "Risk can exceed 1; approaching 1 is a warning, not proof of liquidation eligibility. " +
+        "Rounded or stale API values do not establish current on-chain health. " +
+        "Verify current on-chain health and liquidation permissions for the borrower and route, then obtain a fresh cost quote before acting. " +
+        "Use minRiskLevel=0.9 to include near-threshold candidates.",
       inputSchema: {
-        minRiskLevel: z.number().optional().describe("Minimum risk level (e.g. 0.9 for near-liquidatable, 1.0 for liquidatable now)"),
+        minRiskLevel: z.number().optional().describe("Minimum risk filter (e.g. 0.9 for near-threshold candidates, 1.0 for threshold candidates); this filter does not establish liquidation eligibility"),
         maxRiskLevel: z.number().optional().describe("Maximum risk level filter"),
         debtToken: z.string().optional().describe("Filter by loan token symbol (e.g. 'USDT')"),
         collateralToken: z.string().optional().describe("Filter by collateral token symbol (e.g. 'TRX')"),
@@ -44,7 +46,7 @@ export function registerMoolahLiquidationTools(server: McpServer) {
       description:
         "Estimate the loan token cost to liquidate a position. " +
         "Provide either seizedAssets (collateral to take) OR repaidShares (borrow shares to repay), not both. " +
-        "Returns the exact loan token amount needed. Use this before calling moolah_liquidate.",
+        "Returns the loan token amount needed for the supplied market and amounts. This cost quote does not check borrower health and does not check liquidation permissions; verify both separately before calling moolah_liquidate.",
       inputSchema: {
         marketId: z.string().describe("Market ID (bytes32 hex)"),
         seizedAssets: rawUnitsString("Collateral amount to seize (raw units). Provide this OR repaidShares.").optional(),
@@ -113,7 +115,9 @@ export function registerMoolahLiquidationTools(server: McpServer) {
     "moolah_liquidate",
     {
       description:
-        "Liquidate an undercollateralized Moolah position. " +
+        "Liquidate an undercollateralized JustLend V2 position. " +
+        "Before confirmation, verify current on-chain borrower health plus the route's core caller and public-liquidator market/borrower permissions. " +
+        "If health or permissions are unknown, stop; do not broaden a whitelist as a workaround. " +
         "You must hold the loan token and have approved it via approve_liquidator_token. " +
         "Provide EITHER seizedAssets (collateral to seize) OR repaidShares (borrow shares to repay), not both. " +
         "Use get_moolah_liquidation_quote first to estimate the required loan token amount.",

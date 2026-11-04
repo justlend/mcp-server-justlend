@@ -9,9 +9,9 @@ import {
 import * as backend from "../../../src/core/services/moolah-backend.js";
 import * as contracts from "../../../src/core/services/contracts.js";
 import * as wallet from "../../../src/core/services/wallet.js";
+import { getJustLendAddresses } from "../../../src/core/chains.js";
 
-// Nile is the only network with a configured V2 distributor today —
-// mainnet is "" pending deployment, so all on-chain claim tests target nile.
+const MAINNET_DISTRIBUTOR = "TRiE1tGxBitNAMUazZ6Kk7GA36hpPdzUSL";
 const NILE_DISTRIBUTOR = "TLSPGyZRYeoZsPX2V9tpGYKF85zFyUAb1u";
 
 // Network-free unit tests focused on the parsing logic that determines claim
@@ -164,12 +164,9 @@ describe("getMoolahPendingMiningPeriods", () => {
 });
 
 describe("claimMoolahMiningPeriod (config errors)", () => {
-  it("errors clearly when distributor is not configured for the network", async () => {
-    // Mainnet has merkleDistributorV2 = "" until contracts ship. The error
-    // surfaces before any wallet or network call, so no mocks are needed.
-    await expect(
-      claimMoolahMiningPeriod({ periodKey: "0", network: "mainnet" }),
-    ).rejects.toThrow(/V2 mining distributor is not configured/);
+  it("keeps reward distributors aligned with verified network deployments", () => {
+    expect(getJustLendAddresses("mainnet").merkleDistributorV2).toBe(MAINNET_DISTRIBUTOR);
+    expect(getJustLendAddresses("nile").merkleDistributorV2).toBe(NILE_DISTRIBUTOR);
   });
 
   it("requires either periodKey or full claim fields", async () => {
@@ -195,7 +192,7 @@ const mockMerkleRootReady = (hexBytes32 = "0x" + "01".repeat(32)) =>
     return null;
   });
 
-describe("claimMoolahMiningPeriod (on-chain pre-checks)", () => {
+describe.each([["mainnet", MAINNET_DISTRIBUTOR], ["nile", NILE_DISTRIBUTOR]])("claimMoolahMiningPeriod (%s pre-checks)", (network, distributor) => {
   it("rejects when isClaimed() returns true on-chain", async () => {
     vi.spyOn(contracts, "readContract").mockImplementation(async (params: any) => {
       if (params.functionName === "isClaimed") return true;
@@ -207,7 +204,7 @@ describe("claimMoolahMiningPeriod (on-chain pre-checks)", () => {
       claimMoolahMiningPeriod({
         merkleIndex: 5, index: 12,
         amounts: ["1000000000000000000"], proof: ["0xabc"],
-        network: "nile",
+        network,
       }),
     ).rejects.toThrow(/already claimed on-chain/);
     expect(safeSendSpy).not.toHaveBeenCalled();
@@ -224,31 +221,40 @@ describe("claimMoolahMiningPeriod (on-chain pre-checks)", () => {
       claimMoolahMiningPeriod({
         merkleIndex: 5, index: 12,
         amounts: ["1000000000000000000"], proof: ["0xabc"],
-        network: "nile",
+        network,
       }),
     ).rejects.toThrow(/Merkle root.*not yet published/);
     expect(safeSendSpy).not.toHaveBeenCalled();
   });
 
-  it("treats a readContract failure on isClaimed as 'not claimed' and proceeds", async () => {
-    // The pre-check helpers swallow read errors so the function still tries
-    // to submit — the chain itself is the source of truth on revert. Without
-    // this, a flaky RPC for the view call would block users from claiming.
+  it.each(["isClaimed", "merkleRoots"])("stops without sending when %s cannot be read", async functionName => {
     vi.spyOn(contracts, "readContract").mockImplementation(async (params: any) => {
-      if (params.functionName === "isClaimed") throw new Error("rpc flake");
-      if (params.functionName === "merkleRoots") return "0x" + "01".repeat(32);
-      return null;
+      if (params.functionName === functionName) throw new Error("rpc unavailable");
+      return params.functionName === "isClaimed" ? false : "0x" + "01".repeat(32);
     });
-    const safeSendSpy = vi.spyOn(contracts, "safeSend").mockResolvedValue({
-      txID: "TXID_OK", message: "ok",
-    } as any);
-    const res = await claimMoolahMiningPeriod({
-      merkleIndex: 1, index: 0,
-      amounts: ["1"], proof: ["0xabc"],
-      network: "nile",
-    });
-    expect(safeSendSpy).toHaveBeenCalledOnce();
-    expect(res.txID).toBe("TXID_OK");
+    const send = vi.spyOn(contracts, "safeSend").mockResolvedValue({ txID: "must-not-send" } as any);
+    await expect(claimMoolahMiningPeriod({ merkleIndex: 1, index: 0, amounts: ["1"], proof: ["0xabc"], network }))
+      .rejects.toThrow(/Unable to verify/);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "false", 0])("stops for an invalid isClaimed response: %s", async result => {
+    vi.spyOn(contracts, "readContract").mockResolvedValue(result);
+    const send = vi.spyOn(contracts, "safeSend").mockResolvedValue({ txID: "must-not-send" } as any);
+    await expect(claimMoolahMiningPeriod({ merkleIndex: 1, index: 0, amounts: ["1"], proof: [], network }))
+      .rejects.toThrow(/Unable to verify/);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([63, 64, 65])("validates the bytes32 root length at %s hex digits", async length => {
+    mockMerkleRootReady("0x" + "1".repeat(length));
+    const send = vi.spyOn(contracts, "safeSend").mockResolvedValue({ txID: "TXID_ROOT" } as any);
+    const result = claimMoolahMiningPeriod({ merkleIndex: 1, index: 0, amounts: ["1"], proof: [], network });
+    if (length === 64) await expect(result).resolves.toHaveProperty("txID", "TXID_ROOT");
+    else {
+      await expect(result).rejects.toThrow(/Unable to verify/);
+      expect(send).not.toHaveBeenCalled();
+    }
   });
 
   it("submits multiClaim against the V2 distributor with the wrapped tuple", async () => {
@@ -263,11 +269,11 @@ describe("claimMoolahMiningPeriod (on-chain pre-checks)", () => {
       merkleIndex: 7, index: 3,
       amounts: ["2000000000000000000", "1500000"],
       proof: ["0xdeadbeef", "0xcafebabe"],
-      network: "nile",
+      network,
     });
 
     expect(safeSendSpy).toHaveBeenCalledOnce();
-    expect(captured.address).toBe(NILE_DISTRIBUTOR);
+    expect(captured.address).toBe(distributor);
     expect(captured.functionName).toBe("multiClaim");
     // args is [[claimTuple]] — outer wrap = function arg, inner = single-leaf array
     expect(Array.isArray(captured.args)).toBe(true);
@@ -286,6 +292,7 @@ describe("claimMoolahMiningPeriod (on-chain pre-checks)", () => {
     expect(amountComp.type).toBe("uint256[]");
 
     expect(res.txID).toBe("TXID_HAPPY");
+    expect(res.message).toMatch(/Submitted/);
     expect(res.merkleIndex).toBe(7);
     expect(res.index).toBe(3);
     expect(res.periodKey).toBe("7:3"); // synthesized from indices when no key passed
@@ -319,9 +326,10 @@ describe("claimMoolahMiningPeriod (periodKey resolution)", () => {
       return { txID: "TXID_KEYED", message: "ok" } as any;
     });
 
-    const res = await claimMoolahMiningPeriod({ periodKey: "round-42", network: "nile" });
+    const res = await claimMoolahMiningPeriod({ periodKey: "round-42", network: "mainnet" });
 
     expect(res.periodKey).toBe("round-42");
+    expect(captured.address).toBe(MAINNET_DISTRIBUTOR);
     expect(res.merkleIndex).toBe(42);
     expect(res.index).toBe(9);
 

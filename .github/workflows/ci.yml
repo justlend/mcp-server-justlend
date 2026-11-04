@@ -10,6 +10,7 @@ on:
 
 jobs:
   build-and-test:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +31,15 @@ jobs:
             echo "::error::mcp-api-list.md is stale — run 'npm run gen:api-list' and commit the result."
             exit 1
           }
+
+  scheduled-security-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev

@@ -144,7 +144,9 @@ export const JUSTLEND_ADDRESSES: Record<TronNetwork, JustLendAddresses> = {
       strx: "TKQ5VVJPsoZDD7NqQ8ffhFwzeRp45XLSGt",
       multi: "TUsyCPRyQdMsn9WnJcssBFXtzg6bUVbty6",
     },
-    merkleDistributorV2: "",
+    // Mainnet multi-token mining distributor; verify this stays aligned with
+    // the app and SDK deployment registry.
+    merkleDistributorV2: "TRiE1tGxBitNAMUazZ6Kk7GA36hpPdzUSL",
     strx: {
       proxy: "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5",
       market: "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",
@@ -729,7 +731,7 @@ export function getApiHost(network: string = DEFAULT_NETWORK): string {
   const n = network.toLowerCase();
   if (n === "mainnet" || n === "tron" || n === "trx") return JUSTLEND_API_HOSTS.mainnet;
   if (n === "nile" || n === "testnet") return JUSTLEND_API_HOSTS.nile;
-  return JUSTLEND_API_HOSTS.mainnet;
+  throw new Error(`Unsupported network: ${network}. Supported: mainnet, nile`);
 }
 
 // ── Moolah V2 helpers ─────────────────────────────────────────────────────────

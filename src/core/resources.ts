@@ -9,7 +9,7 @@ export function registerJustLendResources(server: McpServer) {
     "justlend://protocol-info",
     "justlend://protocol-info",
     {
-      description: "JustLend DAO protocol information and contract addresses",
+      description: "JustLend protocol information and contract addresses",
       mimeType: "application/json",
     },
     async () => {
@@ -41,7 +41,7 @@ export function registerJustLendResources(server: McpServer) {
           uri: "justlend://protocol-info",
           mimeType: "application/json",
           text: JSON.stringify({
-            protocol: "JustLend DAO",
+            protocol: "JustLend",
             description: "Decentralized lending protocol on TRON (Compound V2 fork)",
             website: "https://justlend.org",
             docs: "https://docs.justlend.org",

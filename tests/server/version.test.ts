@@ -24,7 +24,7 @@ describe("version metadata", () => {
 
     expect(packageLock.version).toBe(packageJson.version);
     expect(packageLock.packages[""].version).toBe(packageJson.version);
-    expect(readme).toContain(`Current Version: v${packageJson.version}`);
+    expect(readme).toContain(`Package version: v${packageJson.version}`);
     expect(apiList).toContain(`@justlend/mcp-server-justlend\` v${packageJson.version}`);
   });
 });

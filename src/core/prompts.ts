@@ -645,14 +645,14 @@ Key market parameters to explain:
 - **Collateral token / Loan token**: each market is isolated with fixed pairs`}
 
 ## Step 2 — Understand Risk Thresholds
-The market position API returns a **risk** ratio = (borrowed value) / (collateral value × LLTV).
+The market position API returns a **risk** ratio = (borrowed value) / (collateral value × LLTV). Risk can exceed 1. Approaching 1 is a warning, not proof of liquidation eligibility; rounded or stale API values are not an execution predicate. Verify current on-chain health before acting.
 
 | risk | Status | Action |
 |---|---|---|
 | < 0.70 | ✅ Healthy | No action needed |
 | 0.70 – 0.85 | ⚠️ Caution | Monitor closely |
 | 0.85 – 1.00 | 🔴 Danger | Repay or add collateral immediately |
-| > 1.00 | ☠️ Liquidatable | Position will be liquidated |
+| > 1.00 | 🔴 Above the reported limit | Verify current on-chain health; liquidation is not guaranteed |
 
 **Recommendation**: Keep risk below 0.70 to allow for price fluctuations.
 
@@ -704,32 +704,34 @@ Call \`get_moolah_user_position\` again to confirm risk is below 0.70.
 
 **Objective**: Find undercollateralized positions and execute profitable public liquidations on ${network}.
 
-## Step 1 — Find Liquidatable Positions
-Call \`get_moolah_pending_liquidations\` with minRiskLevel=1.0 to list positions that can be liquidated right now.
+## Step 1 — Find Liquidation Candidates
+Call \`get_moolah_pending_liquidations\` with minRiskLevel=1.0 to find candidates, not guaranteed liquidatable positions. Inclusion or a rounded risk value of 1.0 is not proof of liquidation eligibility.
 
 Key fields to interpret:
-- **riskLevel > 1.0**: position is liquidatable (borrowed value exceeds collateral × LLTV)
+- **riskLevel > 1.0**: reported debt exceeds the limit (collateral × LLTV); verify current on-chain health, not just the API snapshot
 - **borrowAssets / borrowUSD**: the debt you will partially repay
 - **collateralAssets / collateralUSD**: the collateral you will seize (at a discount defined by the protocol)
 - **maxSeizableAssets**: maximum collateral you can seize in one liquidation call
 
 For near-threshold positions (riskLevel 0.95–1.0), monitor frequently — prices move fast.
 
-## Step 2 — Estimate Profitability
-For a target position, call \`get_moolah_liquidation_quote\` with:
+## Step 2 — Verify Eligibility and Estimate Profitability
+Verify the target borrower's current on-chain health using the authoritative contract. If healthy, unknown, or unavailable, stop; do not infer eligibility from the candidate list.
+For an unhealthy target position, call \`get_moolah_liquidation_quote\` with:
 - marketId from the pending liquidation
 - seizedAssets = desired collateral to seize (in raw token units)
 
-The returned \`loanTokenAmountNeeded\` tells you how much loan token you must provide.
+The returned \`loanTokenAmountNeeded\` estimates the loan token required for the supplied market and amounts. This cost quote does not check borrower health; a successful quote is not proof of eligibility.
 
 **Profit estimate** = value of seized collateral − cost of loan token repaid
-A healthy liquidation should yield 3–10% depending on the protocol's liquidation incentive.
+Use current prices and the protocol incentive, subtract fees, and account for price changes and competition; profit is not guaranteed.
 
 ## Step 3 — Prepare Loan Token
 1. Verify you hold enough loan token: \`get_token_balance\` with token symbol.
-2. Approve the liquidator contract: \`approve_liquidator_token\` with the loan token details.
+2. Separately confirm the exact network, signer, token, spender and allowance amount before \`approve_liquidator_token\`; recheck allowance afterward.
 
 ## Step 4 — Execute Liquidation
+Refresh borrower health and the cost quote. Separately confirm the exact network, signer, market, borrower and seize/repay amount; changed parameters require renewed confirmation.
 Call \`moolah_liquidate\` with:
 - marketId: from Step 1
 - borrower: the address of the position to liquidate
@@ -739,7 +741,8 @@ Call \`moolah_liquidate\` with:
 **Important**: Provide EITHER seizedAssets OR repaidShares — not both.
 
 ## Step 5 — Verify Outcome
-After the transaction confirms:
+Verify the transaction receipt succeeded before checking post-state; a hash alone is not success. If the result is unknown, reconcile the original transaction before considering another write; do not blindly retry.
+After confirmed success:
 1. Check your collateral token balance increased: \`get_token_balance\`
 2. Check historical records: \`get_moolah_liquidation_records\` with type='public'
 
@@ -793,7 +796,7 @@ From the dashboard response, inspect \`userPosition.markets\`:
 For each market entry (fields: marketId / borrowAmount / borrowUsd / collateralAmount / collateralUsd / risk):
 - Loan token and collateral token
 - Borrow amount and collateral amount (with USD values)
-- **risk** ratio (0-1, where 1.0 = at liquidation threshold)
+- **risk** ratio (can exceed 1; approaching 1 is a warning, not proof of liquidation eligibility). Rounded or stale API values do not establish current on-chain health.
 
 ### Risk Assessment
 | risk | Recommendation |

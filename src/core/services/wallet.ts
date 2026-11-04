@@ -7,7 +7,7 @@ import {
   type WalletConfig,
 } from "@bankofai/agent-wallet";
 import { randomBytes } from "crypto";
-import { existsSync, chmodSync } from "fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, unlinkSync, writeSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { TronWeb } from "tronweb";
@@ -146,6 +146,66 @@ function getConfigDir(): string {
 }
 
 /**
+ * Resolve a local_secure secret for providers created by this module.
+ *
+ * `ConfigWalletProvider` intentionally does not install a default secret
+ * loader when instantiated directly (the resolver supplies one).  Auto-init
+ * and import create providers directly, so they must wire the same verified
+ * loader or every subsequent getWallet() call fails closed.
+ */
+function loadLocalSecret(configDir: string, password: string, secretRef: string): Uint8Array {
+  const kvStore = new SecureKVStore(configDir, password);
+  kvStore.verifyPassword();
+  return kvStore.loadSecret(secretRef);
+}
+
+const WALLET_INIT_LOCK_TIMEOUT_MS = 30_000;
+const WALLET_INIT_LOCK_RETRY_MS = 25;
+
+/**
+ * Serialize first-use wallet creation across MCP worker processes.
+ *
+ * Wallet material and the `default` record are shared files, so an in-process
+ * promise is insufficient when the HTTP/MCP server is scaled to multiple
+ * workers.  An atomic `open(..., "wx")` lock keeps the check-and-create
+ * sequence together; a stale lock fails closed after the bounded wait rather
+ * than silently generating another account.
+ */
+async function withWalletInitLock<T>(configDir: string, operation: () => Promise<T>): Promise<T> {
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+    try { chmodSync(configDir, 0o700); } catch { /* Windows / best-effort */ }
+  }
+
+  const lockPath = join(configDir, ".auto-init.lock");
+  const deadline = Date.now() + WALLET_INIT_LOCK_TIMEOUT_MS;
+  let lockFd: number | undefined;
+  while (lockFd === undefined) {
+    try {
+      lockFd = openSync(lockPath, "wx", 0o600);
+      writeSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
+    } catch (error: any) {
+      if (lockFd !== undefined) {
+        try { closeSync(lockFd); } catch { /* best-effort */ }
+        lockFd = undefined;
+      }
+      if (error?.code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new Error("Wallet initialization is already in progress or left a stale lock; refusing to create another wallet.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, WALLET_INIT_LOCK_RETRY_MS));
+    }
+  }
+
+  try {
+    return await operation();
+  } finally {
+    try { closeSync(lockFd); } catch { /* best-effort */ }
+    try { unlinkSync(lockPath); } catch { /* best-effort */ }
+  }
+}
+
+/**
  * Guard the insecure auto-init mode that persists a random encryption password
  * to `runtime_secrets.json` next to the ciphertext. Refuse unless the operator
  * explicitly opts in via ALLOW_INSECURE_RUNTIME_SECRETS=true.
@@ -219,64 +279,88 @@ export async function autoInitWallet(): Promise<{ address: string; walletId: str
   }
 
   // ── Create a new encrypted wallet ──
+  return withWalletInitLock(configDir, async () => {
+    // Re-check after taking the cross-process lock. Another worker may have
+    // completed initialization while this request was waiting.
+    let providerAfterLock: ReturnType<typeof resolveWalletProvider> | undefined;
+    try {
+      providerAfterLock = resolveWalletProvider({ network: "tron" });
+    } catch {
+      providerAfterLock = undefined;
+    }
+    if (providerAfterLock instanceof ConfigWalletProvider) {
+      const wallets = providerAfterLock.listWallets();
+      if (wallets.length > 0) {
+        const walletId = selectedWalletId(providerAfterLock);
+        if (!walletId) throw new Error("No configured agent wallet is available.");
+        const wallet = await providerAfterLock.getWallet(walletId, "tron");
+        const address = await wallet.getAddress();
+        return { address, walletId, created: false };
+      }
+    } else if (providerAfterLock) {
+      try {
+        const wallet = await providerAfterLock.getActiveWallet("tron");
+        const address = await wallet.getAddress();
+        return { address, walletId: "env", created: false };
+      } catch {
+        // No env wallet — continue with local creation while holding the lock.
+      }
+    }
 
-  // 1. Ensure config directory exists
-  const { mkdirSync, chmodSync } = await import("fs");
-  if (!existsSync(configDir)) {
-    mkdirSync(configDir, { recursive: true });
-    try { chmodSync(configDir, 0o700); } catch { /* Windows */ }
-  }
+    // 1. Resolve the encryption password.
+    const envPassword = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
+    if (!envPassword) {
+      // Refuse the insecure auto-init mode by default: writing the encryption
+      // password next to the ciphertext reduces at-rest encryption to obfuscation.
+      // Require explicit, conscious opt-in via ALLOW_INSECURE_RUNTIME_SECRETS=true.
+      assertInsecureRuntimeSecretsAllowed();
+    }
+    const password = envPassword ?? randomBytes(32).toString("hex");
+    const provider = new ConfigWalletProvider(configDir, password, {
+      network: "tron",
+      secretLoader: loadLocalSecret,
+    });
+    provider.ensureStorage();
+    if (envPassword) {
+      console.error(
+        `[agent-wallet] AGENT_WALLET_PASSWORD provided; encryption key is NOT written to disk. ` +
+        `Keep the env var safe — losing it makes the wallet unrecoverable.`,
+      );
+    } else {
+      provider.saveRuntimeSecrets(password);
+      secureRuntimeSecretsFile(configDir);
+      console.error(
+        `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
+        `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
+        `At-rest encryption is effectively obfuscation in this mode. ` +
+        `For any meaningful balance, set AGENT_WALLET_PASSWORD before first run ` +
+        `so the password is held only in memory.`,
+      );
+    }
 
-  // 2. Resolve the encryption password.
-  const envPassword = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
-  if (!envPassword) {
-    // Refuse the insecure auto-init mode by default: writing the encryption
-    // password next to the ciphertext reduces at-rest encryption to obfuscation.
-    // Require explicit, conscious opt-in via ALLOW_INSECURE_RUNTIME_SECRETS=true.
-    assertInsecureRuntimeSecretsAllowed();
-  }
-  const password = envPassword ?? randomBytes(32).toString("hex");
-  const provider = new ConfigWalletProvider(configDir, password, { network: "tron" });
-  provider.ensureStorage();
-  if (envPassword) {
-    console.error(
-      `[agent-wallet] AGENT_WALLET_PASSWORD provided; encryption key is NOT written to disk. ` +
-      `Keep the env var safe — losing it makes the wallet unrecoverable.`,
-    );
-  } else {
-    provider.saveRuntimeSecrets(password);
-    secureRuntimeSecretsFile(configDir);
-    console.error(
-      `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
-      `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
-      `At-rest encryption is effectively obfuscation in this mode. ` +
-      `For any meaningful balance, set AGENT_WALLET_PASSWORD before first run ` +
-      `so the password is held only in memory.`,
-    );
-  }
+    // 2. Initialize encrypted store (master.json) and generate private key.
+    const kvStore = new SecureKVStore(configDir, password);
+    kvStore.initMaster();
 
-  // 3. Initialize encrypted store (master.json) and generate private key
-  const kvStore = new SecureKVStore(configDir, password);
-  kvStore.initMaster();
+    const walletId = "default";
+    kvStore.generateSecret(walletId, { length: 32 });
 
-  const walletId = "default";
-  kvStore.generateSecret(walletId, { length: 32 });
+    // 3. Register the wallet as local_secure type.
+    provider.addWallet(walletId, {
+      type: "local_secure",
+      params: { secret_ref: walletId },
+    } as WalletConfig, { setActiveIfMissing: true });
 
-  // 4. Register the wallet as local_secure type
-  provider.addWallet(walletId, {
-    type: "local_secure",
-    params: { secret_ref: walletId },
-  } as WalletConfig, { setActiveIfMissing: true });
+    // 4. Resolve the new wallet and get its address.
+    const wallet = await provider.getWallet(walletId, "tron");
+    const address = await wallet.getAddress();
 
-  // 5. Resolve the new wallet and get its address
-  const wallet = await provider.getWallet(walletId, "tron");
-  const address = await wallet.getAddress();
+    // Bind the newly created wallet only to the current session.
+    setActiveWalletId(walletId);
+    clearSessionWalletCache();
 
-  // Bind the newly created wallet only to the current session.
-  setActiveWalletId(walletId);
-  clearSessionWalletCache();
-
-  return { address, walletId, created: true };
+    return { address, walletId, created: true };
+  });
 }
 
 /**
@@ -296,11 +380,11 @@ export async function importWallet(
   }
 
   // Resolve or create password
-  let password = process.env.AGENT_WALLET_PASSWORD || null;
+  let password = process.env.AGENT_WALLET_PASSWORD?.trim() || null;
   let passwordIsRuntimeGenerated = false;
   try {
     const existingProvider = resolveWalletProvider({ network: "tron" });
-    if (existingProvider instanceof ConfigWalletProvider) {
+    if (!password && existingProvider instanceof ConfigWalletProvider) {
       password = existingProvider.loadRuntimeSecretsPassword() || password;
     }
   } catch { /* no existing provider */ }
@@ -314,19 +398,23 @@ export async function importWallet(
     passwordIsRuntimeGenerated = true;
   }
 
-  const provider = new ConfigWalletProvider(configDir, password, { network: "tron" });
+  const provider = new ConfigWalletProvider(configDir, password, {
+    network: "tron",
+    secretLoader: loadLocalSecret,
+  });
   provider.ensureStorage();
-  if (!provider.hasRuntimeSecrets()) {
+  // Only the explicitly opted-in, generated fallback may write a plaintext
+  // password. An operator-supplied env password must remain memory-only, even
+  // when no runtime_secrets.json exists or the legacy opt-in is also set.
+  if (passwordIsRuntimeGenerated && !provider.hasRuntimeSecrets()) {
     provider.saveRuntimeSecrets(password);
-    if (passwordIsRuntimeGenerated) {
-      secureRuntimeSecretsFile(configDir);
-      console.error(
-        `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
-        `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
-        `At-rest encryption is effectively obfuscation in this mode. ` +
-        `Set AGENT_WALLET_PASSWORD instead of persisting the encryption key beside the wallet.`,
-      );
-    }
+    secureRuntimeSecretsFile(configDir);
+    console.error(
+      `[agent-wallet] WARNING: auto-generated encryption password was written to ` +
+      `${join(configDir, "runtime_secrets.json")} alongside the encrypted store. ` +
+      `At-rest encryption is effectively obfuscation in this mode. ` +
+      `Set AGENT_WALLET_PASSWORD instead of persisting the encryption key beside the wallet.`,
+    );
   }
 
   // Initialize master if needed

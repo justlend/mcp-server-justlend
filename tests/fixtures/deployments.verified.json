@@ -1,0 +1,114 @@
+{
+  "verifiedAt": "2026-10-28",
+  "source": "App master f408aed2; public TronGrid constant calls; no credentials or writes",
+  "assertions": [
+    {
+      "network": "mainnet",
+      "path": "jTokens.jETHB.underlyingDecimals",
+      "expected": 18,
+      "evidence": "TRFe3hT5oYhjSZ6f3ji5FJ7YCfrkWnHRvh decimals()"
+    },
+    {
+      "network": "nile",
+      "path": "jTokens.jETHB.underlyingDecimals",
+      "expected": 18,
+      "evidence": "TShDNG1PqRat9DEWDFYahrrBE4Hs7GxYQy decimals()"
+    },
+    {
+      "network": "nile",
+      "path": "strx.proxy",
+      "expected": "TZ8du1HkatTWDbS6FLZei4dQfjfpSm9mxp",
+      "evidence": "getcontract bytecode; linked sTRX/market getters where applicable"
+    },
+    {
+      "network": "nile",
+      "path": "strx.market",
+      "expected": "TSos1xxjqMrGKBxycVmtgrnFvv9M6FDFUX",
+      "evidence": "getcontract bytecode; linked sTRX/market getters where applicable"
+    },
+    {
+      "network": "nile",
+      "path": "energyRateModel",
+      "expected": "TFHzFfBCS8hWV19v1psMZPg4TcWNc1W5LB",
+      "evidence": "getcontract bytecode; linked sTRX/market getters where applicable"
+    },
+    {
+      "network": "nile",
+      "path": "merkleDistributorV2",
+      "expected": "TLSPGyZRYeoZsPX2V9tpGYKF85zFyUAb1u",
+      "evidence": "getcontract bytecode; linked sTRX/market getters where applicable"
+    },
+    {
+      "network": "nile",
+      "path": "merkleDistributors.multi",
+      "expected": "TQvh3Q94PchENyF2iM7uJH338CcWUfHxMG",
+      "evidence": "getcontract bytecode; linked sTRX/market getters where applicable"
+    },
+    {
+      "network": "nile",
+      "path": "jTokens.jUSDT.underlying",
+      "expected": "TPYwAC9Y4uUcT2QH3WPPjqxzJSJWymMoMS",
+      "evidence": "TT6Qk1qrBM4MgyskYZx5pjeJjvv3fdL2ih underlying()"
+    },
+    {
+      "network": "nile",
+      "path": "jTokens.jUSDCOLD.underlying",
+      "expected": "TM1Xq1HHd5RTcR4VAiQ8oV6CQvfVdn3F1f",
+      "evidence": "TMsoCkr2yhukcGnvjhVk8Gj541BCQPEHwm underlying()"
+    },
+    {
+      "network": "mainnet",
+      "path": "comptroller",
+      "expected": "TGjYzgCyPobsNS9n6WcbdLVR9dH7mWqFx7",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "poly",
+      "expected": "TXTXGyhNLhELNZPDXsn5fCnGYLZoLwJvRC",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "jst",
+      "expected": "TCFLL5dx5ZJdKnWuesXxi1VPwjLVmWZZy9",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "wjst",
+      "expected": "TXk9LnTnLN7oH96H3sKxJayMxLxR9M4ZD6",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "governorAlpha",
+      "expected": "TEqiF5JbhDPD77yjEfnEMncGRZNDt2uogD",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "energyRateModel",
+      "expected": "TXA2WjFc5f86deJcZZCdbdpkpUTKTA3VDM",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "strx.proxy",
+      "expected": "TU3kjFuhtEo42tsCBtfYUAZxoqQ4yuSLQ5",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    },
+    {
+      "network": "mainnet",
+      "path": "strx.market",
+      "expected": "TU2MJ5Veik1LRAgjeSzEdvmDYx7mefJZvd",
+      "evidence": "App master f408aed2 source parity (not a fresh RPC check)"
+    }
+  ],
+  "notes": [
+    "Nile CLI/MCP profile is a distinct linked deployment, not the App nile profile. Do not mix contracts between profiles.",
+    "App-inherited mainnet reward addresses have no bytecode on Nile at this snapshot.",
+    "ETHB decimals() returned 18 on mainnet and Nile.",
+    "Bytecode presence alone does not prove permissions or current health."
+  ]
+}
