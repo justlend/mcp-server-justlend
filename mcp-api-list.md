@@ -603,7 +603,7 @@ Consume `structuredContent` when available; older clients may continue parsing t
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
-| `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
+| `energyPerReceiver` | number (> 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
 | `duration` | string (min len 1) | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
 
 ### `get_energy_purchase_order`
@@ -630,8 +630,8 @@ Consume `structuredContent` when available; older clients may continue parsing t
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `address` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | — |  | Payer address. Default: configured wallet |
-| `page` | number (min 0) | — |  | History page (1-based; used with size) |
-| `size` | number (min 0) | — |  | Rows per page; omit for the backend default/all-history view |
+| `page` | number (> 0, max 9007199254740991) | — |  | History page (1-based; used with size) |
+| `size` | number (> 0, max 9007199254740991) | — |  | Rows per page; omit for the backend default/all-history view |
 
 ### `get_energy_payment_risk`
 
@@ -653,9 +653,9 @@ Consume `structuredContent` when available; older clients may continue parsing t
 | Param | Type | Required | Default | Description |
 |-------|------|:--------:|---------|-------------|
 | `receiverAddresses` | string[] | ✅ |  | One or more energy receiver addresses |
-| `energyPerReceiver` | number (min 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
+| `energyPerReceiver` | number (> 0, max 9007199254740991) | ✅ |  | Energy amount for each receiver |
 | `duration` | string (min len 1) | ✅ |  | Duration exactly as advertised by get_energy_purchase_config |
-| `expectedAmountSun` | number (min 0, max 9007199254740991) | ✅ |  | Exact total_sun from the quote explicitly confirmed by the user |
+| `expectedAmountSun` | number (> 0, max 9007199254740991) | ✅ |  | Exact total_sun from the quote explicitly confirmed by the user |
 | `expectedPayAddress` | string (pattern /^T[1-9A-HJ-NP-Za-km-z]{33}$/) | ✅ |  | Exact payment_address from the quote explicitly confirmed by the user |
 | `confirmPayment` | literal | ✅ |  | Must be true only after the user explicitly confirms this value-moving payment |
 | `network` | string | — |  | Signing network. Default: configured network |
