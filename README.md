@@ -108,9 +108,9 @@ Markets are not enumerated here because they are created dynamically on-chain; u
 
 ## Prerequisites
 
-Recommended development and CI baseline: **Node.js 24.22.1**, pinned in `.nvmrc`.
+Recommended development and CI baseline: **Node.js 24.22.3**, pinned in `.nvmrc`.
 
-- [Node.js](https://nodejs.org/) **24.22.1** (recommended)
+- [Node.js](https://nodejs.org/) **24.22.3** (recommended)
 - Optional: [TronGrid API key](https://www.trongrid.io/) for reliable mainnet access (strongly recommended)
 
 ## Installation
@@ -130,7 +130,7 @@ bash scripts/setup-mcp-test.sh
 # Add --claude-desktop to also print Claude Desktop JSON
 ```
 
-The script checks the recommended Node.js version (24.22.1), installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
+The script checks the recommended Node.js version (24.22.3), installs dependencies, builds the project, generates local Claude Code config, and prints the local Codex registration command.
 
 ## Configuration
 
